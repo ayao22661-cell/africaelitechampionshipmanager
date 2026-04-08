@@ -5303,31 +5303,51 @@ sellPlayer(playerId) {
 simulateAIBypassMatchday(otherMatches) {
     // Simuler silencieusement tous les matchs de l'IA prévus ce jour-là
     otherMatches.forEach(match => {
-        // Génération de score basique (tu peux remplacer par ton propre algorithme de score)
+        // Sécurité : ignorer les matchs avec des références manquantes
+        if (!match.home || !match.away) {
+            match.played = true;
+            return;
+        }
+
         let hG = Math.floor(Math.random() * 4);
         let aG = Math.floor(Math.random() * 4);
-        
-        // Enregistrer les statistiques selon le type de compétition
+
         if (match.type === 'LEAGUE') {
             this.processMatchStats(match.home, match.away, hG, aG);
         } else if (match.type === 'CAF_GROUP') {
-            // Assure-toi d'avoir cette fonction pour mettre à jour le classement de la poule
-            if(typeof this.processCAFGroupStats === 'function') {
+            if (typeof this.processCAFGroupStats === 'function') {
                 this.processCAFGroupStats(match.home, match.away, hG, aG, match.groupId);
             }
         }
-        
+
         match.played = true;
     });
-    
-    // Faire avancer la journée de championnat
+
     this.matchday++;
-    
-    // Mettre à jour l'interface
     this.updateHeader();
-    this.refreshAllViews(); // Ou toute fonction que tu utilises pour rafraîchir l'écran
-    
-    this.showNotification("📅 Les matchs continentaux ont été simulés.");
+    this.refreshAllViews();
+    this.showNotification("📅 Journée CAF simulée automatiquement.");
+
+    // Vérifier si la saison est terminée après cette journée
+    const relevantFixtures = this.fixtures.filter(f =>
+        f.home?.isUser || f.away?.isUser ||
+        (f.type === 'LEAGUE' && f.leagueId === this.userLeagueId)
+    );
+    const maxMatchday = relevantFixtures.length > 0
+        ? Math.max(...relevantFixtures.map(f => f.matchday))
+        : Math.max(...this.fixtures.map(f => f.matchday));
+
+    if (this.matchday > maxMatchday) {
+        let finalRank = this.globalData[this.userLeagueId].standings.findIndex(c => c.isUser) + 1;
+        let prizeMoney = Math.max(1000000, 15000000 - ((finalRank - 1) * 800000));
+        this.budget += prizeMoney;
+        this.updateHeader();
+        setTimeout(() => {
+            const msg = `🏆 FIN DE LA SAISON !\n\nVotre club termine à la ${finalRank}e place.\nPrime de championnat : +${formatMoney(prizeMoney)} !\n\n▶ Voulez-vous démarrer la saison suivante ?`;
+            if (confirm(msg)) this.startNextSeason();
+        }, 500);
+    }
+
     this.saveGame();
 }
 
