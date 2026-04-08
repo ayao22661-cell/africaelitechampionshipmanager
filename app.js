@@ -5259,55 +5259,56 @@ sellPlayer(playerId) {
 }
 
     startSimulationSequence() {
+    // Nettoyer les fixtures corrompues (home ou away null) avant tout
+    this.fixtures = this.fixtures.filter(f => f.home && f.away);
+
     // 1. Vérifier si la saison est complètement terminée
     const relevantFixtures = this.fixtures.filter(f =>
-        f.home.isUser || f.away.isUser ||
+        f.home?.isUser || f.away?.isUser ||
         (f.type === 'LEAGUE' && f.leagueId === this.userLeagueId)
     );
     const maxMatchday = relevantFixtures.length > 0
         ? Math.max(...relevantFixtures.map(f => f.matchday))
         : Math.max(...this.fixtures.map(f => f.matchday));
-    if(this.matchday > maxMatchday) {
+    if (this.matchday > maxMatchday) {
         this.showNotification("La saison est terminée !");
         return;
     }
 
-    // (Optionnel) Ici, tu pourras ajouter plus tard la logique pour générer 
-    // les matchs à élimination directe si this.matchday === this.cafSlots[6]
-
     // 2. Trouver les matchs de la journée
-    let userMatchInfo = this.fixtures.find(f => (f.home.isUser || f.away.isUser) && !f.played && f.matchday === this.matchday);
+    let userMatchInfo = this.fixtures.find(f => (f.home?.isUser || f.away?.isUser) && !f.played && f.matchday === this.matchday);
     let otherMatches = this.fixtures.filter(f => !f.played && f.matchday === this.matchday && f !== userMatchInfo);
-    
-    // 3. Gestion de l'absence de l'utilisateur (éliminé ou non qualifié pour la CAF)
-    // S'il n'y a pas de match pour l'utilisateur aujourd'hui, mais qu'il y a des matchs IA (ex: journée CAF)
+
+    // 3. Pas de match utilisateur ce jour → journée CAF ou repos, on simule l'IA et on passe
     if (!userMatchInfo && otherMatches.length > 0) {
         this.simulateAIBypassMatchday(otherMatches);
-        return; // On arrête là, on ne lance pas le stade
+        return;
     }
 
-    // 4. Lancement normal si l'utilisateur joue
-    if(userMatchInfo) {
-        // Petit bonus visuel si c'est un match de coupe d'Afrique
-        if(userMatchInfo.type && userMatchInfo.type.startsWith('CAF')) {
+    // 4. Aucun match du tout à cette journée (trou dans le calendrier) → on avance quand même
+    if (!userMatchInfo && otherMatches.length === 0) {
+        this.matchday++;
+        this.updateHeader();
+        this.saveGame();
+        this.showNotification("📅 Journée sans match, on avance.");
+        return;
+    }
+
+    // 5. Lancement normal si l'utilisateur joue
+    if (userMatchInfo) {
+        if (userMatchInfo.type && userMatchInfo.type.startsWith('CAF')) {
             const commentaryDiv = document.getElementById('live-commentary');
-            if(commentaryDiv) {
+            if (commentaryDiv) {
                 commentaryDiv.innerHTML = '<div class="text-yellow-500 font-bold mb-2">🏆 SOIRÉE AFRICAINE</div>';
             }
         }
-        
-        // Lancer ton interface de match normal (à adapter selon le nom exact de ta fonction existante)
         this.runLiveMatch(userMatchInfo.home, userMatchInfo.away, otherMatches);
     }
 }
+
 simulateAIBypassMatchday(otherMatches) {
-    // Simuler silencieusement tous les matchs de l'IA prévus ce jour-là
     otherMatches.forEach(match => {
-        // Sécurité : ignorer les matchs avec des références manquantes
-        if (!match.home || !match.away) {
-            match.played = true;
-            return;
-        }
+        if (!match.home || !match.away) { match.played = true; return; }
 
         let hG = Math.floor(Math.random() * 4);
         let aG = Math.floor(Math.random() * 4);
@@ -5319,7 +5320,6 @@ simulateAIBypassMatchday(otherMatches) {
                 this.processCAFGroupStats(match.home, match.away, hG, aG, match.groupId);
             }
         }
-
         match.played = true;
     });
 
@@ -5328,7 +5328,7 @@ simulateAIBypassMatchday(otherMatches) {
     this.refreshAllViews();
     this.showNotification("📅 Journée CAF simulée automatiquement.");
 
-    // Vérifier si la saison est terminée après cette journée
+    // Vérifier fin de saison
     const relevantFixtures = this.fixtures.filter(f =>
         f.home?.isUser || f.away?.isUser ||
         (f.type === 'LEAGUE' && f.leagueId === this.userLeagueId)
