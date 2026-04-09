@@ -5306,72 +5306,74 @@ sellPlayer(playerId) {
     }
 }
 simulateAIBypassMatchday(otherMatches) {
-    otherMatches.forEach(match => {
-        if (!match.home || !match.away) { match.played = true; return; }
+        otherMatches.forEach(match => {
+            if (!match.home || !match.away) { match.played = true; return; }
 
-        let hG = Math.floor(Math.random() * 4);
-        let aG = Math.floor(Math.random() * 4);
+            let hG = Math.floor(Math.random() * 4);
+            let aG = Math.floor(Math.random() * 4);
 
-        if (match.type === 'LEAGUE') {
-            this.processMatchStats(match.home, match.away, hG, aG);
-        } else if (match.type === 'CAF_GROUP') {
-            if (typeof this.processCAFGroupStats === 'function') {
-                this.processCAFGroupStats(match.home, match.away, hG, aG, match.groupId);
+            // --- CORRECTION INTÉGRÉE : GESTION DE TOUTES LES PHASES FINALES ---
+            if (match.type === 'LEAGUE') {
+                this.processMatchStats(match.home, match.away, hG, aG);
+            } else if (match.type === 'CAF_GROUP') {
+                if (typeof this.processCAFGroupStats === 'function') {
+                    this.processCAFGroupStats(match.home, match.away, hG, aG, match.groupId);
+                }
+            } else if (match.type === 'CAF_QUARTER') {
+                this.processCAFKnockoutStats(match.home, match.away, hG, aG, 'CAF_QUARTER', match.quarterIndex);
+            } else if (match.type === 'CAF_SEMI') {
+                this.processCAFKnockoutStats(match.home, match.away, hG, aG, 'CAF_SEMI', match.semiIndex);
+            } else if (match.type === 'CAF_FINAL') {
+                this.processCAFKnockoutStats(match.home, match.away, hG, aG, 'CAF_FINAL', 0);
             }
-        } else if (match.type === 'CAF_QUARTER' && this.cafData) {
-            const qf = this.cafData.quarterFinals && this.cafData.quarterFinals[match.quarterIndex];
-            if (qf && !qf.winner) {
-                const total = (match.home.force || 70) + (match.away.force || 70);
-                qf.winner = Math.random() * total < (match.home.force || 70) ? match.home : match.away;
-            }
-        }
-        match.played = true;
-    });
+            
+            match.played = true;
+        });
 
-    this.matchday++;
-    this.updateHeader();
-    this.refreshAllViews();
-
-    // Message contextuel selon le type de journée sautée
-    const hadCAFMatches = otherMatches.some(f => f.type && f.type.startsWith('CAF'));
-    if (hadCAFMatches) {
-        const isQualified = this.cafData && this.cafData.userGroup !== -1;
-        if (!isQualified) {
-            this.showNotification("🌍 Journée CAF — Votre club n'est pas qualifié.", "warning");
-            this.messages.unshift({
-                id: Math.random().toString(36).substr(2, 9),
-                type: 'info', read: false,
-                text: `🌍 Journée de Ligue des Champions CAF en cours. Votre club n'est pas qualifié cette saison — terminez dans le top 2 de votre championnat pour y participer !`
-            });
-        } else {
-            this.showNotification("📅 Matchs CAF simulés automatiquement.");
-        }
-    } else {
-        this.showNotification("📅 Journée simulée automatiquement.");
-    }
-
-    // Vérifier fin de saison
-    const relevantFixtures = this.fixtures.filter(f =>
-        f.home?.isUser || f.away?.isUser ||
-        (f.type === 'LEAGUE' && f.leagueId === this.userLeagueId)
-    );
-    const maxMatchday = relevantFixtures.length > 0
-        ? Math.max(...relevantFixtures.map(f => f.matchday))
-        : Math.max(...this.fixtures.map(f => f.matchday));
-
-    if (this.matchday > maxMatchday) {
-        let finalRank = this.globalData[this.userLeagueId].standings.findIndex(c => c.isUser) + 1;
-        let prizeMoney = Math.max(1000000, 15000000 - ((finalRank - 1) * 800000));
-        this.budget += prizeMoney;
+        this.matchday++;
         this.updateHeader();
-        setTimeout(() => {
-            const msg = `🏆 FIN DE LA SAISON !\n\nVotre club termine à la ${finalRank}e place.\nPrime de championnat : +${formatMoney(prizeMoney)} !\n\n▶ Voulez-vous démarrer la saison suivante ?`;
-            if (confirm(msg)) this.startNextSeason();
-        }, 500);
-    }
+        this.refreshAllViews();
 
-    this.saveGame();
-}
+        // Message contextuel selon le type de journée sautée
+        const hadCAFMatches = otherMatches.some(f => f.type && f.type.startsWith('CAF'));
+        if (hadCAFMatches) {
+            const isQualified = this.cafData && this.cafData.userGroup !== -1;
+            if (!isQualified) {
+                this.showNotification("🌍 Journée CAF — Votre club n'est pas qualifié.", "warning");
+                this.messages.unshift({
+                    id: Math.random().toString(36).substr(2, 9),
+                    type: 'info', read: false,
+                    text: `🌍 Journée de Ligue des Champions CAF en cours. Votre club n'est pas qualifié cette saison — terminez dans le top 2 de votre championnat pour y participer !`
+                });
+            } else {
+                this.showNotification("📅 Matchs CAF simulés automatiquement.");
+            }
+        } else {
+            this.showNotification("📅 Journée simulée automatiquement.");
+        }
+
+        // Vérifier fin de saison
+        const relevantFixtures = this.fixtures.filter(f =>
+            f.home?.isUser || f.away?.isUser ||
+            (f.type === 'LEAGUE' && f.leagueId === this.userLeagueId)
+        );
+        const maxMatchday = relevantFixtures.length > 0
+            ? Math.max(...relevantFixtures.map(f => f.matchday))
+            : Math.max(...this.fixtures.map(f => f.matchday));
+
+        if (this.matchday > maxMatchday) {
+            let finalRank = this.globalData[this.userLeagueId].standings.findIndex(c => c.isUser) + 1;
+            let prizeMoney = Math.max(1000000, 15000000 - ((finalRank - 1) * 800000));
+            this.budget += prizeMoney;
+            this.updateHeader();
+            setTimeout(() => {
+                const msg = `🏆 FIN DE LA SAISON !\n\nVotre club termine à la ${finalRank}e place.\nPrime de championnat : +${formatMoney(prizeMoney)} !\n\n▶ Voulez-vous démarrer la saison suivante ?`;
+                if (confirm(msg)) this.startNextSeason();
+            }, 500);
+        }
+
+        this.saveGame();
+    }
 
     runLiveMatch(home, away, otherMatches) {
         document.getElementById('main-header').classList.add('hidden');
@@ -5954,13 +5956,21 @@ simulateAIBypassMatchday(otherMatches) {
         // 2. Assigner les résultats du joueur
         let userFixture = this.fixtures.find(f => f.matchday === this.matchday && !f.played && f.home.name === this.liveMatch.home.name);
         
+        // --- CORRECTION INTÉGRÉE ICI POUR LES PHASES FINALES DU JOUEUR ---
         if (userFixture && userFixture.type && userFixture.type.startsWith('CAF')) {
             if (userFixture.type === 'CAF_GROUP') {
                 this.processCAFGroupStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore, userFixture.groupId);
+            } else if (userFixture.type === 'CAF_QUARTER') {
+                this.processCAFKnockoutStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore, 'CAF_QUARTER', userFixture.quarterIndex);
+            } else if (userFixture.type === 'CAF_SEMI') {
+                this.processCAFKnockoutStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore, 'CAF_SEMI', userFixture.semiIndex);
+            } else if (userFixture.type === 'CAF_FINAL') {
+                this.processCAFKnockoutStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore, 'CAF_FINAL', 0);
             }
         } else {
             this.processMatchStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore);
         }
+        
         this.assignMatchEvents(this.liveMatch.home, this.liveMatch.homeScore);
         this.assignMatchEvents(this.liveMatch.away, this.liveMatch.awayScore);
         
@@ -6021,10 +6031,16 @@ simulateAIBypassMatchday(otherMatches) {
             let hG = Math.min(4, poissonRand(hLambda));
             let aG = Math.min(4, poissonRand(aLambda));
 
-            // CORRECTION : Vérification pour les matchs de la CAF
+            // --- CORRECTION INTÉGRÉE ICI POUR LES PHASES FINALES IA ---
             if (match.type && match.type.startsWith('CAF')) {
                 if (match.type === 'CAF_GROUP') {
                     this.processCAFGroupStats(match.home, match.away, hG, aG, match.groupId);
+                } else if (match.type === 'CAF_QUARTER') {
+                    this.processCAFKnockoutStats(match.home, match.away, hG, aG, 'CAF_QUARTER', match.quarterIndex);
+                } else if (match.type === 'CAF_SEMI') {
+                    this.processCAFKnockoutStats(match.home, match.away, hG, aG, 'CAF_SEMI', match.semiIndex);
+                } else if (match.type === 'CAF_FINAL') {
+                    this.processCAFKnockoutStats(match.home, match.away, hG, aG, 'CAF_FINAL', 0);
                 }
             } else {
                 // Pour les matchs de championnat classiques
@@ -6036,6 +6052,7 @@ simulateAIBypassMatchday(otherMatches) {
             this.assignDisciplineEvents(match.home);
             this.assignDisciplineEvents(match.away);
         });
+
         // --- DÉDUCTION AUTOMATIQUE DES SALAIRES ---
         const totalWages = this.userSquad.reduce((s, p) => s + (p.wage || 0), 0);
         const staffCost = this.userStaff.reduce((s, id) => {
@@ -6193,7 +6210,7 @@ simulateAIBypassMatchday(otherMatches) {
         this.refreshAllViews();
         this.switchView('dashboard');
         
-        // ✅ LE NOUVEAU CODE DYNAMIQUE À COLLER À LA PLACE :
+        // ✅ LE NOUVEAU CODE DYNAMIQUE DE FIN DE SAISON EST CONSERVÉ
         const relevantFixtures = this.fixtures.filter(f =>
             f.home.isUser || f.away.isUser ||
             (f.type === 'LEAGUE' && f.leagueId === this.userLeagueId)
@@ -6442,6 +6459,7 @@ simulateAIBypassMatchday(otherMatches) {
         }
     }
 
+
     const group = this.cafData.groups[groupId];
     if (!group) return; // Si toujours pas de groupe trouvé, on sort sans crash
 
@@ -6467,7 +6485,69 @@ simulateAIBypassMatchday(otherMatches) {
         }
     }
 }
+processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
+        if (!this.cafData) return;
+        
+        let matchObj = null;
+        if (matchType === 'CAF_QUARTER') matchObj = this.cafData.quarterFinals[index];
+        if (matchType === 'CAF_SEMI') matchObj = this.cafData.semiFinals[index];
+        if (matchType === 'CAF_FINAL') matchObj = this.cafData.final; 
+        
+        if (!matchObj) return;
 
+        // Finale : 1 seul match (sur terrain neutre)
+        if (matchType === 'CAF_FINAL') {
+            matchObj.hG = hG;
+            matchObj.aG = aG;
+            if (hG > aG) {
+                matchObj.winner = home;
+            } else if (aG > hG) {
+                matchObj.winner = away;
+            } else {
+                // Égalité en finale -> Tirs au but (aléatoire à 50/50 pour simplifier)
+                matchObj.penalties = true;
+                matchObj.winner = Math.random() > 0.5 ? home : away;
+            }
+            return;
+        }
+
+        // Quarts et Demis : Match Aller / Match Retour
+        let isAller = matchObj.home.name === home.name; // Vérifie si on joue l'aller
+
+        if (isAller) {
+            // Match Aller
+            matchObj.hG = hG; 
+            matchObj.aG = aG; 
+        } else {
+            // Match Retour (les équipes sont inversées sur le terrain)
+            matchObj.hG2 = aG; // Buts de l'équipe 1 (matchObj.home) qui joue mtn à l'extérieur
+            matchObj.aG2 = hG; // Buts de l'équipe 2 (matchObj.away) qui joue mtn à domicile
+            
+            // Calcul du score cumulé
+            let totalHome = matchObj.hG + matchObj.hG2;
+            let totalAway = matchObj.aG + matchObj.aG2;
+            
+            if (totalHome > totalAway) {
+                matchObj.winner = matchObj.home;
+            } else if (totalAway > totalHome) {
+                matchObj.winner = matchObj.away;
+            } else {
+                // Égalité parfaite au cumulé -> Règle du but à l'extérieur
+                let awayGoalsHomeTeam = matchObj.hG2; // Buts marqués par l'équipe 1 à l'extérieur
+                let awayGoalsAwayTeam = matchObj.aG;  // Buts marqués par l'équipe 2 à l'extérieur
+                
+                if (awayGoalsHomeTeam > awayGoalsAwayTeam) {
+                    matchObj.winner = matchObj.home;
+                } else if (awayGoalsAwayTeam > awayGoalsHomeTeam) {
+                    matchObj.winner = matchObj.away;
+                } else {
+                    // Égalité totale -> Tirs au but
+                    matchObj.penalties = true;
+                    matchObj.winner = Math.random() > 0.5 ? matchObj.home : matchObj.away;
+                }
+            }
+        }
+    }
     refreshAllViews() {
         this.renderDashboard();
         this.renderStandings(); 
@@ -7402,30 +7482,32 @@ simulateCAFFinal() {
 }
 
 simulateCAFWinner() {
-    if (!this.cafData || this.cafData.phase !== 'finale' || !this.cafData.final) return;
-    
-    const finalMatchLeft = this.fixtures.filter(f => f.type === 'CAF_FINAL' && !f.played).length;
-    if (finalMatchLeft > 0) {
-        this.showNotification(`⏳ La finale doit être jouée via le calendrier principal !`, 'error');
-        return;
+        if (!this.cafData || this.cafData.phase !== 'finale' || !this.cafData.final) return;
+        
+        const finalMatchLeft = this.fixtures.filter(f => f.type === 'CAF_FINAL' && !f.played).length;
+        if (finalMatchLeft > 0) {
+            this.showNotification(`⏳ La finale doit être jouée via le calendrier principal !`, 'error');
+            return;
+        }
+
+        // --- CORRECTION : On récupère le vrai vainqueur calculé lors de la finale ---
+        const winner = this.cafData.final.winner || this.cafData.final.home; 
+        
+        this.cafData.winner = winner.name;
+        this.cafData.phase = 'terminé';
+
+        if (winner.name === this.userClubName) {
+            this.budget += 5000000;
+            this.reputation = Math.min(100, this.reputation + 15);
+            setTimeout(() => alert(`🏆🌍 CHAMPION D'AFRIQUE ! ${this.userClubName} remporte la CAF !\n\nPrime : +5M€`), 500);
+        } else {
+            setTimeout(() => alert(`🏆 La CAF est remportée par ${winner.name} !`), 500);
+        }
+        
+        this.saveGame();
+        this.renderCAF();
     }
 
-    // Le match a été joué, tu peux déterminer le vainqueur basé sur ton propre système ou en regardant les résultats.
-    // Pour l'exemple, on le déclare terminé.
-    const winner = this.cafData.final.home; // À adapter selon le score réel
-    this.cafData.winner = winner.name;
-    this.cafData.phase = 'terminé';
-
-    if (winner.name === this.userClubName) {
-        this.budget += 5000000;
-        this.reputation = Math.min(100, this.reputation + 15);
-        setTimeout(() => alert(`🏆🌍 CHAMPION D'AFRIQUE ! ${this.userClubName} remporte la CAF !\n\nPrime : +5M€`), 500);
-    } else {
-        setTimeout(() => alert(`🏆 La CAF est remportée par ${winner.name} !`), 500);
-    }
-    this.saveGame();
-    this.renderCAF();
-}
 
 renderCAF() {
     const container = document.getElementById('caf-container');
