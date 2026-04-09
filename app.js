@@ -5259,7 +5259,7 @@ sellPlayer(playerId) {
 }
 
     startSimulationSequence() {
-    // Nettoyer les fixtures corrompues (home ou away null) avant tout
+    // Nettoyer les fixtures corrompues (home ou away null)
     this.fixtures = this.fixtures.filter(f => f.home && f.away);
 
     // 1. Vérifier si la saison est complètement terminée
@@ -5279,13 +5279,13 @@ sellPlayer(playerId) {
     let userMatchInfo = this.fixtures.find(f => (f.home?.isUser || f.away?.isUser) && !f.played && f.matchday === this.matchday);
     let otherMatches = this.fixtures.filter(f => !f.played && f.matchday === this.matchday && f !== userMatchInfo);
 
-    // 3. Pas de match utilisateur ce jour → journée CAF ou repos, on simule l'IA et on passe
+    // 3. Pas de match utilisateur, mais des matchs IA → journée CAF ou autre
     if (!userMatchInfo && otherMatches.length > 0) {
         this.simulateAIBypassMatchday(otherMatches);
         return;
     }
 
-    // 4. Aucun match du tout à cette journée (trou dans le calendrier) → on avance quand même
+    // 4. Aucun match du tout à cette journée → trou dans le calendrier, on avance
     if (!userMatchInfo && otherMatches.length === 0) {
         this.matchday++;
         this.updateHeader();
@@ -5294,7 +5294,7 @@ sellPlayer(playerId) {
         return;
     }
 
-    // 5. Lancement normal si l'utilisateur joue
+    // 5. Lancement normal
     if (userMatchInfo) {
         if (userMatchInfo.type && userMatchInfo.type.startsWith('CAF')) {
             const commentaryDiv = document.getElementById('live-commentary');
@@ -5305,7 +5305,6 @@ sellPlayer(playerId) {
         this.runLiveMatch(userMatchInfo.home, userMatchInfo.away, otherMatches);
     }
 }
-
 simulateAIBypassMatchday(otherMatches) {
     otherMatches.forEach(match => {
         if (!match.home || !match.away) { match.played = true; return; }
@@ -5326,7 +5325,24 @@ simulateAIBypassMatchday(otherMatches) {
     this.matchday++;
     this.updateHeader();
     this.refreshAllViews();
-    this.showNotification("📅 Journée CAF simulée automatiquement.");
+
+    // Message contextuel selon le type de journée sautée
+    const hadCAFMatches = otherMatches.some(f => f.type && f.type.startsWith('CAF'));
+    if (hadCAFMatches) {
+        const isQualified = this.cafData && this.cafData.userGroup !== -1;
+        if (!isQualified) {
+            this.showNotification("🌍 Journée CAF — Votre club n'est pas qualifié.", "warning");
+            this.messages.unshift({
+                id: Math.random().toString(36).substr(2, 9),
+                type: 'info', read: false,
+                text: `🌍 Journée de Ligue des Champions CAF en cours. Votre club n'est pas qualifié cette saison — terminez dans le top 2 de votre championnat pour y participer !`
+            });
+        } else {
+            this.showNotification("📅 Matchs CAF simulés automatiquement.");
+        }
+    } else {
+        this.showNotification("📅 Journée simulée automatiquement.");
+    }
 
     // Vérifier fin de saison
     const relevantFixtures = this.fixtures.filter(f =>
@@ -6459,7 +6475,9 @@ simulateAIBypassMatchday(otherMatches) {
         // ==========================================
         // PROCHAIN MATCH
         // ==========================================
-        let userFixture = this.fixtures.find(f => !f.played && (f.home.isUser || f.away.isUser));
+        let userFixture = this.fixtures
+            .filter(f => !f.played && f.home && f.away && (f.home.isUser || f.away.isUser))
+            .sort((a, b) => a.matchday - b.matchday)[0];
         if (userFixture) {
             let isHome = userFixture.home.isUser;
             let nextOpp = isHome ? userFixture.away : userFixture.home;
