@@ -5952,7 +5952,15 @@ simulateAIBypassMatchday(otherMatches) {
         });
 
         // 2. Assigner les résultats du joueur
-        this.processMatchStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore);
+        let userFixture = this.fixtures.find(f => f.matchday === this.matchday && !f.played && f.home.name === this.liveMatch.home.name);
+        
+        if (userFixture && userFixture.type && userFixture.type.startsWith('CAF')) {
+            if (userFixture.type === 'CAF_GROUP') {
+                this.processCAFGroupStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore, userFixture.groupId);
+            }
+        } else {
+            this.processMatchStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore);
+        }
         this.assignMatchEvents(this.liveMatch.home, this.liveMatch.homeScore);
         this.assignMatchEvents(this.liveMatch.away, this.liveMatch.awayScore);
         
@@ -6013,7 +6021,16 @@ simulateAIBypassMatchday(otherMatches) {
             let hG = Math.min(4, poissonRand(hLambda));
             let aG = Math.min(4, poissonRand(aLambda));
 
-            this.processMatchStats(match.home, match.away, hG, aG);
+            // CORRECTION : Vérification pour les matchs de la CAF
+            if (match.type && match.type.startsWith('CAF')) {
+                if (match.type === 'CAF_GROUP') {
+                    this.processCAFGroupStats(match.home, match.away, hG, aG, match.groupId);
+                }
+            } else {
+                // Pour les matchs de championnat classiques
+                this.processMatchStats(match.home, match.away, hG, aG);
+            }
+            
             this.assignMatchEvents(match.home, hG);
             this.assignMatchEvents(match.away, aG);
             this.assignDisciplineEvents(match.home);
@@ -6403,6 +6420,7 @@ simulateAIBypassMatchday(otherMatches) {
     }
 
     processMatchStats(home, away, hG, aG) {
+        if (!home.form || !away.form) return;
         home.played++; home.gf += hG; home.ga += aG;
         away.played++; away.gf += aG; away.ga += hG;
         if(hG > aG) { home.won++; home.points += 3; home.form.unshift('W'); away.lost++; away.form.unshift('L'); }
@@ -6414,21 +6432,39 @@ simulateAIBypassMatchday(otherMatches) {
     processCAFGroupStats(home, away, hG, aG, groupId) {
     if (!this.cafData || !this.cafData.groups) return;
     
-    const group = this.cafData.groups[groupId]; // On récupère le bon tableau
-    if (!group) return;
+    // SÉCURITÉ : Si groupId est absent, on cherche dans quel groupe sont les équipes
+    if (groupId === undefined) {
+        for (let id in this.cafData.groups) {
+            if (this.cafData.groups[id].some(t => t.name === home.name)) {
+                groupId = id;
+                break;
+            }
+        }
+    }
+
+    const group = this.cafData.groups[groupId];
+    if (!group) return; // Si toujours pas de groupe trouvé, on sort sans crash
 
     const homeTeam = group.find(t => t.name === home.name);
     const awayTeam = group.find(t => t.name === away.name);
 
     if (homeTeam && awayTeam) {
-        const hPoints = hG > aG ? 3 : hG === aG ? 1 : 0;
-        const aPoints = aG > hG ? 3 : hG === aG ? 1 : 0;
+        const hPoints = hG > aG ? 3 : (hG === aG ? 1 : 0);
+        const aPoints = aG > hG ? 3 : (hG === aG ? 1 : 0);
         
         homeTeam.cafPoints = (homeTeam.cafPoints || 0) + hPoints;
         awayTeam.cafPoints = (awayTeam.cafPoints || 0) + aPoints;
-        if (hG > aG) { homeTeam.cafW = (homeTeam.cafW||0)+1; awayTeam.cafL = (awayTeam.cafL||0)+1; }
-        else if (hG === aG) { homeTeam.cafD = (homeTeam.cafD||0)+1; awayTeam.cafD = (awayTeam.cafD||0)+1; }
-        else { awayTeam.cafW = (awayTeam.cafW||0)+1; homeTeam.cafL = (homeTeam.cafL||0)+1; }
+        
+        if (hG > aG) { 
+            homeTeam.cafW = (homeTeam.cafW || 0) + 1; 
+            awayTeam.cafL = (awayTeam.cafL || 0) + 1; 
+        } else if (hG === aG) { 
+            homeTeam.cafD = (homeTeam.cafD || 0) + 1; 
+            awayTeam.cafD = (awayTeam.cafD || 0) + 1; 
+        } else { 
+            awayTeam.cafW = (awayTeam.cafW || 0) + 1; 
+            homeTeam.cafL = (homeTeam.cafL || 0) + 1; 
+        }
     }
 }
 
