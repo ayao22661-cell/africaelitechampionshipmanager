@@ -5413,8 +5413,8 @@ simulateAIBypassMatchday(otherMatches) {
             // On copie les 11 premiers pour les titulaires
             homeStarters: [...home.squad.slice(0, 11)],
             awayStarters: [...away.squad.slice(0, 11)],
-            // Snapshot des stats avant le match (pour calculer les stats du match seul)
-            preMatchStats: Object.fromEntries([...home.squad.slice(0, 11), ...away.squad.slice(0, 11)].map(p => [p.name, { goals: p.goals || 0, assists: p.assists || 0 }])),
+            // Snapshot des stats avant le match (titulaires + remplaçants)
+            preMatchStats: Object.fromEntries([...home.squad.slice(0, 18), ...away.squad.slice(0, 18)].map(p => [p.name, { goals: p.goals || 0, assists: p.assists || 0 }])),
             // NOUVEAU : On récupère les joueurs du banc (du 12ème au 18ème)
             homeBench: [...home.squad.slice(11, 18)], 
             awayBench: [...away.squad.slice(11, 18)],
@@ -5985,8 +5985,11 @@ simulateAIBypassMatchday(otherMatches) {
             this.processMatchStats(this.liveMatch.home, this.liveMatch.away, this.liveMatch.homeScore, this.liveMatch.awayScore);
         }
         
-        this.assignMatchEvents(this.liveMatch.home, this.liveMatch.homeScore);
-        this.assignMatchEvents(this.liveMatch.away, this.liveMatch.awayScore);
+        // assignMatchEvents sert uniquement aux stats IA (classement buteurs)
+        // Pour le match du joueur, les buts sont déjà attribués en live — on ne redouble pas
+        const userTeamObj  = this.liveMatch.home.isUser ? this.liveMatch.home : (this.liveMatch.away.isUser ? this.liveMatch.away : null);
+        const oppTeamObj   = this.liveMatch.home.isUser ? this.liveMatch.away : this.liveMatch.home;
+        if (oppTeamObj) this.assignMatchEvents(oppTeamObj, this.liveMatch.home.isUser ? this.liveMatch.awayScore : this.liveMatch.homeScore);
         
         // --- NOUVEAU SYSTÈME ÉCONOMIQUE (Modèle FM) ---
         let userTeam = this.liveMatch.home.isUser ? this.liveMatch.home : (this.liveMatch.away.isUser ? this.liveMatch.away : null);
