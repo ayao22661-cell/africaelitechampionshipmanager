@@ -5379,10 +5379,7 @@ simulateAIBypassMatchday(otherMatches) {
             let prizeMoney = Math.max(1000000, 15000000 - ((finalRank - 1) * 800000));
             this.budget += prizeMoney;
             this.updateHeader();
-            setTimeout(() => {
-                const msg = `🏆 FIN DE LA SAISON !\n\nVotre club termine à la ${finalRank}e place.\nPrime de championnat : +${formatMoney(prizeMoney)} !\n\n▶ Voulez-vous démarrer la saison suivante ?`;
-                if (confirm(msg)) this.startNextSeason();
-            }, 500);
+            setTimeout(() => app.showEndOfSeasonModal(finalRank, prizeMoney), 500);
         }
 
         this.saveGame();
@@ -6361,16 +6358,59 @@ simulateAIBypassMatchday(otherMatches) {
             let prizeMoney = Math.max(1000000, 15000000 - ((finalRank - 1) * 800000));
             this.budget += prizeMoney;
             this.updateHeader();
-            setTimeout(() => {
-                const msg = `🏆 FIN DE LA SAISON !\n\nVotre club termine à la ${finalRank}e place.\nPrime de championnat : +${formatMoney(prizeMoney)} !\n\n▶ Voulez-vous démarrer la saison suivante ?`;
-                if (confirm(msg)) {
-                    this.startNextSeason();
-                }
-            }, 500);
+            setTimeout(() => app.showEndOfSeasonModal(finalRank, prizeMoney), 500);
         } else {
             // (fixtures déjà marqués joués plus haut)
         }
         this.saveGame();
+    }
+
+    showEndOfSeasonModal(finalRank, prizeMoney) {
+        // Supprimer un éventuel modal déjà présent
+        const existing = document.getElementById('end-season-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'end-season-modal';
+        modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        modal.innerHTML = `
+            <div class="bg-ui-900 border border-white/10 rounded-2xl w-full max-w-sm mx-4 shadow-2xl overflow-hidden">
+                <div class="bg-gradient-to-r from-yellow-600 to-yellow-400 px-4 py-4 text-center">
+                    <div class="text-4xl mb-1">🏆</div>
+                    <div class="font-teko text-2xl text-white uppercase tracking-wider">Fin de Saison ${this.currentSeason || 1}</div>
+                </div>
+                <div class="p-5 text-center">
+                    <p class="text-slate-300 text-sm mb-1">Votre club termine à la</p>
+                    <p class="font-teko text-5xl text-white font-black leading-none mb-1">${finalRank}<span class="text-2xl text-slate-400">e place</span></p>
+                    <p class="text-emerald-400 font-bold text-sm mt-3">Prime de championnat : +${formatMoney(prizeMoney)}</p>
+                </div>
+                <div class="px-5 pb-5 flex flex-col gap-3">
+                    <button onclick="document.getElementById('end-season-modal').remove(); app.startNextSeason();"
+                        class="w-full py-3 bg-brand-500 hover:bg-brand-400 text-white font-bold rounded-xl text-sm transition-colors">
+                        ▶ Démarrer la saison suivante
+                    </button>
+                    <button onclick="document.getElementById('end-season-modal').remove(); app.showSeasonEndStandby();"
+                        class="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-400 font-bold rounded-xl text-sm transition-colors">
+                        Consulter les stats d'abord
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+
+    showSeasonEndStandby() {
+        // Affiche un bouton flottant persistant pour lancer la saison quand le joueur est prêt
+        const existing = document.getElementById('season-standby-btn');
+        if (existing) return;
+
+        const btn = document.createElement('button');
+        btn.id = 'season-standby-btn';
+        btn.className = 'fixed bottom-24 left-1/2 z-[9998] -translate-x-1/2 bg-brand-500 hover:bg-brand-400 text-white font-bold px-5 py-3 rounded-full shadow-2xl text-sm transition-colors flex items-center gap-2';
+        btn.innerHTML = `▶ Démarrer la saison suivante`;
+        btn.onclick = () => { btn.remove(); app.startNextSeason(); };
+        document.body.appendChild(btn);
+
+        this.switchView('standings');
     }
 
     startNextSeason() {
