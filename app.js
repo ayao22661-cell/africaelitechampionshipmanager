@@ -7021,7 +7021,7 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
                     <td class="px-6 py-3 font-bold text-white flex items-center gap-3">
                         <div class="w-6 h-6 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-[8px] text-slate-400">${t.name.substring(0,2).toUpperCase()}</div>
                         <div class="flex flex-col leading-tight">
-                            <span>${t.name}</span>
+                            <span class="cursor-pointer hover:text-brand-400 transition-colors" onclick="app.showTeamSquad('${t.name}', '${viewLeagueId}')">${t.name}</span>
                             <span class="text-[9px] text-slate-400 font-normal mt-0.5">Force: <span class="text-white">${t.force}</span></span>
                         </div>
                     </td>
@@ -8392,6 +8392,69 @@ generateFreeAgents() {
         this.updateStaffUI();
         this.showNotification("Membre du staff licencié.");
     }
+    showTeamSquad(teamName, leagueId) {
+    const leagueData = this.globalData[leagueId];
+    const team = leagueData.standings.find(t => t.name === teamName);
+    if (!team) return;
+
+    const posOrder = { 'GB': 1, 'DEF': 2, 'MIL': 3, 'ATT': 4 };
+    const sorted = [...team.squad].sort((a, b) => (posOrder[a.position] || 5) - (posOrder[b.position] || 5));
+
+    const posColors = {
+        'GB': 'text-amber-400 bg-amber-500/10',
+        'DEF': 'text-blue-400 bg-blue-500/10',
+        'MIL': 'text-emerald-400 bg-emerald-500/10',
+        'ATT': 'text-rose-400 bg-rose-500/10'
+    };
+
+    const rows = sorted.map(p => {
+        const pc = posColors[p.position] || 'text-slate-400 bg-slate-500/10';
+        const potColor = p.pot >= 88 ? 'text-yellow-400' : p.pot >= 82 ? 'text-emerald-400' : 'text-slate-400';
+        const injBadge = p.injuryDays > 0 ? `<span class="text-red-400 text-[9px]">🏥${p.injuryDays}j</span>` : '';
+        return `
+            <div class="flex items-center justify-between p-2 rounded-lg bg-ui-800/50 border border-white/5 hover:bg-white/5 transition-colors">
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase ${pc} w-10 text-center">${p.position}</span>
+                    <div>
+                        <p class="text-sm font-bold text-white leading-none">${p.name} ${injBadge}</p>
+                        <p class="text-[9px] text-slate-400 mt-0.5">${p.age} ans</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4 text-right">
+                    <div>
+                        <div class="font-teko text-xl text-white leading-none">${p.ovr}</div>
+                        <div class="text-[9px] ${potColor}">POT ${p.pot}</div>
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+
+    // Créer la modale
+    let modal = document.getElementById('team-squad-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'team-squad-modal';
+        modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="document.getElementById('team-squad-modal').classList.add('hidden')"></div>
+            <div class="relative panel-glass rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col z-10 border border-white/10">
+                <div class="flex items-center justify-between p-5 border-b border-white/5">
+                    <h3 id="modal-team-name" class="font-teko text-2xl text-white uppercase"></h3>
+                    <div class="flex items-center gap-3">
+                        <span id="modal-team-force" class="text-xs text-slate-400"></span>
+                        <button onclick="document.getElementById('team-squad-modal').classList.add('hidden')" class="text-slate-400 hover:text-white transition-colors text-xl">✕</button>
+                    </div>
+                </div>
+                <div id="modal-squad-list" class="overflow-y-auto p-4 flex flex-col gap-2"></div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+
+    modal.classList.remove('hidden');
+    document.getElementById('modal-team-name').textContent = team.name;
+    document.getElementById('modal-team-force').textContent = `Force: ${team.force} • ${team.squad.length} joueurs`;
+    document.getElementById('modal-squad-list').innerHTML = rows;
+}
 }
 
 const app = new GameManager();
