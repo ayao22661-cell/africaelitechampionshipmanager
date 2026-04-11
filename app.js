@@ -7293,8 +7293,78 @@ getReputationLabel() {
         this.academyLevel = parseInt(this.academyLevel) || 1;
         const numPlayers = 3 + Math.floor(Math.random() * (this.academyLevel + 1));
         const newYouths = [];
-        const firstNames = ['Amadou', 'Koffi', 'Yaya', 'Didier', 'Cheick', 'Moussa', 'Salif', 'Hakim', 'Brahim', 'Tarik'];
-        const lastNames = ['Touré', 'Koné', 'Diaby', 'Ziyech', 'Hakimi', 'Bamba', 'Keita', 'Cissé', 'Traoré', 'Gouiri'];
+        const REGEN_NAMES = {
+            francophone: {
+                first: [
+                    'Amadou', 'Koffi', 'Yaya', 'Didier', 'Cheick', 'Moussa', 'Salif', 'Armel', 'Cyrille', 'Franck',
+                    'Junior', 'Lionel', 'Marcel', 'Narcisse', 'Patrick', 'Rodrigue', 'Samuel', 'Thierry', 'Valentin', 'Wilfried',
+                    'Axel', 'Bertrand', 'Cédric', 'Dimitri', 'Emile', 'Fabrice', 'Gervais', 'Hervé', 'Ignace', 'Jules',
+                    'Kevin', 'Landry', 'Martial', 'Norbert', 'Olivier', 'Pierre', 'Quentin', 'René', 'Serge', 'Théodore',
+                    'Urbain', 'Vincent', 'Xavier', 'Yvon', 'Zacharie', 'Abou', 'Bakary', 'Constant', 'Daouda', 'Ernest',
+                    'Fréjus', 'Gnagna', 'Hyacinthe', 'Issouf', 'Jean-Marc', 'Karamoko', 'Lassina', 'Mamadou', 'Oumar', 'Pascal',
+                    'Raoul', 'Stéphane', 'Trésor', 'Ulrich', 'Venance', 'Willy', 'Yacouba', 'Zéphirin', 'Abdoulaye', 'Blaise',
+                    'Christian', 'Evariste', 'Ferdinand', 'Guillaume', 'Honoré', 'Ismaël', 'Joseph', 'Konan', 'Lamine', 'Mory'
+                ],
+                last: [
+                    'Touré', 'Koné', 'Diaby', 'Bamba', 'Keita', 'Cissé', 'Traoré', 'Coulibaly', 'Dembélé', 'Fofana',
+                    'Konaté', 'Ouattara', 'Sanogo', 'Tra Bi', 'Aka', 'Brou', 'Kouamé', 'Diouf', 'Sylla', 'Diallo',
+                    'Camara', 'Barry', 'Baldé', 'Dramé', 'Sow', 'Ndiaye', 'Fall', 'Mbaye', 'Gueye', 'Sarr',
+                    'Ndoye', 'Mendy', 'Coly', 'Badji', 'Manga', 'Sagna', 'Gomis', 'Kouyaté', 'Kanté', 'Sissoko',
+                    'Doumbia', 'Kourouma', 'Zouzoua', 'N\'Guessan', 'Yao', 'Kouassi', 'Gnakouri', 'Méité', 'Péléa', 'Tia',
+                    'Gbagbo', 'Lago', 'Kra', 'Ahoussi', 'Ettien', 'Daho', 'Assi', 'Aba', 'Boka', 'Zokora',
+                    'Kalou', 'Tiéné', 'Bi Zoro', 'Gossié', 'Woté', 'Kpan', 'Lobognon', 'Akpa', 'Pokou', 'Kassi',
+                    'Guéi', 'Tape', 'Somé', 'Diabaté', 'Seri', 'Gradel', 'Pépé', 'Zaha', 'Aurier', 'Boly'
+                ]
+            },
+            arab: {
+                first: [
+                    'Hakim', 'Brahim', 'Tarik', 'Karim', 'Youssef', 'Mehdi', 'Amine', 'Ayoub', 'Bilal', 'Hicham',
+                    'Ilias', 'Jamal', 'Khalid', 'Lotfi', 'Mohamed', 'Nabil', 'Omar', 'Rachid', 'Samir', 'Walid',
+                    'Achraf', 'Badr', 'Chakib', 'Driss', 'Faisal', 'Ghali', 'Hamza', 'Ibrahim', 'Jawad', 'Lahcen',
+                    'Mounir', 'Nassim', 'Othmane', 'Reda', 'Sofiane', 'Taha', 'Younes', 'Zakaria', 'Adil', 'Aziz',
+                    'Bassem', 'Chamseddine', 'Djamel', 'Essam', 'Farouk', 'Gamal', 'Hossam', 'Ismail', 'Jaber', 'Khaled',
+                    'Maher', 'Nader', 'Oussama', 'Rami', 'Saber', 'Tarek', 'Wissam', 'Yahia', 'Zied', 'Amir',
+                    'Bassam', 'Cherif', 'Ezzeddine', 'Firas', 'Habib', 'Imed', 'Jihad', 'Kaies', 'Marouane', 'Naoufel',
+                    'Rafik', 'Seifeddine', 'Taoufik', 'Wael', 'Yassine', 'Zouhaier', 'Abdelkader', 'Boubaker', 'Chokri', 'Dali'
+                ],
+                last: [
+                    'Ziyech', 'Hakimi', 'Gouiri', 'Benali', 'Chaoui', 'Daoud', 'Farhat', 'Ghazi', 'Hamid', 'Idrissi',
+                    'Jabrane', 'Kadri', 'Lamari', 'Mansouri', 'Nouri', 'Ouali', 'Rachidi', 'Saidi', 'Tahiri', 'Amrani',
+                    'Benzema', 'Cherif', 'Drissi', 'Essafi', 'Fennich', 'Guedioura', 'Iajour', 'Jamali', 'Kharrat', 'Laouini',
+                    'Msakni', 'Namouchi', 'Ouertatani', 'Sassi', 'Trabelsi', 'Haddad', 'Ben Youssef', 'Jebali', 'Sliti', 'Badri',
+                    'Chemmam', 'Dhaouadi', 'Elkadri', 'Ferchichi', 'Ghandri', 'Hergal', 'Jelassi', 'Kechrida', 'Lajili', 'Meriah',
+                    'Nacef', 'Ounalli', 'Riahi', 'Souayah', 'Agrebi', 'Belaili', 'Chetti', 'Djahnit', 'Feghouli', 'Ghilas',
+                    'Halliche', 'Ighil', 'Kraouche', 'Lacen', 'Medjani', 'Neffati', 'Ounas', 'Rahmani', 'Slimani', 'Taïder',
+                    'Yebdri', 'Zoubir', 'Belkalem', 'Mandi', 'Bentaleb', 'Brahimi', 'Bensebaini', 'Mahrez', 'Bennacer', 'Aouar'
+                ]
+            },
+            anglophone: {
+                first: [
+                    'Emeka', 'Chukwu', 'Tunde', 'Seun', 'Femi', 'Bayo', 'Kelechi', 'Chidi', 'Nnamdi', 'Obinna',
+                    'Rotimi', 'Sola', 'Tayo', 'Uche', 'Victor', 'Wale', 'Yemi', 'Adama', 'Benson', 'Collins',
+                    'Daniel', 'Evans', 'Fortune', 'Gift', 'Henry', 'Isaac', 'Joel', 'Kenneth', 'Leke', 'Moses',
+                    'Nathan', 'Oluwafemi', 'Prince', 'Rasheed', 'Sunday', 'Taiwo', 'Ugochukwu', 'Wisdom', 'Yusuf', 'Zuberu',
+                    'Asamoah', 'Bright', 'Christian', 'Dominic', 'Emmanuel', 'Francis', 'George', 'Haruna', 'Innocent', 'James',
+                    'Kingsley', 'Lawrence', 'Michael', 'Nicholas', 'Obi', 'Paul', 'Quincy', 'Robert', 'Stephen', 'Theophilus',
+                    'Uchenna', 'Valentino', 'Walter', 'Yaw', 'Celestine', 'Divine', 'Elisha', 'Festus', 'Godwin', 'Hillary',
+                    'Ike', 'Jerome', 'Kofi', 'Leonard', 'Maxwell', 'Nonso', 'Oghenekaro', 'Praise', 'Richmond', 'Samuel'
+                ],
+                last: [
+                    'Okafor', 'Eze', 'Nwankwo', 'Dike', 'Awoniyi', 'Bassey', 'Chukwueze', 'Dennis', 'Ejuke', 'Fatawu',
+                    'Ghartey', 'Haruna', 'Ibrahim', 'Johnson', 'Kamara', 'Laryea', 'Mensah', 'Nkrumah', 'Ofori', 'Partey',
+                    'Quaye', 'Sarpong', 'Thomas', 'Udogie', 'Williams', 'Yeboah', 'Amoah', 'Boateng', 'Cudjoe', 'Danso',
+                    'Ekuban', 'Frimpong', 'Gyan', 'Hagan', 'Inkoom', 'Jinapor', 'Kudus', 'Lamptey', 'Muntari', 'Ntow',
+                    'Owusu', 'Paintsil', 'Quartey', 'Rabiu', 'Salifu', 'Tetteh', 'Acheampong', 'Annan', 'Badu', 'Gyamfi',
+                    'Appiah', 'Asamoah', 'Atsu', 'Ayew', 'Banini', 'Clottey', 'Enyeama', 'Finidi', 'Kanu', 'Mikel',
+                    'Okocha', 'Okoro', 'Olise', 'Onuoha', 'Osimhen', 'Ighalo', 'Iheanacho', 'Ndidi', 'Musa', 'Etebo',
+                    'Iwobi', 'Aribo', 'Lookman', 'Aina', 'Balogun', 'Ekitike', 'Boniface', 'Tiehi', 'Adeyemi', 'Nmecha'
+                ]
+            }
+        };
+        const league = LEAGUES.find(l => l.clubs.includes(this.clubName));
+        const region = (league && REGEN_NAMES[league.region]) ? league.region : 'francophone';
+        const fn = REGEN_NAMES[region].first;
+        const ln = REGEN_NAMES[region].last;
 
         for(let i = 0; i < numPlayers; i++) {
             const baseOvr = 40 + (this.academyLevel * 3) + Math.floor(Math.random() * 10);
@@ -7304,7 +7374,7 @@ getReputationLabel() {
             
             newYouths.push({
                 id: 'y_' + Math.random().toString(36).substr(2, 9),
-                name: firstNames[Math.floor(Math.random() * firstNames.length)] + ' ' + lastNames[Math.floor(Math.random() * lastNames.length)],
+                name: fn[Math.floor(Math.random() * fn.length)] + ' ' + ln[Math.floor(Math.random() * ln.length)],
                 age: 15 + Math.floor(Math.random() * 3),
                 position: pos,
                 ovr: baseOvr,
