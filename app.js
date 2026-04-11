@@ -5340,6 +5340,12 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
         }
         if (playerIndex === -1) return;
         const player = isFreeAgent ? this.freeAgentPool[playerIndex] : this.marketPool[playerIndex];
+        // Rediriger vers négociation de contrat (sauf agents libres et appels internes)
+        if(!isFreeAgent && !this._skipNegociation) {
+            this.showPlayerNegotiation(player);
+            return;
+        }
+        this._skipNegociation = false;
 
         // Vérification réputation
         if (player.ovr >= 85 && this.reputation < 50) {
@@ -8849,5 +8855,609 @@ generateFreeAgents() {
     document.getElementById('modal-squad-list').innerHTML = rows;
 }
 }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🌧️  MÉTÉO & TERRAIN
+    // ═══════════════════════════════════════════════════════════════
+    generateMatchWeather() {
+        const weights = [30,20,15,10,15,10];
+        const total = weights.reduce((a,b)=>a+b,0);
+        let rand = Math.random()*total, cumul=0;
+        for(let i=0;i<WEATHER_CONDITIONS.length;i++){
+            cumul+=weights[i];
+            if(rand<=cumul) return WEATHER_CONDITIONS[i];
+        }
+        return WEATHER_CONDITIONS[0];
+    }
+
+    showWeatherBanner(weather) {
+        const commentary = document.getElementById('live-commentary');
+        if(!commentary) return;
+        let old = document.getElementById('weather-banner');
+        if(old) old.remove();
+        const banner = document.createElement('div');
+        banner.id='weather-banner';
+        banner.className='flex items-center gap-2 px-3 py-2 rounded-lg mb-2 border border-white/10 bg-white/5';
+        banner.innerHTML=`
+            <span class="text-base">${weather.emoji}</span>
+            <div class="flex-1">
+                <span class="text-xs font-bold text-white">${weather.label}</span>
+                <span class="text-[10px] text-slate-500 ml-2">${weather.description}</span>
+            </div>
+            ${weather.energyExtra>0?`<span class="text-[9px] text-red-400 font-bold">⚡-${weather.energyExtra}/5min</span>`:''}
+            ${weather.injuryExtra>0?`<span class="text-[9px] text-orange-400 font-bold ml-1">🏥+${Math.round(weather.injuryExtra*100)}%</span>`:''}`;
+        commentary.parentNode.insertBefore(banner, commentary);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🏟️  OBJECTIFS PRÉSIDENT
+    // ═══════════════════════════════════════════════════════════════
+    assignPresidentObjective() {
+        const myClub = this.getMyClub();
+        const force = myClub ? (myClub.force||65) : 65;
+        const season = this.currentSeason || 1;
+        let obj;
+        if(force>=82)      obj={id:'title',      label:'🏆 Remporter le championnat',   targetRank:1,  bonus:5000000, repBonus:20, canFire:true };
+        else if(force>=76) obj={id:'top2',        label:'🥈 Terminer dans le Top 2',     targetRank:2,  bonus:3000000, repBonus:15, canFire:true };
+        else if(force>=70) obj={id:'top4',        label:'🎯 Atteindre le Top 4',         targetRank:4,  bonus:1500000, repBonus:10, canFire:false};
+        else if(force>=64) obj={id:'top8',        label:'📊 Terminer dans le Top 8',     targetRank:8,  bonus:500000,  repBonus:5,  canFire:false};
+        else                obj={id:'no_relegate',label:"🛡️ Éviter la relégation (>15e)",targetRank:15, bonus:800000,  repBonus:8,  canFire:true };
+        this.presidentObjective = obj;
+        this.messages.unshift({
+            id:Math.random().toString(36).substr(2,9), type:'info', read:false,
+            text:`📋 OBJECTIF SAISON ${season} — Le président vous fixe : "${obj.label}". Bonus si succès : ${formatMoney(obj.bonus)} + réputation +${obj.repBonus}.`
+        });
+    }
+
+    checkPresidentObjective(finalRank) {
+        const obj = this.presidentObjective;
+        if(!obj) return;
+        const success = finalRank <= obj.targetRank;
+        if(success) {
+            this.budget += obj.bonus;
+            this.reputation = Math.min(100, this.reputation + obj.repBonus);
+            this.messages.unshift({
+                id:Math.random().toString(36).substr(2,9), type:'info', read:false,
+                text:`✅ OBJECTIF ATTEINT ! "${obj.label}" — Bravo ! Prime : ${formatMoney(obj.bonus)} + Réputation +${obj.repBonus}.`
+            });
+        } else {
+            this.reputation = Math.max(0, this.reputation - 10);
+            const txt = obj.canFire && Math.random()<0.6
+                ? `🚨 CONVOQUÉ PAR LE PRÉSIDENT — L'objectif "${obj.label}" n'a pas été atteint (${finalRank}e). Dernière chance. Réputation -10.`
+                : `⚠️ Objectif manqué : "${obj.label}". Vous finissez ${finalRank}e. Réputation -10.`;
+            this.messages.unshift({id:Math.random().toString(36).substr(2,9), type:'warning', read:false, text:txt});
+        }
+        this.presidentObjective = null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🎙️  CONFÉRENCES DE PRESSE
+    // ═══════════════════════════════════════════════════════════════
+    showPressConference(type, result) {
+        const pool = type==='before' ? PRESS_QUESTIONS_BEFORE : (PRESS_QUESTIONS_AFTER[result]||PRESS_QUESTIONS_AFTER.draw);
+        const q = pool[Math.floor(Math.random()*pool.length)];
+        const optsHTML = q.opts.map((o,i)=>`
+            <button onclick="app.pressPick(${i})" class="w-full text-left px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-brand-500/20 hover:border-brand-500/40 text-sm text-slate-200 transition-all font-medium">
+                ${o.text}
+            </button>`).join('');
+        const modal = document.createElement('div');
+        modal.id='press-modal';
+        modal.className='fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        modal.innerHTML=`
+            <div class="bg-ui-900 border border-white/10 rounded-2xl w-full max-w-md mx-4 shadow-2xl overflow-hidden">
+                <div class="bg-gradient-to-r from-slate-700 to-slate-600 px-5 py-4 flex items-center gap-3">
+                    <span class="text-3xl">🎙️</span>
+                    <div>
+                        <div class="font-teko text-xl text-white uppercase tracking-wider">Conférence de presse</div>
+                        <div class="text-[11px] text-slate-400">${type==='before'?'Avant le match':'Après le match'}</div>
+                    </div>
+                </div>
+                <div class="p-5">
+                    <p class="text-white font-bold text-sm mb-4 leading-relaxed">"${q.q}"</p>
+                    <div class="flex flex-col gap-2">${optsHTML}</div>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+        this._currentPressQ = {q, type, result};
+    }
+
+    pressPick(index) {
+        const {q, type} = this._currentPressQ;
+        const opt = q.opts[index];
+        const modal = document.getElementById('press-modal');
+        if(modal) modal.remove();
+        const moraleGain = opt.morale||0;
+        this.userSquad.slice(0,11).forEach(p=>{
+            p.morale = Math.min(100, Math.max(0,(p.morale||80)+moraleGain));
+        });
+        if(opt.rep) this.reputation = Math.min(100, Math.max(0, this.reputation+(opt.rep||0)));
+        if(opt.boostStar) {
+            const star = this.userSquad.slice(0,11).sort((a,b)=>(b.lastRating||6)-(a.lastRating||6))[0];
+            if(star) star.morale = Math.min(100,(star.morale||80)+10);
+        }
+        const prefix = moraleGain>=8?'🔥':moraleGain>=4?'✅':moraleGain<0?'⚠️':'💬';
+        this.showNotification(`${prefix} Moral ${moraleGain>=0?'+':''}${moraleGain} | Réputation ${(opt.rep||0)>=0?'+':''}${opt.rep||0}`);
+        if(type==='before' && this._pendingMatchCallback) {
+            this._pendingMatchCallback();
+            this._pendingMatchCallback = null;
+        }
+        this.saveGame();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 💬  INTERACTIONS JOUEURS
+    // ═══════════════════════════════════════════════════════════════
+    checkPlayerInteractions(matchResult) {
+        if(!this.userSquad || this.userSquad.length===0) return;
+        const ctx = {won: matchResult==='win', budgetNegative: this.budget<0};
+        const triggered = [];
+        for(const req of PLAYER_REQUESTS) {
+            const candidates = this.userSquad.filter(p=>{
+                try{return req.trigger(p,ctx);}catch(e){return false;}
+            });
+            if(candidates.length>0) {
+                const p = candidates[Math.floor(Math.random()*candidates.length)];
+                triggered.push({req,player:p});
+            }
+        }
+        if(triggered.length===0) return;
+        const ev = triggered[Math.floor(Math.random()*triggered.length)];
+        setTimeout(()=>this.showPlayerInteraction(ev.req,ev.player), 2500);
+    }
+
+    showPlayerInteraction(req, player) {
+        const existing = document.getElementById('player-interaction-modal');
+        if(existing) existing.remove();
+        const optsHTML = req.opts.map((o,i)=>`
+            <button onclick="app.resolvePlayerInteraction('${req.id}','${player.id}',${i})"
+                class="w-full text-left px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-brand-500/20 hover:border-brand-500/40 text-sm text-slate-200 transition-all font-medium">
+                ${o.text}
+            </button>`).join('');
+        const modal = document.createElement('div');
+        modal.id='player-interaction-modal';
+        modal.className='fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        modal.innerHTML=`
+            <div class="bg-ui-900 border border-white/10 rounded-2xl w-full max-w-md mx-4 shadow-2xl overflow-hidden">
+                <div class="bg-gradient-to-r from-purple-800 to-purple-600 px-5 py-4 flex items-center gap-3">
+                    <span class="text-3xl">${req.icon}</span>
+                    <div>
+                        <div class="font-teko text-xl text-white uppercase tracking-wider">Interaction Vestiaire</div>
+                        <div class="text-[11px] text-purple-300">${player.name} • OVR ${player.ovr} • Moral ${player.morale||80}%</div>
+                    </div>
+                </div>
+                <div class="p-5">
+                    <p class="text-slate-200 text-sm mb-4 leading-relaxed italic">${req.msg(player)}</p>
+                    <div class="flex flex-col gap-2">${optsHTML}</div>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+
+    resolvePlayerInteraction(reqId, playerId, optIndex) {
+        const modal = document.getElementById('player-interaction-modal');
+        if(modal) modal.remove();
+        const player = this.userSquad.find(p=>p.id===playerId);
+        const req = PLAYER_REQUESTS.find(r=>r.id===reqId);
+        if(!player||!req) return;
+        const opt = req.opts[optIndex];
+        player.morale = Math.min(100,Math.max(0,(player.morale||80)+(opt.morale||0)));
+        switch(opt.action) {
+            case 'raise_20':
+                if(this.budget>=player.wage*0.2*20){player.wage=Math.round(player.wage*1.2);this.showNotification(`💰 Salaire de ${player.name} augmenté de 20%.`);}
+                else{this.showNotification('❌ Budget insuffisant.','error');player.morale=Math.max(0,(player.morale||80)-5);}
+                break;
+            case 'raise_40': player.wage=Math.round(player.wage*1.4);player.agentFrereHandled=true;this.showNotification(`🤝 Accord +40% avec l'agent de ${player.name}.`);break;
+            case 'double_wage': player.wage=Math.round(player.wage*2);player.agentFrereHandled=true;this.showNotification(`💰 Salaire de ${player.name} doublé.`,'warning');break;
+            case 'let_go': this.userSquad=this.userSquad.filter(p=>p.id!==playerId);player.agentFrereHandled=true;this.showNotification(`🚪 ${player.name} parti libre.`,'warning');this.refreshAllViews();break;
+            case 'open_transfer': player.transferListed=true;this.showNotification(`📋 ${player.name} mis sur liste transferts.`,'info');break;
+            case 'unhappy': player.morale=Math.max(0,(player.morale||80)-10);this.messages.unshift({id:Math.random().toString(36).substr(2,9),type:'morale',read:false,text:`😤 ${player.name} très mécontent du refus d'augmentation.`});break;
+            case 'pay_strike':
+                const strikeCost=this.userSquad.reduce((s,p)=>s+(p.wage||0),0)*2;
+                if(this.budget>=strikeCost){this.budget-=strikeCost;this.userSquad.forEach(p=>p.morale=Math.min(100,(p.morale||80)+15));this.showNotification('✅ 2 mois de salaires payés. Grève levée !');}
+                else{this.showNotification('❌ Budget insuffisant. Le vestiaire explose.','error');this.userSquad.forEach(p=>p.morale=Math.max(0,(p.morale||80)-15));}
+                break;
+            case 'promise_pay': this.showNotification('🤝 Promesse faite. Tenez-la dans les 2 prochains matchdays.','warning');break;
+            case 'african_nat': player.nationalityHandled=true;this.reputation=Math.min(100,this.reputation+3);this.showNotification(`🌍 ${player.name} choisit le pays africain. +3 réputation.`);break;
+            case 'free_choice': player.nationalityHandled=true;this.showNotification(`✅ ${player.name} fera son choix librement.`);break;
+            case 'block_nat': player.nationalityHandled=true;player.morale=Math.max(0,(player.morale||80)-8);this.reputation=Math.max(0,this.reputation-2);this.showNotification(`⛔ Tension avec ${player.name}.`,'warning');break;
+        }
+        this.updateUserClubForce();
+        this.updateHeader();
+        this.saveGame();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 💪  ENTRAÎNEMENT HEBDOMADAIRE
+    // ═══════════════════════════════════════════════════════════════
+    showTrainingModal() {
+        const existing = document.getElementById('training-modal');
+        if(existing) existing.remove();
+        const optsHTML = TRAINING_FOCUS_OPTIONS.map(opt=>`
+            <button onclick="app.applyTraining('${opt.id}')"
+                class="w-full text-left px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-all">
+                <div class="flex justify-between items-center">
+                    <span class="text-sm font-bold text-white">${opt.label}</span>
+                    <span class="text-[10px] text-emerald-400 font-bold">Prochain match</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1">${opt.desc}</p>
+            </button>`).join('');
+        const modal = document.createElement('div');
+        modal.id='training-modal';
+        modal.className='fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        modal.innerHTML=`
+            <div class="bg-ui-900 border border-white/10 rounded-2xl w-full max-w-md mx-4 shadow-2xl overflow-hidden">
+                <div class="bg-gradient-to-r from-emerald-700 to-emerald-500 px-5 py-4 flex items-center gap-3">
+                    <span class="text-3xl">🏋️</span>
+                    <div>
+                        <div class="font-teko text-xl text-white uppercase tracking-wider">Entraînement de la semaine</div>
+                        <div class="text-[11px] text-emerald-200">Le focus s'applique au prochain match uniquement.</div>
+                    </div>
+                </div>
+                <div class="p-5 flex flex-col gap-2">${optsHTML}</div>
+                <div class="px-5 pb-5">
+                    <button onclick="document.getElementById('training-modal').remove()" class="w-full py-2 text-slate-500 text-xs font-bold hover:text-white transition-colors">Annuler</button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+
+    applyTraining(focusId) {
+        const modal = document.getElementById('training-modal');
+        if(modal) modal.remove();
+        const opt = TRAINING_FOCUS_OPTIONS.find(o=>o.id===focusId);
+        if(!opt) return;
+        this._trainingFocus = {...opt};
+        const injured = this.userSquad.filter(p=>p.position!=='GB').find(p=>Math.random()<0.03);
+        if(injured && !injured.injuryDays) {
+            injured.injuryDays=1;
+            this.messages.unshift({id:Math.random().toString(36).substr(2,9),type:'warning',read:false,
+                text:`🏥 Petite alerte : ${injured.name} s'est légèrement blessé à l'entraînement (1 jour).`});
+        }
+        if(focusId==='physique') this.userSquad.forEach(p=>p.energy=Math.min(100,(p.energy||100)+opt.value));
+        this.showNotification(`✅ Entraînement ${opt.label} — effet actif pour le prochain match !`);
+        this.saveGame();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🔍  PROFIL ADVERSAIRE (Scouting)
+    // ═══════════════════════════════════════════════════════════════
+    showOpponentProfile(opponent) {
+        if(!opponent) return;
+        const form = (opponent.form||[]).slice(0,5);
+        const formHTML = form.length
+            ? form.map(f=>`<span class="inline-flex w-5 h-5 items-center justify-center rounded text-[9px] font-black ${f==='W'?'bg-emerald-500 text-white':f==='D'?'bg-yellow-500 text-black':'bg-red-500 text-white'}">${f==='W'?'V':f==='D'?'N':'D'}</span>`).join('')
+            : '<span class="text-slate-500 text-xs">Aucun match</span>';
+        const tactics = ['4-4-2','4-3-3','3-5-2','4-2-3-1','5-3-2'];
+        const aiFormation = tactics[Math.floor(Math.random()*tactics.length)];
+        const strongPoints=[], weakPoints=[];
+        if(opponent.force>=75) strongPoints.push('💪 Bloc solide');
+        if(opponent.force>=78) strongPoints.push('⚡ Transition rapide');
+        if(opponent.force<=70) weakPoints.push('🎯 Défense vulnérable aux corners');
+        if(opponent.force<=68) weakPoints.push('💨 Fragile face aux contres');
+        if(weakPoints.length===0) weakPoints.push('🛡️ Peu de failles évidentes');
+        const modal = document.createElement('div');
+        modal.id='scouting-modal';
+        modal.className='fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        modal.innerHTML=`
+            <div class="bg-ui-900 border border-white/10 rounded-2xl w-full max-w-sm mx-4 shadow-2xl overflow-hidden">
+                <div class="bg-gradient-to-r from-blue-800 to-blue-600 px-5 py-4 flex justify-between items-center">
+                    <div>
+                        <div class="font-teko text-xl text-white uppercase tracking-wider">🔍 Rapport de scouting</div>
+                        <div class="text-[11px] text-blue-300">${opponent.name}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-teko text-4xl text-white leading-none">${opponent.force}</div>
+                        <div class="text-[9px] text-blue-300 uppercase">Force OVR</div>
+                    </div>
+                </div>
+                <div class="p-5 space-y-4">
+                    <div>
+                        <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Forme récente</p>
+                        <div class="flex gap-1">${formHTML}</div>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Système de jeu probable</p>
+                        <p class="text-white font-teko text-xl">${aiFormation}</p>
+                    </div>
+                    ${strongPoints.length?`<div><p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Points forts</p>${strongPoints.map(s=>`<p class="text-xs text-emerald-400">${s}</p>`).join('')}</div>`:''}
+                    <div>
+                        <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Points faibles</p>
+                        ${weakPoints.map(s=>`<p class="text-xs text-red-400">${s}</p>`).join('')}
+                    </div>
+                </div>
+                <div class="px-5 pb-5">
+                    <button onclick="document.getElementById('scouting-modal').remove(); if(app._pendingMatchCallback){const cb=app._pendingMatchCallback;app._pendingMatchCallback=null;cb();}"
+                        class="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-white font-bold rounded-xl text-sm transition-colors">
+                        Compris, on y va !
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🏟️  DERBIES & RIVALITÉS
+    // ═══════════════════════════════════════════════════════════════
+    isDerby(homeTeam, awayTeam) {
+        return DERBY_PAIRS.some(([a,b])=>
+            (homeTeam.name===a && awayTeam.name===b)||(homeTeam.name===b && awayTeam.name===a)
+        );
+    }
+
+    applyDerbyEffects(won, draw) {
+        if(won){
+            this.userSquad.forEach(p=>p.morale=Math.min(100,(p.morale||80)+15));
+            this.reputation=Math.min(100,this.reputation+5);
+            this.showNotification('🔥 DERBY GAGNÉ ! +15 moral équipe, +5 réputation !');
+        } else if(draw){
+            this.userSquad.forEach(p=>p.morale=Math.min(100,(p.morale||80)+3));
+            this.showNotification('🤝 Derby nul. Honneur sauf. +3 moral.');
+        } else {
+            this.userSquad.forEach(p=>p.morale=Math.max(0,(p.morale||80)-12));
+            this.reputation=Math.max(0,this.reputation-3);
+            this.showNotification('💔 Derby perdu. -12 moral équipe, -3 réputation.','error');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🏅  PROGRESSION NARRATIVE JOUEURS
+    // ═══════════════════════════════════════════════════════════════
+    checkCareerMilestones() {
+        if(!this.userSquad) return;
+        this.userSquad.forEach(p=>{
+            CAREER_MILESTONES.forEach(ms=>{
+                try{
+                    if(ms.trigger(p)){
+                        if(!p.milestones) p.milestones=[];
+                        p.milestones.push(ms.id);
+                        p.price=Math.round((p.price||500000)*ms.valueMultiplier);
+                        this.reputation=Math.min(100,this.reputation+ms.reputationGain);
+                        this.messages.unshift({id:Math.random().toString(36).substr(2,9),type:'news',read:false,text:ms.msg(p)});
+                    }
+                }catch(e){}
+            });
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 💼  SPONSORS & REVENUS VARIABLES
+    // ═══════════════════════════════════════════════════════════════
+    getCurrentSponsor() {
+        for(let i=SPONSOR_TIERS.length-1;i>=0;i--){
+            if(this.reputation>=SPONSOR_TIERS[i].minRep) return SPONSOR_TIERS[i];
+        }
+        return SPONSOR_TIERS[0];
+    }
+
+    applySponsorRevenue() {
+        const sponsor = this.getCurrentSponsor();
+        if(!this._lastSponsor || this._lastSponsor!==sponsor.name){
+            this._lastSponsor=sponsor.name;
+            this.messages.unshift({id:Math.random().toString(36).substr(2,9),type:'info',read:false,
+                text:`${sponsor.logo} Nouveau partenaire : ${sponsor.name} — ${formatMoney(sponsor.monthlyRevenue)}/mois`});
+        }
+        if(this.matchday>0 && this.matchday%4===0){
+            this.budget+=sponsor.monthlyRevenue;
+            this.monthlyRevenue+=sponsor.monthlyRevenue;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🌍  SÉLECTIONS NATIONALES
+    // ═══════════════════════════════════════════════════════════════
+    checkNationalTeamCallups() {
+        if(!this.userSquad || this.matchday%8!==0) return;
+        const natTeam = NATIONAL_TEAMS[this.userLeagueId];
+        if(!natTeam) return;
+        const eligible = this.userSquad.filter(p=>(p.ovr||70)>=natTeam.minOvr && !p.nationalTeamOnTrip && !p.injuryDays);
+        if(eligible.length===0) return;
+        const called = eligible.slice(0,Math.min(3,Math.floor(Math.random()*3)+1));
+        called.forEach(p=>{
+            p.nationalTeamOnTrip=2;
+            this.messages.unshift({id:Math.random().toString(36).substr(2,9),type:'info',read:false,
+                text:`${natTeam.emoji} ${p.name} (OVR ${p.ovr}) convoqué en sélection ${natTeam.name}. Absent 2 matchdays.`});
+        });
+    }
+
+    processNationalTeamReturns() {
+        if(!this.userSquad) return;
+        this.userSquad.forEach(p=>{
+            if(p.nationalTeamOnTrip>0){
+                p.nationalTeamOnTrip--;
+                if(p.nationalTeamOnTrip===0){
+                    p.energy=Math.max(40,(p.energy||100)-25);
+                    if(Math.random()<0.12){
+                        p.injuryDays=Math.floor(Math.random()*4)+1;
+                        this.messages.unshift({id:Math.random().toString(36).substr(2,9),type:'warning',read:false,
+                            text:`🏥 ${p.name} revient de sélection blessé (${p.injuryDays} jour(s)).`});
+                    } else {
+                        this.messages.unshift({id:Math.random().toString(36).substr(2,9),type:'info',read:false,
+                            text:`✅ ${p.name} de retour de sélection. Énergie à ${p.energy}%.`});
+                    }
+                }
+            }
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ⭐  RÉPUTATION INDIVIDUELLE JOUEURS
+    // ═══════════════════════════════════════════════════════════════
+    updatePlayerReputations() {
+        if(!this.userSquad) return;
+        this.userSquad.forEach(p=>{
+            const totalContribs=(p.goals||0)*2+(p.assists||0);
+            if(totalContribs>=3){
+                const oldPrice=p.price||500000;
+                p.price=Math.round(oldPrice*(1+totalContribs*0.015));
+            }
+            if((p.goals||0)>=15 && !p.europeanInterest){
+                p.europeanInterest=true;
+                const offerAmount=Math.round((p.price||1000000)*2.5);
+                this.messages.unshift({
+                    id:Math.random().toString(36).substr(2,9), type:'offer', read:false,
+                    playerId:p.id, playerName:p.name, amount:offerAmount,
+                    text:`🏦 OFFRE EUROPÉENNE : Un club offre ${formatMoney(offerAmount)} pour ${p.name} (${p.goals} buts). Répondez depuis la boîte de réception.`
+                });
+            }
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🏆  PALMARÈS & TROPHÉES
+    // ═══════════════════════════════════════════════════════════════
+    showPalmares() {
+        if(!this.trophies||this.trophies.length===0){
+            this.showNotification('Pas encore de trophée. La gloire vous attend !','info');
+            return;
+        }
+        const rows = this.trophies.map(t=>`
+            <div class="flex items-center gap-3 px-4 py-3 border-b border-white/5">
+                <span class="text-2xl">${(TROPHY_NAMES[t.type]||'🏅').split(' ')[0]}</span>
+                <div>
+                    <p class="text-sm font-bold text-white">${TROPHY_NAMES[t.type]||t.type}</p>
+                    <p class="text-[10px] text-slate-400">Saison ${t.season} · ${this.userClubName}</p>
+                </div>
+            </div>`).join('');
+        const modal = document.createElement('div');
+        modal.id='palmares-modal';
+        modal.className='fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        modal.innerHTML=`
+            <div class="bg-ui-900 border border-white/10 rounded-2xl w-full max-w-sm mx-4 shadow-2xl overflow-hidden">
+                <div class="bg-gradient-to-r from-yellow-600 to-yellow-400 px-5 py-4 flex justify-between items-center">
+                    <div class="font-teko text-xl text-white uppercase">🏆 Palmarès</div>
+                    <button onclick="document.getElementById('palmares-modal').remove()" class="text-white/70 hover:text-white text-xl">✕</button>
+                </div>
+                <div class="max-h-80 overflow-y-auto">${rows}</div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ❄️  MERCATO HIVERNAL
+    // ═══════════════════════════════════════════════════════════════
+    checkWinterMercato() {
+        const totalMatchdays = (Object.values(this.globalData)[0].standings.length-1)*2;
+        const halfPoint = Math.floor(totalMatchdays/2);
+        if(this.matchday===halfPoint && !this._winterMercatoDone){
+            this._winterMercatoDone=true;
+            const regions=['francophone','arab','anglophone'];
+            for(let i=0;i<5;i++){
+                const pos=['GB','DEF','MIL','ATT'][Math.floor(Math.random()*4)];
+                const p=Generator.randomPlayer(pos,regions[Math.floor(Math.random()*3)],68,82);
+                p.price=Math.round(p.price*1.4);
+                p.isWinterLoan=true;
+                p.fromClub='Mercato Hivernal';
+                this.marketPool.push(p);
+            }
+            this.messages.unshift({id:Math.random().toString(36).substr(2,9),type:'info',read:false,
+                text:'❄️ MERCATO HIVERNAL OUVERT — 5 joueurs disponibles (prix +40%). Fenêtre limitée à 4 matchdays.'});
+            if(this.renderMarket) this.renderMarket();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🤝  NÉGOCIATION DE CONTRAT
+    // ═══════════════════════════════════════════════════════════════
+    showPlayerNegotiation(player) {
+        const existing = document.getElementById('negociation-modal');
+        if(existing) existing.remove();
+        const demandMultiplier=0.85+Math.random()*0.45;
+        const salaireDemande=Math.round(player.wage*demandMultiplier);
+        const salaireMin=Math.round(player.wage*0.8);
+        const signingBonus=Math.round(player.price*0.05);
+        const modal = document.createElement('div');
+        modal.id='negociation-modal';
+        modal.className='fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        modal.innerHTML=`
+            <div class="bg-ui-900 border border-white/10 rounded-2xl w-full max-w-md mx-4 shadow-2xl overflow-hidden">
+                <div class="bg-gradient-to-r from-emerald-700 to-emerald-500 px-5 py-4 flex items-center gap-3">
+                    <span class="text-3xl">🤝</span>
+                    <div>
+                        <div class="font-teko text-xl text-white uppercase">Négociation de contrat</div>
+                        <div class="text-[11px] text-emerald-200">${player.name} • OVR ${player.ovr} • ${player.age||25} ans</div>
+                    </div>
+                </div>
+                <div class="p-5 space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-white/5 rounded-xl p-3 text-center">
+                            <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Transfert</p>
+                            <p class="font-teko text-xl text-white">${formatMoney(player.price)}</p>
+                        </div>
+                        <div class="bg-white/5 rounded-xl p-3 text-center">
+                            <p class="text-[10px] text-slate-500 uppercase font-bold mb-1">Prime signature</p>
+                            <p class="font-teko text-xl text-yellow-400">${formatMoney(signingBonus)}</p>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 rounded-xl p-3">
+                        <p class="text-[10px] text-slate-500 uppercase font-bold mb-2">Le joueur demande</p>
+                        <p class="text-white font-bold">${formatMoney(salaireDemande)}<span class="text-slate-500 font-normal text-xs">/mois</span></p>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <button onclick="app.acceptNegociation('${player.id}',${salaireDemande},${signingBonus})"
+                            class="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-white font-bold rounded-xl text-sm transition-colors">
+                            ✅ Accepter (${formatMoney(salaireDemande)}/mois + prime ${formatMoney(signingBonus)})
+                        </button>
+                        <button onclick="app.counterNegociation('${player.id}',${salaireMin},${signingBonus})"
+                            class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-sm transition-colors">
+                            🔄 Contre-offre (${formatMoney(salaireMin)}/mois, sans prime)
+                        </button>
+                        <button onclick="document.getElementById('negociation-modal').remove()"
+                            class="w-full py-2 text-slate-500 text-xs font-bold hover:text-white transition-colors">Annuler</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+
+    acceptNegociation(playerId, salaire, signingBonus) {
+        const modal = document.getElementById('negociation-modal');
+        if(modal) modal.remove();
+        const player = this.marketPool.find(p=>p.id===playerId)||(this.freeAgentPool||[]).find(p=>p.id===playerId);
+        if(!player) return;
+        const totalCost = player.price+signingBonus;
+        if(this.budget<totalCost){this.showNotification('❌ Budget insuffisant pour le transfert + prime.','error');return;}
+        player.wage=salaire;
+        this.budget-=signingBonus;
+        this._skipNegociation=true;
+        this.buyPlayer(player.id);
+        this.showNotification(`✅ ${player.name} signé ! Prime de ${formatMoney(signingBonus)} versée.`);
+    }
+
+    counterNegociation(playerId, salaireMin, signingBonus) {
+        const modal = document.getElementById('negociation-modal');
+        if(modal) modal.remove();
+        if(Math.random()<0.5){
+            const player=this.marketPool.find(p=>p.id===playerId)||(this.freeAgentPool||[]).find(p=>p.id===playerId);
+            if(!player) return;
+            player.wage=salaireMin;
+            this._skipNegociation=true;
+            this.buyPlayer(player.id);
+            this.showNotification(`✅ ${player.name} a accepté votre contre-offre !`);
+        } else {
+            this.showNotification('❌ Le joueur a refusé votre contre-offre et part ailleurs.','error');
+            this.marketPool=this.marketPool.filter(p=>p.id!==playerId);
+            if(this.freeAgentPool) this.freeAgentPool=this.freeAgentPool.filter(p=>p.id!==playerId);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 🔗  ORCHESTRATION POST-MATCH
+    // ═══════════════════════════════════════════════════════════════
+    runPostMatchSequence(homeScore, awayScore, isUserHome) {
+        const userScore = isUserHome?homeScore:awayScore;
+        const oppScore  = isUserHome?awayScore:homeScore;
+        const won  = userScore>oppScore;
+        const draw = userScore===oppScore;
+        const result = won?'win':draw?'draw':'loss';
+        if(this._currentMatchIsDerby){ this.applyDerbyEffects(won,draw); this._currentMatchIsDerby=false; }
+        this.checkCareerMilestones();
+        this.updatePlayerReputations();
+        this.processNationalTeamReturns();
+        this.checkNationalTeamCallups();
+        this.applySponsorRevenue();
+        this.checkWinterMercato();
+        setTimeout(()=>this.checkPlayerInteractions(result), 1000);
+    }
 
 const app = new GameManager();
