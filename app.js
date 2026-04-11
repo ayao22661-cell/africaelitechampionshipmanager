@@ -4379,6 +4379,173 @@ const FORMATIONS_MAP = {
 const JERSEY_SVG = `<svg class="w-full h-full drop-shadow-md" viewBox="0 0 24 24" fill="currentColor"><path d="M21.9 7.4L16 3H8L2.1 7.4C1.6 7.8 1.4 8.5 1.7 9.1L3.6 13.5C3.8 14 4.5 14.2 5 13.9L8 11.8V20C8 20.6 8.4 21 9 21H15C15.6 21 16 20.6 16 20V11.8L19 13.9C19.5 14.3 20.2 14.1 20.4 13.5L22.3 9.1C22.6 8.5 22.4 7.8 21.9 7.4M15 9V19H9V9L5 11.8L3.4 8.1L8.6 4.3C8.8 4.1 9 4 9.3 4H14.8C15 4 15.3 4.1 15.4 4.3L20.6 8.1L19 11.8L15 9Z"/></svg>`;
 const PLAYER_AVATAR_SVG = `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full opacity-90 drop-shadow-lg"><path d="M50 15C38.95 15 30 23.95 30 35C30 46.05 38.95 55 50 55C61.05 55 70 46.05 70 35C70 23.95 61.05 15 50 15ZM23.5 65C15.49 65 9 71.49 9 79.5V95H91V79.5C91 71.49 84.51 65 76.5 65H23.5Z" fill="currentColor"/></svg>`;
 
+// ═══════════════════════════════════════════════════════════════
+// CONSTANTES MEGA PATCH — WEATHER / DERBIES / SPONSORS / ETC.
+// ═══════════════════════════════════════════════════════════════
+const WEATHER_CONDITIONS = [
+    { id:'soleil',          emoji:'☀️',  label:'Beau temps',       energyExtra:0,   injuryExtra:0,     lambdaBonus:0.05,  description:'Terrain parfait, jeu rapide.' },
+    { id:'chaleur',         emoji:'🌡️', label:'Chaleur intense',   energyExtra:1.5, injuryExtra:0.01,  lambdaBonus:-0.05, description:'Abidjan en août. Crampes fréquentes.' },
+    { id:'pluie',           emoji:'🌧️', label:'Pluie forte',       energyExtra:0.8, injuryExtra:0.015, lambdaBonus:0.0,   description:'Terrain lourd. Glissades, dribbles pénalisés.' },
+    { id:'vent',            emoji:'💨',  label:'Vent violent',      energyExtra:0.5, injuryExtra:0,     lambdaBonus:-0.03, description:'Tirs déviés. Coups de pied arrêtés imprévisibles.' },
+    { id:'nuageux',         emoji:'⛅',  label:'Temps couvert',     energyExtra:0,   injuryExtra:0,     lambdaBonus:0,     description:'Conditions normales.' },
+    { id:'terrain_degrade', emoji:'🟫',  label:'Terrain dégradé',   energyExtra:1.0, injuryExtra:0.02,  lambdaBonus:0.08,  description:'Pelouse impraticable. Chaos défensif.' }
+];
+const DERBY_PAIRS = [
+    ['ASEC Mimosas','Africa Sports'],['Al Ahly','Zamalek'],['Wydad AC','Raja CA'],
+    ['Espérance Tunis','Club Africain'],['CR Belouizdad','MC Alger'],
+    ['Mamelodi Sundowns','Orlando Pirates'],['Kaizer Chiefs','Orlando Pirates'],
+    ['TP Mazembe','AS Vita Club'],['Canon Yaoundé','Union Douala'],
+    ['Coton Sport','Bamboutos'],['Enyimba FC','Shooting Stars'],
+    ['Génération Foot','Jaraaf'],['Pyramids FC','Zamalek'],
+    ['Casa Sports','Jaraaf'],["Stade d'Abidjan",'ASEC Mimosas']
+];
+const SPONSOR_TIERS = [
+    { minRep:0,  name:'Sponsor local',      monthlyRevenue:200000,  logo:'🏪' },
+    { minRep:20, name:'Brasserie Ivoire',    monthlyRevenue:500000,  logo:'🍺' },
+    { minRep:35, name:'MTN Mobile',          monthlyRevenue:900000,  logo:'📱' },
+    { minRep:50, name:'Orange CI',           monthlyRevenue:1500000, logo:'🍊' },
+    { minRep:65, name:'Wave Africa',         monthlyRevenue:2500000, logo:'💳' },
+    { minRep:80, name:'CAF Official Partner',monthlyRevenue:4000000, logo:'🌍' }
+];
+const NATIONAL_TEAMS = {
+    'CIV':{ name:"Côte d'Ivoire", emoji:'🇨🇮', minOvr:78 },
+    'MAR':{ name:'Maroc',         emoji:'🇲🇦', minOvr:78 },
+    'EGY':{ name:'Égypte',        emoji:'🇪🇬', minOvr:77 },
+    'RSA':{ name:'Afrique du Sud',emoji:'🇿🇦', minOvr:76 },
+    'NGA':{ name:'Nigéria',       emoji:'🇳🇬', minOvr:79 },
+    'SEN':{ name:'Sénégal',       emoji:'🇸🇳', minOvr:80 },
+    'CMR':{ name:'Cameroun',      emoji:'🇨🇲', minOvr:77 },
+    'ALG':{ name:'Algérie',       emoji:'🇩🇿', minOvr:78 },
+    'TUN':{ name:'Tunisie',       emoji:'🇹🇳', minOvr:77 },
+    'COD':{ name:'RD Congo',      emoji:'🇨🇩', minOvr:76 }
+};
+const TRAINING_FOCUS_OPTIONS = [
+    { id:'physique',   label:'💪 Physique',    desc:'Récupération +15% ce match',    effect:'energy',    value:15   },
+    { id:'tactique',   label:'🧠 Tactique',    desc:'Force effective +3% ce match',  effect:'force',     value:3    },
+    { id:'finition',   label:'⚽ Finition',    desc:'λ attaque +0.10 ce match',      effect:'lambda',    value:0.10 },
+    { id:'defense',    label:'🛡️ Défense',     desc:'λ adverse -0.08 ce match',      effect:'defense',   value:0.08 },
+    { id:'set_pieces', label:'🎯 Coups arrêtés',desc:'Corner/FK +25% chance but',   effect:'set_piece', value:0.25 }
+];
+const PRESS_QUESTIONS_BEFORE = [
+    { q:"Comment abordez-vous ce match ?", opts:[
+        { text:"🔥 On attaque dès le coup d'envoi !", morale:8,  rep:1  },
+        { text:"🧠 On reste organisés et sereins.",   morale:4,  rep:0  },
+        { text:"😤 C'est un match comme les autres.", morale:-2, rep:-1 }
+    ]},
+    { q:"L'adversaire est redoutable. Votre plan ?", opts:[
+        { text:"⚔️ On les attaque là où ils sont faibles.", morale:6, rep:1 },
+        { text:"🛡️ On sécurise, puis on contre.",           morale:5, rep:0 },
+        { text:"🤷 On s'adapte en cours de match.",          morale:2, rep:0 }
+    ]},
+    { q:"Vos supporters attendent une victoire. Que leur dites-vous ?", opts:[
+        { text:"💪 On ne les décevra pas !",     morale:10, rep:2  },
+        { text:"🎯 On donne tout, on verra.",     morale:5,  rep:1  },
+        { text:"🔇 Je ne fais pas de promesses.", morale:0,  rep:-1 }
+    ]},
+    { q:"Vous avez des absences. Comment compensez-vous ?", opts:[
+        { text:"🌟 Les remplaçants ont faim de montrer leur valeur !", morale:9, rep:1  },
+        { text:"📋 On adapte notre système de jeu.",                   morale:4, rep:0  },
+        { text:"😩 Ce n'est pas idéal, on verra.",                     morale:-3,rep:-1 }
+    ]},
+    { q:"C'est un derby aujourd'hui ! Qu'est-ce que ça représente ?", opts:[
+        { text:"🏟️ Le derby, ça se gagne, point final !",             morale:12, rep:3  },
+        { text:"🤝 Un match important, comme les autres.",             morale:3,  rep:0  },
+        { text:"😮 Je préfère ne pas mettre trop de pression.",        morale:1,  rep:-1 }
+    ]}
+];
+const PRESS_QUESTIONS_AFTER = {
+    win:[
+        { q:"Belle victoire ! Comment expliquez-vous cette perf ?", opts:[
+            { text:"🙏 L'équipe a été brillante, chapeau !",         morale:6, rep:2 },
+            { text:"🧠 Notre plan de jeu a fonctionné parfaitement.",morale:4, rep:1 },
+            { text:"💪 On mérite chaque point qu'on prend.",          morale:5, rep:1 }
+        ]},
+        { q:"Un joueur s'est démarqué. Votre réaction ?", opts:[
+            { text:"⭐ Il a été exceptionnel, il le mérite !",    morale:8, rep:1, boostStar:true },
+            { text:"🤝 C'est une victoire collective avant tout.", morale:5, rep:2 },
+            { text:"📈 On a des talents, il faut les exposer.",    morale:4, rep:1 }
+        ]}
+    ],
+    draw:[
+        { q:"Match nul. Satisfait ou frustré ?", opts:[
+            { text:"✅ Un point pris, on avance.",                  morale:3, rep:0 },
+            { text:"😤 On méritait les 3 points, c'est frustrant.", morale:2, rep:1 },
+            { text:"🔍 On va analyser et corriger nos lacunes.",     morale:4, rep:1 }
+        ]}
+    ],
+    loss:[
+        { q:"Défaite difficile. Que s'est-il passé ?", opts:[
+            { text:"😤 On a été mauvais, je l'assume.",          morale:4, rep:3  },
+            { text:"⚠️ L'arbitrage nous a pénalisés.",            morale:3, rep:-2 },
+            { text:"🔄 On se regroupe et on repart de l'avant.", morale:5, rep:1  }
+        ]},
+        { q:"Les supporters sifflent. Comment réagissez-vous ?", opts:[
+            { text:"🫂 Je les comprends. On doit faire mieux.",    morale:3, rep:3  },
+            { text:"💪 On va se relever, j'en suis sûr.",          morale:6, rep:1  },
+            { text:"😡 On a besoin de soutien, pas de sifflets !", morale:-2,rep:-3 }
+        ]}
+    ]
+};
+const PLAYER_REQUESTS = [
+    { id:'wants_time', trigger: p => p.position!=='GB' && (p.morale||80)<45,
+      msg: p=>`${p.name} frappe à votre porte. "Coach, je stagne sur le banc. J'ai besoin de jouer."`, icon:'🪑',
+      opts:[
+        { text:"✅ Tu joues le prochain match, c'est promis.", morale:15, action:'promise_play' },
+        { text:"📊 Ta place se mérite à l'entraînement.",      morale:-5, action:null },
+        { text:"💼 Si une offre arrive, tu peux partir.",       morale:5,  action:'open_transfer' }
+    ]},
+    { id:'wants_raise', trigger: p=>((p.goals||0)+(p.assists||0))>=6 && (p.morale||80)>55,
+      msg: p=>`${p.name} (${p.goals||0}⚽ ${p.assists||0}🅰️) exige une revalorisation.`, icon:'💰',
+      opts:[
+        { text:`✅ Augmentation +20% accordée.`,   morale:20, action:'raise_20', cost:true },
+        { text:"🤝 On renégocie en fin de saison.", morale:5,  action:null },
+        { text:"❌ Le budget ne le permet pas.",    morale:-15,action:'unhappy' }
+    ]},
+    { id:'wants_transfer', trigger: p=>(p.morale||80)<22,
+      msg: p=>`${p.name} demande formellement son transfert. "Je dois changer d'air."`, icon:'✈️',
+      opts:[
+        { text:"🚪 Je le mets sur la liste transfert.",               morale:8,  action:'list_transfer' },
+        { text:"🗣️ Discussion franche. On règle ça en interne.",      morale:10, action:'resolve' },
+        { text:"⛔ Il reste et honore son contrat.",                   morale:-10,action:'force_stay' }
+    ]},
+    { id:'agent_frere', trigger: p=>p.isLocal && !p.agentFrereHandled && (p.contract?.expiresIn||99)<=12,
+      msg: p=>`L'agent (et frère) de ${p.name} débarque. "Mon frère vaut le double !"`, icon:'👨‍👦',
+      opts:[
+        { text:"😤 On accepte (+100% salaire).",      morale:18, action:'double_wage', cost:true },
+        { text:"🤝 On négocie à +40%.",               morale:8,  action:'raise_40',   cost:true },
+        { text:"🚪 Bonne route. Il part libre à 0€.", morale:-8, action:'let_go' }
+    ]},
+    { id:'greve_salaires', trigger: (p,ctx)=>ctx.budgetNegative && Math.random()<0.3,
+      msg: p=>`⚠️ GRÈVE ! ${p.name} mène une fronde. "Les salaires n'ont pas été payés !"`, icon:'✊',
+      opts:[
+        { text:"💸 Payer immédiatement (2 mois).",                morale:20, action:'pay_strike',  cost:true },
+        { text:"🗣️ Promettre un paiement d'ici 2 matchdays.",     morale:5,  action:'promise_pay' },
+        { text:"😤 Rappeler leurs obligations contractuelles.",   morale:-20,action:'threaten' }
+    ]},
+    { id:'double_nationalite', trigger: p=>(p.ovr||70)>=76 && !p.nationalityHandled && Math.random()<0.15,
+      msg: p=>`${p.name} est convoqué par une sélection européenne ET africaine. "Vous me conseillez quoi ?"`, icon:'🌍',
+      opts:[
+        { text:"🌍 Joue pour le pays africain !",              morale:12, action:'african_nat' },
+        { text:"🇪🇺 C'est ta carrière, choisis librement.",     morale:5,  action:'free_choice' },
+        { text:"🏠 Je préfère que tu restes concentré sur nous.",morale:-5,action:'block_nat' }
+    ]}
+];
+const CAREER_MILESTONES = [
+    { id:'first_10_goals', trigger:p=>(p.goals||0)>=10 && !(p.milestones||[]).includes('first_10_goals'),
+      msg:p=>`⭐ ${p.name} atteint les 10 buts ! Les recruteurs européens s'y intéressent...`, reputationGain:3, valueMultiplier:1.3 },
+    { id:'first_20_goals', trigger:p=>(p.goals||0)>=20 && !(p.milestones||[]).includes('first_20_goals'),
+      msg:p=>`🔥 PHÉNOMÈNE ! ${p.name} est à 20 buts. Des offres d'Europe arrivent !`, reputationGain:6, valueMultiplier:2.0 },
+    { id:'academy_star', trigger:p=>p.fromAcademy && (p.ovr||70)>=78 && !(p.milestones||[]).includes('academy_star'),
+      msg:p=>`🌱→⭐ ${p.name}, formé à votre académie, est devenu une vraie star !`, reputationGain:5, valueMultiplier:1.5 },
+    { id:'veteran_captain', trigger:p=>(p.age||25)>=32 && (p.ovr||70)>=80 && !(p.milestones||[]).includes('veteran_captain'),
+      msg:p=>`🦁 ${p.name} (${p.age} ans) est un monument vivant de votre club.`, reputationGain:2, valueMultiplier:1.0 }
+];
+const TROPHY_NAMES = {
+    league_winner:'🏆 Champion', league_top2:'🥈 Vice-champion',
+    league_top4:'🎯 Top 4', caf_winner:'🌍 Vainqueur CAF',
+    caf_finalist:'🌍 Finaliste CAF', fair_play:'🤝 Fair-Play'
+};
+
 class Generator {
     static randomName(regionId = 'francophone') {
         const pool = REGIONAL_NAMES[regionId] || REGIONAL_NAMES.francophone;
@@ -4594,6 +4761,15 @@ class GameManager {
         this.monthlyRevenue = 0;
         this.monthlyExpenses = 0;
         this.cafData = null; // CAF Champions League
+        this.presidentObjective = null;
+        this.trophies = [];
+        this._trainingFocus = null;
+        this._currentMatchIsDerby = false;
+        this._winterMercatoDone = false;
+        this._lastSponsor = null;
+        this._tacticsBonus = 0;
+        this.currentSeason = 1;
+        this._skipNegociation = false;
 
         this.init();
     }
@@ -4694,6 +4870,7 @@ class GameManager {
         this.updateHeader();
         this.refreshAllViews();
         this.switchView('dashboard');
+        this.assignPresidentObjective();
         this.saveGame();
     }
 
@@ -5365,7 +5542,24 @@ sellPlayer(playerId) {
                 commentaryDiv.innerHTML = '<div class="text-yellow-500 font-bold mb-2">🏆 SOIRÉE AFRICAINE</div>';
             }
         }
-        this.runLiveMatch(userMatchInfo.home, userMatchInfo.away, otherMatches);
+        const _isUserHome = userMatchInfo.home.isUser;
+        const _opponent = _isUserHome ? userMatchInfo.away : userMatchInfo.home;
+        this._currentMatchIsDerby = this.isDerby(userMatchInfo.home, userMatchInfo.away);
+
+        // Générer et stocker la météo
+        const _weather = this.generateMatchWeather();
+        this._currentWeather = _weather;
+
+        // Chaîne : Scouting → Conf de presse → Match
+        this._pendingMatchCallback = () => {
+            this.showPressConference('before', null);
+            this._pendingMatchCallback = () => {
+                this.runLiveMatch(userMatchInfo.home, userMatchInfo.away, otherMatches);
+            };
+        };
+
+        // Afficher le profil adversaire (le bouton "Compris" déclenchera la conf de presse)
+        this.showOpponentProfile(_opponent);
     }
 }
 simulateAIBypassMatchday(otherMatches) {
@@ -5442,6 +5636,13 @@ simulateAIBypassMatchday(otherMatches) {
             let prizeMoney = Math.max(1000000, 15000000 - ((finalRank - 1) * 800000));
             this.budget += prizeMoney;
             this.updateHeader();
+            this.checkPresidentObjective(finalRank);
+            if(!this.trophies) this.trophies=[];
+            if(finalRank===1) this.trophies.push({type:'league_winner',season:this.currentSeason||1,rank:1});
+            else if(finalRank===2) this.trophies.push({type:'league_top2',season:this.currentSeason||1,rank:2});
+            else if(finalRank<=4) this.trophies.push({type:'league_top4',season:this.currentSeason||1,rank:finalRank});
+            this.currentSeason = (this.currentSeason||1) + 1;
+            this.assignPresidentObjective();
             setTimeout(() => app.showEndOfSeasonModal(finalRank, prizeMoney), 500);
         }
 
@@ -5487,6 +5688,25 @@ simulateAIBypassMatchday(otherMatches) {
             interval: null
         };
         
+        // === MÉTÉO & DERBY & ENTRAÎNEMENT ===
+        if(this._currentWeather) {
+            this.showWeatherBanner(this._currentWeather);
+            const _w = this._currentWeather;
+            if(_w.id==='terrain_degrade') this.logCommentary('🟫 Terrain dégradé : le jeu va être chaotique.','text-amber-600 italic');
+            else if(_w.id==='chaleur') this.logCommentary('🌡️ Chaleur étouffante. Les joueurs vont souffrir en deuxième mi-temps.','text-orange-400 italic');
+            else if(_w.id==='pluie') this.logCommentary('🌧️ Pluie forte. Terrain glissant, dribbles risqués.','text-blue-400 italic');
+        }
+        if(this._currentMatchIsDerby) {
+            this.logCommentary("🔥 C'EST UN DERBY ! L'ambiance est électrique dans les tribunes !",'text-yellow-400 font-bold text-center');
+        }
+        if(this._trainingFocus) {
+            const _focus = this._trainingFocus;
+            if(_focus.effect==='force') {
+                const _myC = this.getMyClub();
+                _myC.force = Math.round(_myC.force * (1 + _focus.value/100));
+            }
+            this._trainingFocus = null;
+        }
         this.logCommentary(`L'arbitre siffle le coup d'envoi. C'est parti !`, "text-brand-400 border-brand-500/20");
         this.animatePitch('center');
 
@@ -5597,6 +5817,21 @@ simulateAIBypassMatchday(otherMatches) {
                 let drain = p.position === 'MIL' ? 2.5 : 1.8;
                 p.energy = Math.max(0, Math.round((p.energy || 100) - drain));
             });
+            // Drain météo supplémentaire
+            if(this._currentWeather && this._currentWeather.energyExtra > 0) {
+                [...this.liveMatch.homeStarters, ...this.liveMatch.awayStarters].forEach(p => {
+                    p.energy = Math.max(0, (p.energy||100) - this._currentWeather.energyExtra);
+                });
+            }
+            // Risque blessure météo
+            if(this._currentWeather && this._currentWeather.injuryExtra > 0) {
+                const _allS = [...this.liveMatch.homeStarters, ...this.liveMatch.awayStarters];
+                const _pw = _allS[Math.floor(Math.random()*_allS.length)];
+                if(_pw && Math.random() < this._currentWeather.injuryExtra) {
+                    _pw.injuryDays = (_pw.injuryDays||0) + 1;
+                    this.logCommentary(`🏥 Glissade ! ${_pw.name} se tord la cheville sur cette pelouse difficile.`,'text-red-400 text-[10px]');
+                }
+            }
         }
 
         // Remplacements IA
@@ -6342,10 +6577,18 @@ simulateAIBypassMatchday(otherMatches) {
         });
         this.lastMatchRatings = matchRatings;
 
+        // === POST-MATCH : séquence + conf de presse ===
+        const _isUH = this.liveMatch.home.isUser;
+        const _uS = _isUH ? this.liveMatch.homeScore : this.liveMatch.awayScore;
+        const _oS = _isUH ? this.liveMatch.awayScore : this.liveMatch.homeScore;
+        const _r6 = _uS>_oS?'win':_uS===_oS?'draw':'loss';
+        this.runPostMatchSequence(this.liveMatch.homeScore, this.liveMatch.awayScore, _isUH);
+
         this.liveMatch = null; 
         
         document.getElementById('main-header').classList.remove('hidden');
         document.getElementById('mobile-nav').classList.remove('hidden');
+        setTimeout(() => this.showPressConference('after', _r6), 3000);
         document.getElementById('live-time').classList.add('animate-pulse', 'bg-brand-500/10', 'text-brand-500'); 
         
         if(this.matchday > 0 && this.matchday % 3 === 0) {
@@ -6424,6 +6667,13 @@ simulateAIBypassMatchday(otherMatches) {
             let prizeMoney = Math.max(1000000, 15000000 - ((finalRank - 1) * 800000));
             this.budget += prizeMoney;
             this.updateHeader();
+            this.checkPresidentObjective(finalRank);
+            if(!this.trophies) this.trophies=[];
+            if(finalRank===1) this.trophies.push({type:'league_winner',season:this.currentSeason||1,rank:1});
+            else if(finalRank===2) this.trophies.push({type:'league_top2',season:this.currentSeason||1,rank:2});
+            else if(finalRank<=4) this.trophies.push({type:'league_top4',season:this.currentSeason||1,rank:finalRank});
+            this.currentSeason = (this.currentSeason||1) + 1;
+            this.assignPresidentObjective();
             setTimeout(() => app.showEndOfSeasonModal(finalRank, prizeMoney), 500);
         } else {
             // (fixtures déjà marqués joués plus haut)
@@ -8384,7 +8634,12 @@ generateFreeAgents() {
             academyLevel: this.academyLevel || 1, // Sauvegarde du niveau d'infrastructure
             monthlyRevenue: this.monthlyRevenue,
             monthlyExpenses: this.monthlyExpenses,
-            cafData: this.cafData
+            cafData: this.cafData,
+            presidentObjective: this.presidentObjective,
+            trophies: this.trophies || [],
+            _winterMercatoDone: this._winterMercatoDone || false,
+            _lastSponsor: this._lastSponsor || null,
+            currentSeason: this.currentSeason || 1
         };
 
         const json = JSON.stringify(saveData);
@@ -8420,6 +8675,11 @@ generateFreeAgents() {
         this.monthlyRevenue = data.monthlyRevenue || 0;
         this.monthlyExpenses = data.monthlyExpenses || 0;
         this.cafData = data.cafData || null;
+        this.presidentObjective = data.presidentObjective || null;
+        this.trophies = data.trophies || [];
+        this._winterMercatoDone = data._winterMercatoDone || false;
+        this._lastSponsor = data._lastSponsor || null;
+        this.currentSeason = data.currentSeason || 1;
 
         // Reconnection de l'équipe du joueur
         const league = this.globalData[this.userLeagueId];
