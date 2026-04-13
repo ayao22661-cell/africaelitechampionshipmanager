@@ -8458,9 +8458,24 @@ generateFreeAgents() {
 // =============================================
 // 💾 SAUVEGARDER LA PARTIE
     // 💾 SAUVEGARDER LA PARTIE
-    saveGame() {
+    // --- MÉTHODES DE SAUVEGARDE ET CHARGEMENT OPTIMISÉES ---
+
+// 1. SAUVEGARDE : On filtre pour ne garder que l'équipe du joueur
+saveGame() {
     try {
-        // Sauvegarde allégée des matchs pour éviter les références circulaires
+        // Clonage profond pour ne pas modifier les données en cours de jeu
+        const lightGlobalData = JSON.parse(JSON.stringify(this.globalData));
+        
+        // On vide les effectifs (squads) de tous les clubs IA
+        Object.keys(lightGlobalData).forEach(leagueId => {
+            lightGlobalData[leagueId].standings.forEach(club => {
+                if (club.name !== this.userClubName) {
+                    club.squad = []; // Suppression des données lourdes
+                }
+            });
+        });
+
+        // Allègement des matchs pour éviter les références circulaires et le poids inutile
         const lightFixtures = this.fixtures.map(f => ({
             homeName: f.home.name,
             awayName: f.away.name,
@@ -8470,11 +8485,12 @@ generateFreeAgents() {
             semiIndex: f.semiIndex !== undefined ? f.semiIndex : null,
             quarterIndex: f.quarterIndex !== undefined ? f.quarterIndex : null,
             matchday: f.matchday,
-            played: f.played
+            played: f.played,
+            result: f.played ? f.result : null
         }));
 
         const saveData = {
-            globalData: this.globalData,
+            globalData: lightGlobalData,
             userLeagueId: this.userLeagueId,
             userClubName: this.userClubName,
             budget: this.budget,
@@ -8486,7 +8502,7 @@ generateFreeAgents() {
             fixtures: lightFixtures,
             reputation: this.reputation,
             academy: this.academy,
-            academyLevel: this.academyLevel || 1, // Sauvegarde du niveau d'infrastructure
+            academyLevel: this.academyLevel || 1,
             monthlyRevenue: this.monthlyRevenue,
             monthlyExpenses: this.monthlyExpenses,
             cafData: this.cafData,
@@ -8497,22 +8513,22 @@ generateFreeAgents() {
 
         const json = JSON.stringify(saveData);
         localStorage.setItem('AECM_Save', json);
-        console.log("Jeu sauvegardé ! Taille :", (json.length / 1024).toFixed(1) + " KB");
+        console.log("✅ Sauvegarde optimisée ! Taille :", (json.length / 1024).toFixed(1) + " KB");
     } catch(e) {
-        console.error("Sauvegarde échouée :", e);
-        alert("⚠️ Mémoire pleine ! Impossible de sauvegarder.");
+        console.error("❌ Erreur de sauvegarde :", e);
+        alert("⚠️ Mémoire pleine ! Votre navigateur ne peut plus stocker de données.");
     }
 }
 
-    // 📂 CHARGER LA PARTIE
-    loadGame() {
+// 2. CHARGEMENT : On restaure et on régénère les effectifs IA manquants
+loadGame() {
     const savedData = localStorage.getItem('AECM_Save');
     if (!savedData) return false;
 
     try {
         const data = JSON.parse(savedData);
         
-        // Restauration des variables simples
+        // Restauration des données de base
         this.globalData = data.globalData;
         this.userLeagueId = data.userLeagueId;
         this.userClubName = data.userClubName;
@@ -8524,7 +8540,7 @@ generateFreeAgents() {
         this.userTactics = data.userTactics || this.userTactics;
         this.reputation = data.reputation || 30;
         this.academy = data.academy || [];
-        this.academyLevel = data.academyLevel || 1; // Chargement du niveau
+        this.academyLevel = data.academyLevel || 1;
         this.monthlyRevenue = data.monthlyRevenue || 0;
         this.monthlyExpenses = data.monthlyExpenses || 0;
         this.cafData = data.cafData || null;
@@ -8532,66 +8548,45 @@ generateFreeAgents() {
         this.trophies = data.trophies || [];
         this.currentSeason = data.currentSeason || 1;
 
-        // Reconnection de l'équipe du joueur
-        const league = this.globalData[this.userLeagueId];
-        const myClub = league.standings.find(c => c.name === this.userClubName);
+        // --- ÉTAPE CRUCIALE : Régénération des effectifs IA vides ---
+        Object.keys(this.globalData).forEach(leagueId => {
+            const league = this.globalData[leagueId];
+            league.standings.forEach(club => {
+                if (club.name !== this.userClubName && (!club.squad || club.squad.length === 0)) {
+                    // On utilise votre méthode existante pour remplir le club
+                    this.generateAISquad(club); 
+                }
+            });
+        });
+
+        // Reconnection de l'équipe du joueur pour les références d'interface
+        const myLeague = this.globalData[this.userLeagueId];
+        const myClub = myLeague.standings.find(c => c.name === this.userClubName);
         this.userSquad = myClub.squad;
 
-        // Reconstruction intelligente des matchs (Fixtures)
+        // Reconstruction des références d'objets pour les Fixtures
         this.fixtures = (data.fixtures || []).map(f => {
             let home, away;
-
-            // Cas 1 : Match de championnat classique
-            if (f.type === 'LEAGUE' && f.leagueId) {
-                const lg = this.globalData[f.leagueId];
-                home = lg.standings.find(t => t.name === f.homeName);
-                away = lg.standings.find(t => t.name === f.awayName);
-            } 
-            // Cas 2 : Match de poule CAF
-            else if (f.type === 'CAF_GROUP' && this.cafData && this.cafData.groups) {
-                const group = this.cafData.groups[f.groupId];
-                if (group) {
-                    home = group.find(t => t.name === f.homeName);
-                    away = group.find(t => t.name === f.awayName);
-                }
-            }
-
-            // Cas 3 : Sécurité / Phases finales CAF
-            // Si l'équipe n'est pas trouvée (ex: finale), on cherche dans toutes les ligues
-            if (!home || !away) {
-                Object.values(this.globalData).forEach(l => {
-                    if (!home) home = l.standings.find(t => t.name === f.homeName);
-                    if (!away) away = l.standings.find(t => t.name === f.awayName);
-                });
-            }
+            // Recherche du club dans toutes les ligues par son nom
+            Object.values(this.globalData).forEach(l => {
+                if (!home) home = l.standings.find(t => t.name === f.homeName);
+                if (!away) away = l.standings.find(t => t.name === f.awayName);
+            });
 
             return { 
+                ...f,
                 home, 
-                away, 
-                leagueId: f.leagueId, 
-                type: f.type, 
-                groupId: f.groupId,
-                semiIndex: f.semiIndex,
-                quarterIndex: f.quarterIndex !== undefined ? f.quarterIndex : null,
-                matchday: f.matchday, 
-                played: f.played 
+                away 
             };
         });
 
+        console.log("📂 Partie chargée et effectifs IA régénérés.");
         return true;
     } catch (e) {
-        console.error("Erreur de chargement :", e);
+        console.error("❌ Erreur de chargement :", e);
         return false;
     }
 }
-
-    // 🗑️ SUPPRIMER LA SAUVEGARDE
-    deleteSave() {
-        if (confirm("🚨 Attention ! Vous allez perdre toute votre progression. Voulez-vous vraiment recommencer à zéro ?")) {
-            localStorage.removeItem('AECM_Save');
-            window.location.reload(); // Recharge la page web pour réinitialiser le jeu
-        }
-    }
 
 // --- GESTION DU STAFF ---
     updateStaffUI() {
