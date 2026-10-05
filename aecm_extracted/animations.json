@@ -1,0 +1,686 @@
+[
+ {
+  "clip": "fallen_idle",
+  "bibliotheque": "football",
+  "duree_s": 1.5,
+  "boucle": true,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "header",
+  "bibliotheque": "football",
+  "duree_s": 1.42,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "header_soccerball",
+  "bibliotheque": "football",
+  "duree_s": 1.88,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "header_soccerball_2",
+  "bibliotheque": "football",
+  "duree_s": 4.17,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.01,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "jog_backward",
+  "bibliotheque": "football",
+  "duree_s": 0.79,
+  "boucle": true,
+  "deplacement_racine_avant_m": -1.88,
+  "deplacement_racine_lateral_m": -0.0,
+  "vitesse_avant_m_s": -2.38
+ },
+ {
+  "clip": "jog_backward_diagonal",
+  "bibliotheque": "football",
+  "duree_s": 0.71,
+  "boucle": true,
+  "deplacement_racine_avant_m": -1.08,
+  "deplacement_racine_lateral_m": -1.11,
+  "vitesse_avant_m_s": -1.53
+ },
+ {
+  "clip": "jog_backward_diagonal_2",
+  "bibliotheque": "football",
+  "duree_s": 0.83,
+  "boucle": true,
+  "deplacement_racine_avant_m": -1.52,
+  "deplacement_racine_lateral_m": 1.5,
+  "vitesse_avant_m_s": -1.82
+ },
+ {
+  "clip": "jog_forward",
+  "bibliotheque": "football",
+  "duree_s": 0.83,
+  "boucle": true,
+  "deplacement_racine_avant_m": 2.07,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 2.48
+ },
+ {
+  "clip": "jog_forward_diagonal",
+  "bibliotheque": "football",
+  "duree_s": 0.83,
+  "boucle": true,
+  "deplacement_racine_avant_m": 1.53,
+  "deplacement_racine_lateral_m": 1.55,
+  "vitesse_avant_m_s": 1.84
+ },
+ {
+  "clip": "jog_forward_diagonal_1",
+  "bibliotheque": "football",
+  "duree_s": 0.79,
+  "boucle": true,
+  "deplacement_racine_avant_m": 1.55,
+  "deplacement_racine_lateral_m": -1.55,
+  "vitesse_avant_m_s": 1.96
+ },
+ {
+  "clip": "jog_forward_diagonal_2",
+  "bibliotheque": "football",
+  "duree_s": 0.83,
+  "boucle": true,
+  "deplacement_racine_avant_m": 1.6,
+  "deplacement_racine_lateral_m": 1.62,
+  "vitesse_avant_m_s": 1.92
+ },
+ {
+  "clip": "jog_strafe_left",
+  "bibliotheque": "football",
+  "duree_s": 0.67,
+  "boucle": true,
+  "deplacement_racine_avant_m": 0.01,
+  "deplacement_racine_lateral_m": 1.93,
+  "vitesse_avant_m_s": 0.01
+ },
+ {
+  "clip": "jog_strafe_right",
+  "bibliotheque": "football",
+  "duree_s": 0.71,
+  "boucle": true,
+  "deplacement_racine_avant_m": 0.01,
+  "deplacement_racine_lateral_m": -1.66,
+  "vitesse_avant_m_s": 0.01
+ },
+ {
+  "clip": "kick_soccerball",
+  "bibliotheque": "football",
+  "duree_s": 0.54,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.01,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.02
+ },
+ {
+  "clip": "kick_soccerball_1",
+  "bibliotheque": "football",
+  "duree_s": 0.5,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "kick_soccerball_2",
+  "bibliotheque": "football",
+  "duree_s": 0.5,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "kick_up_soccerball",
+  "bibliotheque": "football",
+  "duree_s": 1.33,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.08,
+  "deplacement_racine_lateral_m": -0.06,
+  "vitesse_avant_m_s": -0.06
+ },
+ {
+  "clip": "kneeing_soccerball",
+  "bibliotheque": "football",
+  "duree_s": 0.62,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "kneeing_soccerball_2",
+  "bibliotheque": "football",
+  "duree_s": 0.88,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": -0.01,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "offensive_idle",
+  "bibliotheque": "football",
+  "duree_s": 10.54,
+  "boucle": true,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": -0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "receive_soccerball",
+  "bibliotheque": "football",
+  "duree_s": 5.12,
+  "boucle": false,
+  "deplacement_racine_avant_m": 2.73,
+  "deplacement_racine_lateral_m": -0.08,
+  "vitesse_avant_m_s": 0.53
+ },
+ {
+  "clip": "scissor_kick",
+  "bibliotheque": "football",
+  "duree_s": 2.75,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.23,
+  "deplacement_racine_lateral_m": 0.19,
+  "vitesse_avant_m_s": -0.08
+ },
+ {
+  "clip": "soccer_header",
+  "bibliotheque": "football",
+  "duree_s": 2.33,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": -0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "soccer_idle",
+  "bibliotheque": "football",
+  "duree_s": 6.17,
+  "boucle": true,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "soccer_pass",
+  "bibliotheque": "football",
+  "duree_s": 1.58,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": -0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "soccer_penalty_kick",
+  "bibliotheque": "football",
+  "duree_s": 1.5,
+  "boucle": false,
+  "deplacement_racine_avant_m": 2.89,
+  "deplacement_racine_lateral_m": -0.78,
+  "vitesse_avant_m_s": 1.92
+ },
+ {
+  "clip": "soccer_spin",
+  "bibliotheque": "football",
+  "duree_s": 1.25,
+  "boucle": false,
+  "deplacement_racine_avant_m": 3.59,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 2.87
+ },
+ {
+  "clip": "soccer_tackle",
+  "bibliotheque": "football",
+  "duree_s": 1.75,
+  "boucle": false,
+  "deplacement_racine_avant_m": 4.42,
+  "deplacement_racine_lateral_m": 0.01,
+  "vitesse_avant_m_s": 2.53
+ },
+ {
+  "clip": "soccer_tackle_1",
+  "bibliotheque": "football",
+  "duree_s": 2.71,
+  "boucle": false,
+  "deplacement_racine_avant_m": 3.78,
+  "deplacement_racine_lateral_m": 0.73,
+  "vitesse_avant_m_s": 1.4
+ },
+ {
+  "clip": "soccer_tackle_2",
+  "bibliotheque": "football",
+  "duree_s": 2.29,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": -0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "soccer_tackle_3",
+  "bibliotheque": "football",
+  "duree_s": 2.29,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": -0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "soccer_trip",
+  "bibliotheque": "football",
+  "duree_s": 1.58,
+  "boucle": false,
+  "deplacement_racine_avant_m": 3.91,
+  "deplacement_racine_lateral_m": -1.16,
+  "vitesse_avant_m_s": 2.47
+ },
+ {
+  "clip": "stall_soccerball",
+  "bibliotheque": "football",
+  "duree_s": 2.12,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "stall_soccerball_1",
+  "bibliotheque": "football",
+  "duree_s": 2.29,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "stall_soccerball_2",
+  "bibliotheque": "football",
+  "duree_s": 2.12,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "stall_soccerball_3",
+  "bibliotheque": "football",
+  "duree_s": 2.29,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "stall_soccerball_4",
+  "bibliotheque": "football",
+  "duree_s": 1.83,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.01,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "standing_up",
+  "bibliotheque": "football",
+  "duree_s": 1.67,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.05,
+  "deplacement_racine_lateral_m": -0.94,
+  "vitesse_avant_m_s": -0.03
+ },
+ {
+  "clip": "strike_forward_jog",
+  "bibliotheque": "football",
+  "duree_s": 1.25,
+  "boucle": true,
+  "deplacement_racine_avant_m": 3.03,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 2.43
+ },
+ {
+  "clip": "throw_in",
+  "bibliotheque": "football",
+  "duree_s": 2.75,
+  "boucle": false,
+  "deplacement_racine_avant_m": 3.26,
+  "deplacement_racine_lateral_m": -0.42,
+  "vitesse_avant_m_s": 1.18
+ },
+ {
+  "clip": "transition",
+  "bibliotheque": "football",
+  "duree_s": 0.75,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.01,
+  "deplacement_racine_lateral_m": -0.03,
+  "vitesse_avant_m_s": -0.01
+ },
+ {
+  "clip": "gk_body_block",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 2.62,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.69,
+  "deplacement_racine_lateral_m": 0.26,
+  "vitesse_avant_m_s": 0.26
+ },
+ {
+  "clip": "gk_body_block_2",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 2.46,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.48,
+  "deplacement_racine_lateral_m": -0.41,
+  "vitesse_avant_m_s": 0.2
+ },
+ {
+  "clip": "gk_body_block_3",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 3.38,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.23,
+  "deplacement_racine_lateral_m": 0.86,
+  "vitesse_avant_m_s": 0.07
+ },
+ {
+  "clip": "gk_catch",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 2.71,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.57,
+  "deplacement_racine_lateral_m": -0.05,
+  "vitesse_avant_m_s": 0.21
+ },
+ {
+  "clip": "gk_catch_1",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 1.25,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.53,
+  "deplacement_racine_lateral_m": -0.41,
+  "vitesse_avant_m_s": 0.43
+ },
+ {
+  "clip": "gk_catch_2",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 0.96,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.46,
+  "deplacement_racine_lateral_m": -0.34,
+  "vitesse_avant_m_s": 0.48
+ },
+ {
+  "clip": "gk_catch_3",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 2.67,
+  "boucle": false,
+  "deplacement_racine_avant_m": 4.23,
+  "deplacement_racine_lateral_m": 0.74,
+  "vitesse_avant_m_s": 1.59
+ },
+ {
+  "clip": "gk_catch_4",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 2.71,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.57,
+  "deplacement_racine_lateral_m": -0.05,
+  "vitesse_avant_m_s": 0.21
+ },
+ {
+  "clip": "gk_directing",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 7.17,
+  "boucle": false,
+  "deplacement_racine_avant_m": 1.84,
+  "deplacement_racine_lateral_m": -0.0,
+  "vitesse_avant_m_s": 0.26
+ },
+ {
+  "clip": "gk_directing_2",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 7.67,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.98,
+  "deplacement_racine_lateral_m": 0.14,
+  "vitesse_avant_m_s": -0.13
+ },
+ {
+  "clip": "gk_diving_save",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 3.17,
+  "boucle": false,
+  "deplacement_racine_avant_m": 1.86,
+  "deplacement_racine_lateral_m": 2.24,
+  "vitesse_avant_m_s": 0.59
+ },
+ {
+  "clip": "gk_diving_save_2",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 3.17,
+  "boucle": false,
+  "deplacement_racine_avant_m": 1.06,
+  "deplacement_racine_lateral_m": -2.81,
+  "vitesse_avant_m_s": 0.33
+ },
+ {
+  "clip": "gk_drop_kick",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 3.88,
+  "boucle": false,
+  "deplacement_racine_avant_m": 3.46,
+  "deplacement_racine_lateral_m": -0.24,
+  "vitesse_avant_m_s": 0.89
+ },
+ {
+  "clip": "gk_idle",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 4.62,
+  "boucle": true,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": -0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "gk_idle_2",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 3.33,
+  "boucle": true,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "gk_miss",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 2.83,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.58,
+  "deplacement_racine_lateral_m": -0.52,
+  "vitesse_avant_m_s": 0.2
+ },
+ {
+  "clip": "gk_overhand_throw",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 2.79,
+  "boucle": false,
+  "deplacement_racine_avant_m": 3.93,
+  "deplacement_racine_lateral_m": 0.03,
+  "vitesse_avant_m_s": 1.41
+ },
+ {
+  "clip": "gk_pass",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 3.12,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.82,
+  "deplacement_racine_lateral_m": 0.13,
+  "vitesse_avant_m_s": 0.26
+ },
+ {
+  "clip": "gk_placing_ball",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 7.96,
+  "boucle": false,
+  "deplacement_racine_avant_m": 3.42,
+  "deplacement_racine_lateral_m": 0.08,
+  "vitesse_avant_m_s": 0.43
+ },
+ {
+  "clip": "gk_placing_ball_2",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 7.96,
+  "boucle": false,
+  "deplacement_racine_avant_m": 3.42,
+  "deplacement_racine_lateral_m": 0.08,
+  "vitesse_avant_m_s": 0.43
+ },
+ {
+  "clip": "gk_scoop",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 2.58,
+  "boucle": false,
+  "deplacement_racine_avant_m": 4.06,
+  "deplacement_racine_lateral_m": -0.51,
+  "vitesse_avant_m_s": 1.57
+ },
+ {
+  "clip": "gk_sidestep",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 0.5,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 1.2,
+  "vitesse_avant_m_s": 0.01
+ },
+ {
+  "clip": "gk_sidestep_2",
+  "bibliotheque": "goalkeeper",
+  "duree_s": 0.5,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": -1.57,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "cel_bboy_hip_hop_move",
+  "bibliotheque": "celebration",
+  "duree_s": 2.17,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.01,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "cel_breakdance_1990",
+  "bibliotheque": "celebration",
+  "duree_s": 3.5,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.32,
+  "deplacement_racine_lateral_m": 1.46,
+  "vitesse_avant_m_s": 0.09
+ },
+ {
+  "clip": "cel_brutal_assassination",
+  "bibliotheque": "celebration",
+  "duree_s": 4.92,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.17,
+  "deplacement_racine_lateral_m": 0.6,
+  "vitesse_avant_m_s": 0.04
+ },
+ {
+  "clip": "cel_capoeira",
+  "bibliotheque": "celebration",
+  "duree_s": 3.42,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.01,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "cel_chapa-giratoria",
+  "bibliotheque": "celebration",
+  "duree_s": 3.0,
+  "boucle": false,
+  "deplacement_racine_avant_m": 1.56,
+  "deplacement_racine_lateral_m": 1.07,
+  "vitesse_avant_m_s": 0.52
+ },
+ {
+  "clip": "cel_dying",
+  "bibliotheque": "celebration",
+  "duree_s": 4.38,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.04,
+  "deplacement_racine_lateral_m": -0.34,
+  "vitesse_avant_m_s": 0.01
+ },
+ {
+  "clip": "cel_fist_fight_b",
+  "bibliotheque": "celebration",
+  "duree_s": 4.67,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.79,
+  "deplacement_racine_lateral_m": 0.72,
+  "vitesse_avant_m_s": -0.17
+ },
+ {
+  "clip": "cel_robot_hip_hop_dance",
+  "bibliotheque": "celebration",
+  "duree_s": 15.42,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "cel_shuffling",
+  "bibliotheque": "celebration",
+  "duree_s": 7.5,
+  "boucle": false,
+  "deplacement_racine_avant_m": 0.0,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": 0.0
+ },
+ {
+  "clip": "cel_stepping_backward",
+  "bibliotheque": "celebration",
+  "duree_s": 1.83,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.51,
+  "deplacement_racine_lateral_m": 0.0,
+  "vitesse_avant_m_s": -0.28
+ },
+ {
+  "clip": "cel_swing_dancing",
+  "bibliotheque": "celebration",
+  "duree_s": 5.17,
+  "boucle": false,
+  "deplacement_racine_avant_m": -0.01,
+  "deplacement_racine_lateral_m": 0.01,
+  "vitesse_avant_m_s": -0.0
+ },
+ {
+  "clip": "cel_thriller_part_3",
+  "bibliotheque": "celebration",
+  "duree_s": 25.54,
+  "boucle": false,
+  "deplacement_racine_avant_m": -3.96,
+  "deplacement_racine_lateral_m": -1.09,
+  "vitesse_avant_m_s": -0.16
+ }
+]
