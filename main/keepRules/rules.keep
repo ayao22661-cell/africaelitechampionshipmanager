@@ -1,5 +1,0 @@
-# Le pont JS <-> natif est appelé par réflexion depuis la WebView : R8 ne
-# doit ni renommer ni supprimer ses méthodes.
--keepclassmembers class com.kwenistudio.aecm.AndroidBridge {
-    @android.webkit.JavascriptInterface <methods>;
-}
