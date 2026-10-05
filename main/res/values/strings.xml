@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">AECM</string>
+    <string name="purchase_pending">Paiement en attente : l\'achat sera livré dès sa validation par Google Play.</string>
+    <string name="billing_unavailable">Boutique Google Play indisponible pour le moment.</string>
+    <string name="games_not_configured">Classements pas encore configurés.</string>
+</resources>

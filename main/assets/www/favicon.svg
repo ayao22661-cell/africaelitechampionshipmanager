@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 270">
+  <path d="M100,0 L200,30 L200,210 L100,270 L0,210 L0,30 Z" fill="#ea580c" stroke="white" stroke-width="10"/>
+  <path d="M100,14 L186,40 L186,205 L100,256 L14,205 L14,40 Z" fill="#ea580c" stroke="white" stroke-width="4"/>
+  <text x="100" y="145" text-anchor="middle" font-family="Arial, sans-serif" font-weight="800" font-size="52" fill="white">AEMC</text>
+  <text x="100" y="205" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="46" fill="white">26</text>
+</svg>
