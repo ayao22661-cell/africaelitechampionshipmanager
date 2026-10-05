@@ -388,18 +388,31 @@
         } else if (ev.type === 'save' && P) {
             playOnce(P, Math.random() < 0.5 ? 'gk_diving_save' : 'gk_diving_save_2', 1.5, { fade: 0.1 });
         } else if (ev.type === 'goal') {
-            // gardien battu
-            const other = ev.side === 'H' ? 'A' : 'H';
-            const gk = S.players[other][0];
-            if (gk) playOnce(gk, 'gk_miss', 1.3, { fade: 0.1 });
-            // célébration du buteur, quand le ballon arrive au but
+            // Le ballon arrive au fond des filets : tout est calé sur SON arrivée.
             const sh = (typeof MATCHSIM !== 'undefined') ? MATCHSIM.shotFly : null;
             const delay = sh ? Math.max(0, sh.t0 + sh.dur - now()) : 0;
+            // gardien battu : il plonge pendant que le ballon arrive, pas avant
+            const other = ev.side === 'H' ? 'A' : 'H';
+            const gk = S.players[other][0];
+            if (gk) schedule(Math.max(0, delay - 350), () => playOnce(gk, 'gk_miss', 1.3, { fade: 0.1 }));
+            const pick = () => CELEBRATIONS.find(c => S.clips.has(c) && Math.random() < 0.34) || CELEBRATIONS.find(c => S.clips.has(c));
+            // célébration du buteur : il a le temps de la jouer en entier (le moteur
+            // retient le jeu pendant ce temps-là)
             const scorer = P;
-            if (scorer) schedule(delay + 80, () => {
-                const clip = CELEBRATIONS.find(c => S.clips.has(c) && Math.random() < 0.34) || CELEBRATIONS.find(c => S.clips.has(c));
-                if (clip) playOnce(scorer, clip, 1.0, { fade: 0.15, freeze: true, frac: 0.95, max: 2400 });
+            if (scorer) schedule(delay + 120, () => {
+                const clip = pick();
+                if (clip) playOnce(scorer, clip, 1.0, { fade: 0.15, freeze: true, frac: 1.0, max: 3200 });
             });
+            // les trois coéquipiers les plus proches viennent le féliciter
+            if (scorer) {
+                const mates = S.players[ev.side].filter(Q => Q !== scorer && !Q.isGK)
+                    .sort((a, b) => Math.hypot(a.x - scorer.x, a.z - scorer.z) - Math.hypot(b.x - scorer.x, b.z - scorer.z))
+                    .slice(0, 3);
+                mates.forEach((Q, k) => schedule(delay + 1100 + k * 220, () => {
+                    const clip = pick();
+                    if (clip) playOnce(Q, clip, 1.0, { fade: 0.2, frac: 0.8, max: 1800 });
+                }));
+            }
         }
     }
 

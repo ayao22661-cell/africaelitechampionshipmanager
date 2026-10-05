@@ -1,3 +1,31 @@
+# Correctif animation du match — sauts, penalties, coups francs, célébrations (05/10/2026)
+
+**Cause racine** : l'horloge du match (une minute toutes les 1,1 à 3,8 s) donnait un nouvel ordre à la
+simulation *avant* que l'action précédente soit terminée. Chaque ordre annulait la passe ou le tir en
+cours et reposait le ballon ailleurs : d'où les ballons qui « sautent », les joueurs qui se téléportent
+et les célébrations coupées. Les penalties, coups francs et corners n'avaient aucune mise en scène
+propre : le tireur frappait depuis n'importe où.
+
+| Problème | Correction |
+|----------|------------|
+| Ballon qui saute au lieu d'être joué | Le ballon voyage toujours depuis sa position réelle (`rebind`) : nouvelle passe, récupération, relance du gardien, engagement, remise au point. Un ordre qui ne change rien (« on attaque déjà ») n'annule plus la passe en vol |
+| Joueurs qui se téléportent | `commit()` repartait de l'ancienne *cible* au lieu de la position réellement occupée à l'écran : corrigé (saut max. mesuré par image : 12 m → 0,19 m) |
+| Tir qui apparaît dans la surface | Le tireur finit sa course avec le ballon au pied, puis frappe ; le geste de frappe est joué juste avant le départ du ballon |
+| Penalties jamais tirés / mal placés | Scène dédiée : ballon sur le point de penalty (11 m), tireur qui prend son élan, gardien sur sa ligne, tous les autres hors de la surface |
+| Coups francs mal placés | Ballon posé à 19-30 m du but, mur de 4 joueurs à 9,15 m sur la ligne ballon → but, gardien décalé, attaquants et défenseurs dans la surface |
+| Corners | Ballon au piquet, tireur dédié, attaquants/défenseurs dans la surface, centre enroulé jusqu'au buteur puis frappe |
+| Corners / coups francs sans tir (≈ 85 %) | Désormais joués aussi : installation, tireur, remise en jeu à un partenaire |
+| Pas le temps de célébrer | Le ballon reste au fond des filets, le buteur célèbre ~3,8 s, ses coéquipiers viennent le féliciter, **puis** engagement. L'horloge du match est gelée pendant toute la scène |
+| Résultat affiché avant l'arrivée du ballon | Score, commentaire et son tombent 0,3 s avant que le ballon touche le filet ; le ballon va où le résultat l'exige (filet, gardien, à côté) |
+| Gardien qui plonge trop tôt (3D) | Plongeon calé sur l'arrivée du ballon |
+| Intervalle de l'horloge codé en dur (800 ms) après un remplacement | Reprend le tempo choisi (Lent / Normal / Rapide) |
+
+Banc d'essai : `tests/sim_test.js` (Node, sans navigateur) rejoue 150 ordres aléatoires et 10 scènes
+(penalty, coup franc, corner, tir, avec but / arrêt / hors cadre) aux 3 tempos et mesure le déplacement du
+ballon et des joueurs à chaque image de 16 ms. Résultat : 0 saut de ballon, déplacement max. d'un joueur 0,19 m par image.
+
+---
+
 # Changelog — Audit & correctifs AECM (25-26/07/2026)
 
 **75 correctifs et 2 fonctionnalités** appliqués sur 114 points identifiés (dont 9 bugs découverts en cours de correction, absents de l'audit initial).

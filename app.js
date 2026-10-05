@@ -5290,6 +5290,7 @@ const MATCHSIM = {
         this.ball = { x: 50, y: 50, z: 0, side: 'H', idx: 9, fly: null };
         this.phase = 'kickoff';
         this.t0 = this.now();
+        this.sceneUntil = 0; this.holdUntil = 0; this._later = []; this.spot = null; this.eta = 0; this.curDur = 0;
         this.locked = 0;        // ticks pendant lesquels le moteur de match impose la scène
         this.active = true;
         this.applyTargets();
@@ -5536,8 +5537,16 @@ const MATCHSIM = {
         });
     },
 
-    commit(durMs) {
+    commit(durMs, speedMul) {
         const sec = (durMs || this.TICK) / 1000;
+        // Un déplacement court (course d'élan, célébration) s'interpole sur SA durée,
+        // sinon les joueurs mettent un tour entier à parcourir trois mètres.
+        // FIX #TELEPORT : un nouvel ordre arrivé avant la fin de la course précédente
+        // repartait de l'ancienne CIBLE (px = x) : le joueur sautait. On repart de la
+        // position réellement occupée à l'instant présent.
+        ['H', 'A'].forEach(k => this.team(k).p.forEach(p => { const n = this.playerNow(k, p.i); p.cx = n.x; p.cy = n.y; }));
+        this.curDur = (durMs && durMs < this.TICK) ? durMs : this.TICK;
+        const mul = speedMul || 1;
         this.recordHeat();
         ['H', 'A'].forEach(k => {
             if (this.brk && this.brk[k] > 0) this.brk[k]--;
@@ -5551,15 +5560,15 @@ const MATCHSIM = {
             T.refY += (this.ball.y - T.refY) * 0.20;
         });
         ['H', 'A'].forEach(k => this.team(k).p.forEach(p => {
-            p.px = p.x; p.py = p.y;
-            const maxStep = (p.role === 'GK' ? this.GK_SPEED : this.TOP_SPEED) * sec;
-            let dx = p.tx - p.x, dy = p.ty - p.y;
+            p.px = p.cx; p.py = p.cy;
+            const maxStep = (p.role === 'GK' ? this.GK_SPEED : this.TOP_SPEED) * sec * mul;
+            let dx = p.tx - p.cx, dy = p.ty - p.cy;
             let d = Math.hypot(dx, dy);
             if (d > maxStep) {
                 // Trop loin pour ce laps de temps : on avance dans la bonne
                 // direction, on finira le trajet aux tours suivants.
                 const r = maxStep / d;
-                p.tx = p.x + dx * r; p.ty = p.y + dy * r;
+                p.tx = p.cx + dx * r; p.ty = p.cy + dy * r;
                 d = maxStep;
             }
             p.run = this.clamp(d / maxStep, 0, 1);
@@ -5573,7 +5582,7 @@ const MATCHSIM = {
     playerNow(key, idx) {
         const p = this.team(key).p[idx];
         if (!p) return { x: 50, y: 50 };
-        const a = this.clamp((this.now() - (this.tickAt || 0)) / this.TICK, 0, 1);
+        const a = this.clamp((this.now() - (this.tickAt || 0)) / (this.curDur || this.TICK), 0, 1);
         return { x: p.px + (p.x - p.px) * a, y: p.py + (p.y - p.py) * a };
     },
 
@@ -5833,6 +5842,10 @@ const MATCHSIM = {
     },
 
     glue(snap) {
+        // FIX #TELEPORT : « snap » posait le ballon sur la position FINALE du joueur,
+        // alors que celui-ci n'y est pas encore : le ballon sautait. On le fait
+        // maintenant voyager jusqu'au porteur depuis l'endroit où il se trouve.
+        if (snap) { this.rebind(this.ball.side, this.ball.idx); return; }
         const T = this.team(this.ball.side);
         const q = this.team(this.ball.side).p[this.ball.idx];
         const p = snap && q ? { x: q.x, y: q.y } : this.playerNow(this.ball.side, this.ball.idx);
@@ -5841,32 +5854,94 @@ const MATCHSIM = {
         this.ball.z = 0;
     },
 
+    // Le ballon change de porteur : il VOYAGE depuis sa position actuelle jusqu'au
+    // pied du nouveau porteur (jamais de téléportation).
+    rebind(side, idx, peak) {
+        // Position réelle du ballon : si rien ne le porte (vol en cours) on la lit ; sinon
+        // on garde la dernière position connue — surtout pas re-coller le ballon au
+        // NOUVEAU porteur avant de partir de là (c'était la source du saut).
+        let fx = this.ball.x, fy = this.ball.y;
+        if (this.ball.fly || this.shotFly) { const b = this.ballNow(); fx = b.x; fy = b.y; }
+        this.ball.side = side; this.ball.idx = idx;
+        this.ball.fixed = false; this.ball.hard = false; this.shotFly = null;
+        const T = this.team(side), p = this.playerNow(side, idx);
+        const ex = p.x + T.dir * 0.9, ey = p.y + 0.4;
+        const d = Math.hypot(ex - fx, ey - fy);
+        if (d < 0.35) { this.ball.fly = null; return; }
+        const slow = this.TICK / 1100;
+        this.ball.fly = {
+            fromX: fx, fromY: fy, side, idx, t0: this.now(),
+            dur: this.clamp(d * 22 * slow, 260, 2000),
+            peak: peak != null ? peak : (d > 14 ? 1.2 : 0.3)
+        };
+    },
+
+    // File d'actions différées (événements 3D calés sur le ballon)
+    later(ms, fn) { (this._later || (this._later = [])).push({ at: this.now() + ms, fn }); },
+    runLater() {
+        const q = this._later;
+        if (!q || !q.length) return;
+        const t = this.now(), due = [];
+        this._later = q.filter(e => { if (e.at <= t) { due.push(e); return false; } return true; });
+        due.forEach(e => { try { e.fn.call(this); } catch (err) {} });
+    },
+
+    // Une scène (penalty, but, célébration) verrouille l'horloge du match
+    sceneUntil: 0,
+    holdScene(ms) { this.sceneUntil = Math.max(this.sceneUntil || 0, this.now() + (ms || 0)); },
+    sceneBusy() { return this.now() < (this.sceneUntil || 0); },
+    shotEta() { return Math.max(0, (this.eta || 0) - this.now()); },
+
     // Position du ballon à l'instant présent (appelée à chaque frame)
     ballNow() {
+        this.runLater();
         const f = this.ball.fly;
         if (f) {
             const a = this.clamp((this.now() - f.t0) / f.dur, 0, 1);
-            const tgt = this.playerNow(f.side, f.idx);
-            const T = this.team(f.side);
-            const ex = tgt.x + T.dir * 0.9, ey = tgt.y + 0.4;
+            let ex, ey;
+            if (f.toX != null) { ex = f.toX; ey = f.toY; }
+            else {
+                const tgt = this.playerNow(f.side, f.idx);
+                const T = this.team(f.side);
+                ex = tgt.x + T.dir * 0.9; ey = tgt.y + 0.4;
+            }
             this.ball.x = f.fromX + (ex - f.fromX) * a;
             this.ball.y = f.fromY + (ey - f.fromY) * a;
             this.ball.z = f.peak * 4 * a * (1 - a);
-            if (a >= 1) { this.ball.fly = null; this.ball.z = 0; }
+            if (a >= 1) {
+                this.ball.fly = null; this.ball.z = 0;
+                if (f.rest) { this.ball.fixed = true; this.ball.hard = !!f.hard; }
+                if (f.then) f.then.call(this);
+            }
             return this.ball;
         }
         if (this.shotFly) {
-            const s = this.shotFly;
-            const a = this.clamp((this.now() - s.t0) / s.dur, 0, 1);
+            const s = this.shotFly, t = this.now();
+            if (t < s.t0) {
+                // course d'élan : le ballon reste sur son point ou collé au pied
+                if (s.stay) { this.ball.x = s.fromX; this.ball.y = s.fromY; this.ball.z = 0; }
+                else this.glue();
+                return this.ball;
+            }
+            if (!s.started) { s.started = true; if (!s.stay) { s.fromX = this.ball.x; s.fromY = this.ball.y; } }
+            const a = this.clamp((t - s.t0) / s.dur, 0, 1);
             this.ball.x = s.fromX + (s.toX - s.fromX) * a;
             this.ball.y = s.fromY + (s.toY - s.fromY) * a;
             this.ball.z = s.peak * 4 * a * (1 - a);
-            if (a >= 1) { this.shotFly = null; this.pendingGoalKick = this.other(this.ball.side); }
+            if (a >= 1) {
+                this.shotFly = null; this.ball.z = 0;
+                // le ballon reste là où il s'arrête (filet, gardien, hors cadre)
+                this.ball.fixed = true; this.ball.hard = true;
+                this.pendingGoalKick = this.other(this.ball.side);
+            }
             return this.ball;
         }
         if (this.ball.fixed) {
+            if (this.ball.hard) return this.ball;
             const p = this.playerNow(this.ball.side, this.ball.idx);
-            if (Math.hypot(p.x - this.ball.x, p.y - this.ball.y) < 2.6) this.ball.fixed = false;
+            // Le porteur arrive sur le ballon arrêté : il le récupère en douceur
+            // (petit trajet vers son pied) au lieu de le faire sauter à son côté.
+            if (Math.hypot(p.x - this.ball.x, p.y - this.ball.y) < 2.6) { this.rebind(this.ball.side, this.ball.idx, 0.1); return this.ball; }
             else return this.ball;
         }
         this.glue();
@@ -5880,11 +5955,25 @@ const MATCHSIM = {
         if (!this.active) return;
         opts = opts || {};
         // Le moteur de match est le patron : son ordre annule toute action
-        // encore en vol et toute relance de but en attente.
+        // encore en vol et toute relance de but en attente. MAIS le ballon, lui,
+        // garde sa position actuelle : on le fait voyager, on ne le téléporte pas.
+        this.ballNow();
+        const cur = { x: this.ball.x, y: this.ball.y };
+        // Certains ordres ne changent rien (« on attaque déjà ») : dans ce cas on ne
+        // doit RIEN annuler — une passe en vol continuerait sinon dans le vide.
+        const keep = { fly: this.ball.fly, shot: this.shotFly, pgk: this.pendingGoalKick, later: this._later,
+            fixed: this.ball.fixed, hard: this.ball.hard, outcome: this.outcome, spot: this.spot };
+        const restore = () => {
+            this.ball.fly = keep.fly; this.shotFly = keep.shot; this.pendingGoalKick = keep.pgk; this._later = keep.later;
+            this.ball.fixed = keep.fixed; this.ball.hard = keep.hard; this.outcome = keep.outcome; this.spot = keep.spot;
+        };
         this.pendingGoalKick = null;
+        this.outcome = null; this._later = [];
+        if (state !== 'home_shot' && state !== 'away_shot') this.spot = null;
         this.ball.fly = null;
         this.shotFly = null;
-        this.ball.fixed = false;
+        this.ball.fixed = false; this.ball.hard = false;
+        this.ball.x = cur.x; this.ball.y = cur.y; this.ball.z = 0;
         const setSide = (k) => { this.ball.side = k; };
 
         if (state === 'center') {
@@ -5900,10 +5989,15 @@ const MATCHSIM = {
             this.ball.idx = (att[0] || T.p[9]).i;
             const c = T.p[this.ball.idx];
             c.tx = 50 - T.dir * 1.5; c.ty = 50;
-            this.ball.fly = null; this.shotFly = null;
             this.phase = 'kickoff'; this.locked = 1;
             this.commit(this.TICK * 1.1);
-            this.placeBall(50, 50);   // ballon posé sur le point central
+            // Le ballon retourne au point central en roulant (plus de téléportation)
+            const dc = Math.hypot(50 - cur.x, 50 - cur.y);
+            if (dc < 1) { this.placeBall(50, 50); }
+            else {
+                this.ball.fly = { fromX: cur.x, fromY: cur.y, toX: 50, toY: 50, t0: this.now(),
+                    dur: this.clamp(dc * 34, 900, 2400), peak: 0.25, rest: true, hard: false };
+            }
             return;
         }
 
@@ -5911,31 +6005,39 @@ const MATCHSIM = {
             const k = state === 'home_attack' ? 'H' : 'A';
             const Tk = this.team(k);
             // Cette équipe attaque déjà dans le bon camp : on ne coupe rien.
-            if (this.ball.side === k && (this.ball.x - 50) * Tk.dir > 6) return;
+            if (this.ball.side === k && (this.ball.x - 50) * Tk.dir > 6) { restore(); return; }
             setSide(k);
             const T = this.team(k);
             // 1. on annonce d'abord OÙ se passe l'action, 2. les deux blocs se
             // recomposent autour, 3. on désigne le porteur le plus proche.
-            this.ball.x = 50 + T.dir * (16 + Math.random() * 14);
-            this.ball.y = 25 + Math.random() * 50;
+            // Le ballon PROGRESSE par étapes depuis où il est : jamais de saut.
+            const wantX = 50 + T.dir * (16 + Math.random() * 14);
+            const nx = this.clamp(cur.x + this.clamp(wantX - cur.x, -24, 24), 5, 95);
+            const ny = this.clamp(cur.y + (Math.random() * 30 - 15), 15, 85);
+            this.ball.x = nx; this.ball.y = ny;
             this.applyTargets();
-            this.ball.idx = this.nearestTo(T, this.ball, p => p.role !== 'GK').i;
-            this.stickCarrier(T);
+            const carr = this.nearestTo(T, { x: nx, y: ny }, p => p.role !== 'GK');
+            this.ball.x = cur.x; this.ball.y = cur.y;
+            this.ball.idx = carr.i;
+            this.stickCarrier(T, { x: nx, y: ny });
             this.phase = 'attack';
             return;
         }
 
         if (state === 'midfield') {
             // Le jeu est déjà dans l'entrejeu : rien à imposer.
-            if (this.ball.x > 32 && this.ball.x < 68) { this.phase = 'buildup'; return; }
+            if (this.ball.x > 32 && this.ball.x < 68) { restore(); this.phase = 'buildup'; return; }
             const k = Math.random() < 0.5 ? 'H' : 'A';
             setSide(k);
             const T = this.team(k);
-            this.ball.x = 42 + Math.random() * 16;
-            this.ball.y = 25 + Math.random() * 50;
+            const mx = this.clamp(cur.x + this.clamp(42 + Math.random() * 16 - cur.x, -24, 24), 5, 95);
+            const my = this.clamp(cur.y + (Math.random() * 30 - 15), 15, 85);
+            this.ball.x = mx; this.ball.y = my;
             this.applyTargets();
-            this.ball.idx = this.nearestTo(T, this.ball, p => p.role === 'MIL').i;
-            this.stickCarrier(T);
+            const carr = this.nearestTo(T, { x: mx, y: my }, p => p.role === 'MIL');
+            this.ball.x = cur.x; this.ball.y = cur.y;
+            this.ball.idx = carr.i;
+            this.stickCarrier(T, { x: mx, y: my });
             this.phase = 'buildup';
             return;
         }
@@ -5944,21 +6046,59 @@ const MATCHSIM = {
             const k = state === 'home_shot' ? 'H' : 'A';
             setSide(k);
             const T = this.team(k), O = this.team(this.other(k));
-            // Le tireur est désigné par le moteur de match. On ne le téléporte
-            // pas dans la surface : il progresse depuis là où il se trouvait.
-            // Une frappe déclenchée en pleine relance devient donc une tentative
-            // de loin, et le xG le reflétera.
+            const kind = opts.setPiece || null;
             const atts = T.p.filter(p => p.role !== 'GK').sort((a, b) => (b.x - a.x) * T.dir);
             const shooter = (opts.shooterIdx != null && T.p[opts.shooterIdx] && T.p[opts.shooterIdx].role !== 'GK')
                 ? T.p[opts.shooterIdx] : atts[0];
-            this.ball.idx = shooter.i;
-            // La frappe se joue là où est L'ACTION, pas là où le tireur se
-            // reposait : on part de la position du ballon et on avance vers la
-            // surface. Un défenseur monté sur un corner arrive donc bien dans
-            // la surface, au lieu de tirer depuis sa ligne défensive.
+            this.lastShooter = shooter.i;
+            const sp = this.spot;   // point où le coup de pied arrêté a été installé
+
+            // ── Penalty / coup franc direct : le ballon est DÉJÀ posé sur son point.
+            // Le tireur prend son élan, frappe depuis ce point précis.
+            if ((kind === 'penalty' || kind === 'freekick') && sp && sp.key === k) {
+                this.ball.x = sp.x; this.ball.y = sp.y; this.ball.idx = shooter.i;
+                this.ball.fixed = true; this.ball.hard = true;
+                shooter.tx = sp.x - T.dir * 0.9; shooter.ty = sp.y;
+                this.commit(650, 1.6);
+                this.lastShot = null;
+                this.shoot(k, shooter, {
+                    from: { x: sp.x, y: sp.y }, stay: true, lead: 700,
+                    peak: kind === 'penalty' ? 0.7 : 2.2,
+                    dur: kind === 'penalty' ? this.clamp(560 * (this.TICK / 2400), 520, 900) : null
+                });
+                this.holdUntil = Math.max(this.holdUntil || 0, this.eta + 200);
+                return;
+            }
+
+            // ── Corner : centre du tireur vers la tête de l'attaquant, puis frappe.
+            if (kind === 'corner' && sp && sp.key === k) {
+                const taker = T.p[sp.takerIdx] || shooter;
+                this.ball.x = sp.x; this.ball.y = sp.y; this.ball.idx = taker.i;
+                this.ball.fixed = true; this.ball.hard = true;
+                const delay = 650, crossDur = 1300;
+                const t0 = this.now() + delay;
+                this.note('pass', k, taker.i, { to: shooter.i, action: 'cross', at: t0 });
+                this.later(Math.max(0, delay - 200), () => { this.ball.hard = false; });
+                this.lastShot = this.shotQuality(T, shooter.x, shooter.y);
+                this.ball.fixed = false; this.ball.hard = false;
+                this.ball.fly = {
+                    fromX: sp.x, fromY: sp.y, side: k, idx: shooter.i, t0, dur: crossDur, peak: 3.4,
+                    then: function () {
+                        this.ball.idx = shooter.i; this.ball.side = k;
+                        this.shoot(k, shooter, { lead: 160, peak: 1.2 + Math.random() * 1.0 });
+                    }
+                };
+                this.phase = 'setpiece';
+                this.eta = t0 + crossDur + 160 + 420;
+                this.holdUntil = Math.max(this.holdUntil || 0, this.eta + 200);
+                return;
+            }
+
+            // ── Tir dans le jeu. Le ballon rejoint le tireur en voyageant, le tireur
+            // finit sa course, puis frappe : plus de ballon qui apparaît dans la surface.
             const boxX = T.dir > 0 ? 89 : 11;
             const mix = 0.5 + Math.random() * 0.45;
-            const anchorX = (shooter.x + this.ball.x) / 2, anchorY = (shooter.y + this.ball.y) / 2;
+            const anchorX = (shooter.x + cur.x) / 2, anchorY = (shooter.y + cur.y) / 2;
             const aimX = anchorX + (boxX - anchorX) * mix;
             const aimY = 50 + (anchorY - 50) * (0.45 + Math.random() * 0.45);
             shooter.tx = this.clamp(aimX, 6, 94);
@@ -5971,19 +6111,146 @@ const MATCHSIM = {
             const sx = shooter.tx, sy = shooter.ty;
             this.applyTargets();
             shooter.tx = sx; shooter.ty = sy;
-            // La course au but est un effort bref : on autorise une pointe
-            // supérieure au déplacement de placement ordinaire, sans pour
-            // autant téléporter le tireur dans la surface.
             this.commit(this.TICK * 1.7);
-            this.ball.fly = null;
             // ⚠ Le xG se calcule sur la position ATTEINTE (shooter.x/y après
-            // bridage), jamais sur la position visée : sinon on afficherait un
-            // tir dans la surface pour un ballon parti de 25 mètres.
+            // bridage), jamais sur la position visée.
             this.lastShot = this.shotQuality(T, shooter.x, shooter.y);
-            this.shoot(k, shooter);
+            this.ball.idx = shooter.i;
+            this.rebind(k, shooter.i);
+            const flyMs = this.ball.fly ? this.ball.fly.dur : 0;
+            const runMs = this.TICK * this.clamp(Math.hypot(shooter.x - shooter.px, shooter.y - shooter.py) / 8, 0.12, 1);
+            this.shoot(k, shooter, { lead: Math.max(450, runMs, flyMs + 250) });
             this.locked = 1;
             return;
         }
+    },
+
+    // ---------------------------------------------------------------
+    // COUPS DE PIED ARRÊTÉS : installation de la scène
+    // ---------------------------------------------------------------
+    // Le ballon est posé sur son point (penalty : 11 m, coup franc : 19-30 m,
+    // corner : au piquet), le tireur derrière, le mur à 9,15 m, le gardien sur sa
+    // ligne, les autres en place. Renvoie la durée de l'installation (ms).
+    setPiece(kind, key, takerIdx, strikerIdx) {
+        if (!this.active) return 0;
+        this.ballNow();
+        const cur = { x: this.ball.x, y: this.ball.y };
+        this.pendingGoalKick = null; this._later = []; this.outcome = null;
+        this.ball.fly = null; this.shotFly = null;
+        const T = this.team(key), O = this.team(this.other(key)), dir = T.dir, gx = T.atkX;
+        const cl = (v, a, b) => this.clamp(v, a, b);
+        let bx, by;
+        if (kind === 'penalty') { bx = gx - dir * 10.5; by = 50; }
+        else if (kind === 'freekick') {
+            bx = gx - dir * (19 + Math.random() * 11);
+            by = 50 + (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 20);
+        } else { bx = gx - dir * 0.8; by = Math.random() < 0.5 ? 2 : 98; }
+        const taker = T.p[takerIdx] && T.p[takerIdx].role !== 'GK' ? T.p[takerIdx]
+            : T.p.filter(p => p.role !== 'GK').sort((a, b) => (b.x - a.x) * dir)[0];
+        const outT = T.p.filter(p => p.role !== 'GK' && p !== taker);
+        const outO = O.p.filter(p => p.role !== 'GK');
+        // 1. les blocs se placent autour du point (ballon provisoirement dessus)
+        this.ball.x = bx; this.ball.y = by; this.ball.side = key; this.ball.idx = taker.i;
+        this.applyTargets();
+        // 2. rôles précis
+        const gk = O.p[0];
+        gk.tx = gx + O.dir * (kind === 'corner' ? 1.8 : 1.0);
+        gk.ty = kind === 'freekick' ? 50 - (by - 50) * 0.10 : 50;
+        if (kind === 'penalty') {
+            taker.tx = bx - dir * 3.5; taker.ty = 50;
+            outT.forEach((p, n) => { p.tx = gx - dir * (21 + (n % 2) * 2.4); p.ty = 16 + n * (68 / Math.max(1, outT.length)); });
+            outO.forEach((p, n) => { p.tx = gx - dir * (23.4 + (n % 2) * 2.0); p.ty = 19 + n * (62 / Math.max(1, outO.length)); });
+        } else if (kind === 'freekick') {
+            taker.tx = bx - dir * 2.6; taker.ty = by + (by < 50 ? 1.2 : -1.2);
+            // mur : à 9,15 m sur la ligne ballon → centre du but (conversion m ↔ %)
+            const vx = (gx - bx) * 1.05, vy = (50 - by) * 0.68, L = Math.hypot(vx, vy) || 1;
+            const ux = vx / L, uy = vy / L;
+            const wall = outO.slice().sort((a, b) => this.dist(a, { x: bx, y: by }) - this.dist(b, { x: bx, y: by })).slice(0, 4);
+            wall.forEach((p, n) => {
+                const off = (n - 1.5) * 0.85;
+                p.tx = cl(bx + (ux * 9.15 - uy * off) / 1.05, 3, 97);
+                p.ty = cl(by + (uy * 9.15 + ux * off) / 0.68, 3, 97);
+            });
+            // attaquants et défenseurs dans la surface
+            outT.slice().sort((a, b) => (b.x - a.x) * dir).slice(0, 4).forEach((p, n) => {
+                p.tx = gx - dir * (7 + n * 2.6); p.ty = 50 + (n - 1.5) * 7;
+            });
+            outO.filter(p => wall.indexOf(p) < 0).slice(0, 4).forEach((p, n) => {
+                p.tx = gx - dir * (5 + n * 2.4); p.ty = 46 + n * 4.2;
+            });
+        } else { // corner
+            taker.tx = bx - dir * 1.6; taker.ty = by < 50 ? 4 : 96;
+            const striker = (strikerIdx != null && T.p[strikerIdx] && T.p[strikerIdx] !== taker && T.p[strikerIdx].role !== 'GK')
+                ? T.p[strikerIdx] : outT.slice().sort((a, b) => (b.x - a.x) * dir)[0];
+            const box = outT.filter(p => p !== striker).slice().sort((a, b) => (b.x - a.x) * dir).slice(0, 5);
+            striker.tx = gx - dir * 8; striker.ty = 50 + (Math.random() * 6 - 3);
+            box.forEach((p, n) => { p.tx = gx - dir * (5 + (n % 3) * 3.4); p.ty = 38 + n * 5.5; });
+            outO.slice().sort((a, b) => Math.abs(a.x - gx) - Math.abs(b.x - gx)).slice(0, 7).forEach((p, n) => {
+                p.tx = gx - dir * (4 + (n % 3) * 3.2); p.ty = 35 + n * 4.3;
+            });
+        }
+        this.ball.x = cur.x; this.ball.y = cur.y;
+        // 3. on lance la course au point, un peu plus vite qu'un placement ordinaire
+        const setupMs = this.clamp(this.TICK * 0.5, 2600, 3400);
+        this.commit(setupMs, 2.4);
+        this.curDur = setupMs;     // tout le monde arrive en même temps, à la fin de l'installation
+        // 4. le ballon rejoint son point en roulant, puis y reste
+        const d = Math.hypot(bx - cur.x, by - cur.y);
+        this.ball.fixed = false; this.ball.hard = false;
+        this.ball.fly = { fromX: cur.x, fromY: cur.y, toX: bx, toY: by, t0: this.now(),
+            dur: this.clamp(d * 30, 900, 2400), peak: 0.5, rest: true, hard: true };
+        this.spot = { kind, key, x: bx, y: by, takerIdx: taker.i };
+        this.phase = 'setpiece';
+        this.locked = 0;
+        // Le jeu courant ne reprend PAS tant que la scène n'a pas démarré (tir ou remise en jeu)
+        this.holdUntil = this.now() + setupMs + 1500;
+        this.holdScene(setupMs + 400);
+        return setupMs;
+    },
+
+    // Coup de pied arrêté sans tir : le tireur remet le ballon en jeu à un partenaire.
+    release(key, kind) {
+        if (!this.active) return;
+        const sp = this.spot;
+        if (!sp || sp.key !== key) return;
+        const T = this.team(key), taker = T.p[sp.takerIdx];
+        this.ball.hard = false; this.ball.fixed = false;
+        this.ball.side = key; this.ball.idx = sp.takerIdx;
+        this.ball.x = sp.x; this.ball.y = sp.y;
+        const mates = T.p.filter(p => p !== taker && p.role !== 'GK');
+        const from = { x: sp.x, y: sp.y };
+        let to;
+        if (kind === 'corner') to = mates.slice().sort((a, b) => (b.x - a.x) * T.dir)[Math.floor(Math.random() * 3)] || mates[0];
+        else to = mates.slice().sort((a, b) => this.dist(a, from) - this.dist(b, from))[1] || mates[0];
+        if (!to) return;
+        this.note('pass', key, taker ? taker.i : sp.takerIdx, { to: to.i, action: kind === 'corner' ? 'cross' : 'short' });
+        this.pass(key, to.i, kind === 'corner' ? 'cross' : 'short');
+        this.spot = null;
+        this.holdUntil = 0;
+        this.phase = 'attack';
+    },
+
+    // Célébration de but : le buteur reste sur place, ses coéquipiers viennent à lui.
+    celebrate(key, idx, ms) {
+        if (!this.active) return;
+        const T = this.team(key), s = T.p[idx];
+        if (!s) return;
+        const sx = s.x, sy = s.y;
+        const mates = T.p.filter(p => p !== s && p.role !== 'GK')
+            .sort((a, b) => this.dist(a, s) - this.dist(b, s)).slice(0, 5);
+        mates.forEach((p, n) => {
+            const ang = n * 1.25 + 0.5;
+            p.tx = this.clamp(sx - T.dir * (1.2 + (n % 2) * 0.9) + Math.cos(ang) * 1.8, 3, 97);
+            p.ty = this.clamp(sy + Math.sin(ang) * 2.4, 3, 97);
+        });
+        s.tx = s.x; s.ty = s.y;
+        // seuls ceux qui courent vers le buteur bougent ; les autres restent en place
+        T.p.forEach(p => { if (p !== s && mates.indexOf(p) < 0) { p.tx = p.x; p.ty = p.y; } });
+        this.team(this.other(key)).p.forEach(p => { p.tx = p.x; p.ty = p.y; });
+        this.commit(Math.min(ms * 0.45, this.TICK * 0.9), 2.0);
+        this.holdUntil = this.now() + ms;
+        this.holdScene(ms);
+        this.phase = 'celebration';
     },
 
     nearestTo(T, pos, filter) {
@@ -5997,10 +6264,11 @@ const MATCHSIM = {
     },
 
     // Amène le porteur désigné sur le ballon et fige la scène.
-    stickCarrier(T) {
+    stickCarrier(T, pos) {
         const c = T.p[this.ball.idx];
-        c.tx = this.clamp(this.ball.x - T.dir * 0.9, 5, 95);
-        c.ty = this.clamp(this.ball.y - 0.4, 4, 96);
+        const bx = pos ? pos.x : this.ball.x, by = pos ? pos.y : this.ball.y;
+        c.tx = this.clamp(bx - T.dir * 0.9, 5, 95);
+        c.ty = this.clamp(by - 0.4, 4, 96);
         this.commit();
         this.glue(true);
     },
@@ -6023,22 +6291,40 @@ const MATCHSIM = {
         };
     },
 
-    shoot(key, shooter) {
+    shoot(key, shooter, o) {
+        o = o || {};
         const T = this.team(key);
-        const from = { x: shooter.x, y: shooter.y };
+        const from = o.from || { x: shooter.x, y: shooter.y };
         const toX = T.dir > 0 ? 99.5 : 0.5, toY = 42 + Math.random() * 16;
         const d = Math.hypot(toX - from.x, toY - from.y);
+        const lead = o.lead != null ? o.lead : 0;
+        const t0 = this.now() + lead;
+        // Plafond indexé sur le tempo : une frappe ne doit jamais durer plus
+        // longtemps que le délai avant le retour au rond central.
+        const dur = o.dur || this.clamp(d * 28 * (this.TICK / 1100), 400, 500 + this.TICK * 0.35);   // ≈ 32 m/s
         this.shotFly = {
-            fromX: from.x, fromY: from.y, toX, toY,
-            t0: this.now(),
-            // Plafond indexé sur le tempo : une frappe ne doit jamais durer
-            // plus longtemps que le délai avant le retour au rond central.
-            dur: this.clamp(d * 28 * (this.TICK / 1100), 400, 500 + this.TICK * 0.35),   // ≈ 32 m/s
-            peak: 1.1 + Math.random() * 1.4
+            fromX: from.x, fromY: from.y, toX, toY, t0, dur, side: key,
+            peak: o.peak != null ? o.peak : 1.1 + Math.random() * 1.4,
+            stay: !!o.stay, started: false
         };
+        this.eta = t0 + dur;
         this.phase = 'shot';
         this.lastShooter = shooter.i;
-        this.note('shot', key, shooter.i);
+        // le geste de frappe est joué juste avant que le ballon ne parte
+        this.later(Math.max(0, lead - 220), () => this.note('shot', key, shooter.i));
+        this.applyOutcome();
+    },
+
+    // Le moteur de match a tiré les dés : le ballon va où le résultat l'exige
+    // (au fond du filet, dans les gants, à côté).
+    setShotOutcome(o) { this.outcome = o; this.applyOutcome(); },
+    applyOutcome() {
+        const s = this.shotFly, o = this.outcome;
+        if (!s || !o) return;
+        const T = this.team(s.side), sgn = Math.random() < 0.5 ? -1 : 1;
+        if (o === 'goal') { s.toX = T.dir > 0 ? 99.5 : 0.5; s.toY = 50 + sgn * (1.6 + Math.random() * 3.2); }
+        else if (o === 'save') { s.toX = T.dir > 0 ? 97.6 : 2.4; s.toY = 50 + sgn * (0.5 + Math.random() * 3); s.peak = Math.min(s.peak, 1.0); }
+        else { s.toX = T.dir > 0 ? 101 : -1; s.toY = 50 + sgn * (7 + Math.random() * 7); s.peak += 1.4; }
     },
 
     // Journal d'événements pour le rendu 3D (passe, tir, récupération, but,
@@ -6064,7 +6350,7 @@ const MATCHSIM = {
         return { H: pack('H'), A: pack('A'), ball: { x: b.x, y: b.y, z: b.z }, side: this.ball.side, phase: this.phase, ev: this.evq || [], ballIdx: this.ball.idx };
     },
 
-    stop() { this.active = false; this.ball && (this.ball.fly = null); this.shotFly = null; }
+    stop() { this.active = false; this.ball && (this.ball.fly = null); this.shotFly = null; this.sceneUntil = 0; this._later = []; }
 };
 
 // =====================================================================
@@ -20420,12 +20706,16 @@ simulateAIBypassMatchday(otherMatches) {
         this._lastPitchState = state;
         if (!this.liveMatch || this._matchOver) return; // LOT 15 : ordre arrivé après le coup de sifflet
         if (!MATCHSIM.active) this.initMatchSim();
+        // Une scène en cours (penalty, but, célébration) ne se laisse pas couper par
+        // un ordre de jeu courant : seuls l'engagement et les tirs la reprennent.
+        if (state !== 'center' && state !== 'home_shot' && state !== 'away_shot' && MATCHSIM.sceneBusy()) return;
         MATCHSIM.director(state, opts);
         this.startPitchLoop();
         // Un engagement renvoie tout le monde dans son camp : ça se parcourt
         // au pas, pas en un clignement d'œil.
         const dur = state === 'center' ? Math.round(MATCHSIM.TICK * 1.1) : MATCHSIM.TICK;
-        MATCHSIM.hold(dur);
+        // Une durée de scène imposée par le moteur (élan, installation) l'emporte
+        if (!(MATCHSIM.holdUntil && MATCHSIM.holdUntil > MATCHSIM.now() + dur)) MATCHSIM.hold(dur);
         this._pitchLast = MATCHSIM.now() + dur - MATCHSIM.TICK;
         this.renderPitchFrame(dur);
     }
@@ -20861,8 +21151,13 @@ simulateAIBypassMatchday(otherMatches) {
         }
     }
 
+    // Verrouille l'horloge du match pendant une scène animée (penalty, but, célébration) :
+    // sinon la minute suivante lance un nouvel ordre au milieu du geste, et tout saute.
+    holdClock(ms) { try { MATCHSIM.holdScene(ms); } catch (e) {} }
+
     _tickLiveMatchInner() {
         if (!this.liveMatch || this.liveMatch.minute >= this.liveMatch.maxMinute) return;
+        if (MATCHSIM.active && MATCHSIM.sceneBusy()) return;   // scène en cours : le temps de jeu attend
 
         this.liveMatch.minute++;
         document.getElementById('live-time').innerText = this.matchClock(); // FIX #89
@@ -20939,7 +21234,8 @@ simulateAIBypassMatchday(otherMatches) {
                     const pkTaker = userSideP ? this.getSetPieceTaker('penalty', isEvtHome ? this.liveMatch.homeStarters : this.liveMatch.awayStarters) : null;
                     this.logCommentary(`${icon('alert')} ${t('PENALTY sifflé pour')} ${teamName} !${pkTaker ? ` ${pkTaker.name} ${t('place le ballon sur le point.')}` : ''}`, "text-red-400 font-bold");
                 }
-                setTimeout(() => { if (this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) this.executeShot(isEvtHome, true); }, this.tempoMs(600)); // FIX #28
+                this.holdClock(1500);
+                setTimeout(() => { if (this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) this.executeShot(isEvtHome, true); }, 250); // FIX #28
             }
         }
         
@@ -20951,7 +21247,9 @@ simulateAIBypassMatchday(otherMatches) {
             const teamName2 = isEvtHome2 ? this.liveMatch.home.name : this.liveMatch.away.name;
             this.logCommentary(`${icon('corner')} ${matchLine('corner', { equipe: teamName2 })}`, "text-slate-400 italic");
             this.bumpStat(isEvtHome2, 'corners', 1);
-            if (Math.random() < 0.18) setTimeout(() => { if (this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) this.executeShot(isEvtHome2, false, 'corner'); }, this.tempoMs(600)); // FIX #28
+            this.holdClock(1500);
+            if (Math.random() < 0.18) setTimeout(() => { if (this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) this.executeShot(isEvtHome2, false, 'corner'); }, 250); // FIX #28
+            else this.playSetPiece('corner', isEvtHome2);
         }
         
         // COUP FRANC
@@ -20966,7 +21264,9 @@ simulateAIBypassMatchday(otherMatches) {
                 this.logCommentary(`${icon('target')} ${matchLine('freekick', { equipe: teamName3 })}${fkTaker ? ` — ${fkTaker.name} ${t('se charge du ballon.')}` : '.'}`, "text-slate-400 italic");
             }
             this.bumpStat(isEvtHome3, 'freekicks', 1);
-            if (Math.random() < 0.14) setTimeout(() => { if (this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) this.executeShot(isEvtHome3, false, 'freekick'); }, this.tempoMs(600)); // FIX #28
+            this.holdClock(1500);
+            if (Math.random() < 0.14) setTimeout(() => { if (this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) this.executeShot(isEvtHome3, false, 'freekick'); }, 250); // FIX #28
+            else this.playSetPiece('freekick', isEvtHome3);
         }
 
         // CARTONS JAUNES ET 2E JAUNE
@@ -21091,6 +21391,7 @@ simulateAIBypassMatchday(otherMatches) {
 
             if (Math.random() < shotChance) {
                 this.showHighlightAlert();
+                this.holdClock(1200);
                 this.logCommentary(`${icon('fire')} ${matchLine('attack', { equipe: attackerTeam.name })}`, "text-yellow-400");
                 
                 setTimeout(() => {
@@ -21213,7 +21514,7 @@ simulateAIBypassMatchday(otherMatches) {
     }
 
     // setPiece : null | 'freekick' | 'corner'. Un penalty passe par isPenalty.
-    executeShot(isHome, isPenalty = false, setPiece = null) {
+    executeShot(isHome, isPenalty = false, setPiece = null, pre = null) {
         if (!this.liveMatch) return;
 
         const attStarters = isHome ? this.liveMatch.homeStarters : this.liveMatch.awayStarters;
@@ -21252,7 +21553,13 @@ simulateAIBypassMatchday(otherMatches) {
             if (t) striker = t;
         } else if (setPiece === 'corner') {
             cornerTaker = takerFor('corner');
+            // Le tireur ne peut pas centrer ET reprendre de la tête
+            if (cornerTaker && striker === cornerTaker) {
+                const alt = attStarters.filter(p => p !== cornerTaker && p.position !== 'GB');
+                if (alt.length) striker = alt[Math.floor(Math.random() * alt.length)];
+            }
         }
+        if (pre) { striker = pre.striker || striker; cornerTaker = pre.cornerTaker || cornerTaker; }
 
         let defenders = defStarters.filter(p => p.position === 'DEF' || p.position === 'MIL');
         let defender = defenders.length > 0 ? defenders[Math.floor(Math.random() * defenders.length)] : null;
@@ -21261,12 +21568,28 @@ simulateAIBypassMatchday(otherMatches) {
         if (!striker) return;
         if (!gk) return; // FIX #22a : plus aucun défenseur sur le terrain (cas extrême, cartons + blessures) — pas de tir possible
 
+        // COUP DE PIED ARRÊTÉ — phase 1 : on installe la scène (ballon sur son point,
+        // mur, gardien sur sa ligne, joueurs dans la surface), PUIS on frappe.
+        if ((isPenalty || setPiece) && !pre && MATCHSIM.active && !this._matchOver) {
+            const kindSP = isPenalty ? 'penalty' : setPiece;
+            const takerP = kindSP === 'corner' ? (cornerTaker || striker) : striker;
+            const takerIdxSP = Math.max(0, attStarters.indexOf(takerP));
+            const strikerIdxSP = Math.max(0, attStarters.indexOf(striker));
+            const msSP = MATCHSIM.setPiece(kindSP, isHome ? 'H' : 'A', takerIdxSP, strikerIdxSP);
+            this.holdClock(msSP + 9000);
+            const lmSP = this.liveMatch;
+            setTimeout(() => {
+                if (this.liveMatch === lmSP && !this._matchOver) this.executeShot(isHome, isPenalty, setPiece, { striker, cornerTaker });
+            }, msSP + 250);
+            return;
+        }
+
         // LOT 15 : on anime la frappe APRÈS avoir désigné le tireur, pour que
         // la silhouette qui frappe à l'écran soit bien celle qui marque, et que
         // le xG soit calculé sur sa position réelle sur la pelouse.
         const shooterIdx = attStarters.indexOf(striker);
-        this.animatePitch(isHome ? 'home_shot' : 'away_shot', { shooterIdx });
-        const shot = (!isPenalty && MATCHSIM.active) ? MATCHSIM.lastShot : null;
+        this.animatePitch(isHome ? 'home_shot' : 'away_shot', { shooterIdx, setPiece: isPenalty ? 'penalty' : setPiece });
+        const shot = (!isPenalty && setPiece !== 'freekick' && MATCHSIM.active) ? MATCHSIM.lastShot : null;
 
         const userIsAttacking = (isHome && this.liveMatch.home.isUser) || (!isHome && this.liveMatch.away.isUser);
         const userIsDefending = (isHome && this.liveMatch.away.isUser) || (!isHome && this.liveMatch.home.isUser);
@@ -21327,6 +21650,11 @@ simulateAIBypassMatchday(otherMatches) {
         const onTarget = isGoal || Math.random() < (0.30 + finalXG * 0.45);
         if (onTarget) this.bumpStat(isHome, 'onTarget', 1);
         if (onTarget && !isGoal) this.bumpStat(!isHome, 'saves', 1);
+        // Le ballon va où le résultat l'exige, et le résultat s'affiche quand le ballon arrive
+        if (MATCHSIM.active) MATCHSIM.setShotOutcome(isGoal ? 'goal' : onTarget ? 'save' : 'miss');
+        const lmShot = this.liveMatch;
+        const resolveShot = () => {
+        if (this.liveMatch !== lmShot || this._matchOver) return;
         if (onTarget && !isGoal && MATCHSIM.active) MATCHSIM.note('save', isHome ? 'A' : 'H', 0);
 
         if (isGoal) {
@@ -21384,7 +21712,7 @@ simulateAIBypassMatchday(otherMatches) {
                     
                 this.logCommentary(`${goalTxt} (xG: ${displayXG})`, "text-emerald-400 font-bold text-base");
             }
-            setTimeout(() => this.animatePitch('center'), Math.round(MATCHSIM.TICK * 0.85));
+            this.afterGoalScene(isHome);
         } else {
             let missComments = [];
             // Un penalty manque etait raconte comme un tir ordinaire alors que
@@ -21417,8 +21745,40 @@ simulateAIBypassMatchday(otherMatches) {
             }
             
             this.logCommentary(missComments[Math.floor(Math.random() * missComments.length)], "text-slate-400");
-            setTimeout(() => this.animatePitch('midfield'), Math.round(MATCHSIM.TICK * 0.85));
+            // Pas de téléportation au milieu : le gardien relance, le jeu reprend de là.
         }
+        };
+        const waitShot = MATCHSIM.active ? Math.max(0, MATCHSIM.shotEta() - 300) : 0;
+        this.holdClock(waitShot + 1800);
+        if (waitShot > 0) setTimeout(resolveShot, waitShot); else resolveShot();
+    }
+
+    // Après un but : le ballon reste au fond des filets, le buteur célèbre, ses
+    // partenaires viennent à lui — PUIS seulement, engagement.
+    afterGoalScene(isHome) {
+        const celeb = 3800;
+        if (!MATCHSIM.active) { setTimeout(() => this.animatePitch('center'), 900); return; }
+        MATCHSIM.celebrate(isHome ? 'H' : 'A', MATCHSIM.lastShooter, celeb);
+        this.holdClock(celeb + Math.round(MATCHSIM.TICK * 1.1) + 400);
+        const lmG = this.liveMatch;
+        setTimeout(() => { if (this.liveMatch === lmG && !this._matchOver) this.animatePitch('center'); }, celeb);
+    }
+
+    // Corner ou coup franc sans tir : la scène est quand même jouée (installation,
+    // tireur, remise en jeu), au lieu d'un simple commentaire.
+    playSetPiece(kind, isHome) {
+        if (!this.liveMatch || !MATCHSIM.active || this._matchOver) return;
+        const att = isHome ? this.liveMatch.homeStarters : this.liveMatch.awayStarters;
+        if (!att || !att.length) return;
+        const attIsUser = isHome ? this.liveMatch.home.isUser : this.liveMatch.away.isUser;
+        const pool = att.filter(p => this.eligibleForSetPiece(p, kind));
+        const taker = attIsUser ? this.getSetPieceTaker(kind, att)
+            : (pool.slice().sort((a, b) => this.setPieceScore(b, kind) - this.setPieceScore(a, kind))[0] || null);
+        const key = isHome ? 'H' : 'A';
+        const ms = MATCHSIM.setPiece(kind, key, taker ? Math.max(0, att.indexOf(taker)) : 9, -1);
+        this.holdClock(ms + 2200);
+        const lmS = this.liveMatch;
+        setTimeout(() => { if (this.liveMatch === lmS && !this._matchOver) MATCHSIM.release(key, kind); }, ms + 250);
     }
 
     // FIX #99 : la règle IFAB accorde un remplacement supplémentaire en prolongation.
@@ -21555,8 +21915,8 @@ simulateAIBypassMatchday(otherMatches) {
         // REPRENDRE LE MATCH
         if(this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) { // FIX #89
             document.getElementById('live-time').classList.add('animate-pulse');
-            // Remets bien la même vitesse que celle que tu as réglée (ex: 800ms)
-            this.liveMatch.interval = setInterval(() => this.tickLiveMatch(), 800); 
+            // Remets bien la même vitesse que celle que tu as réglée (Lent / Normal / Rapide)
+            this.liveMatch.interval = setInterval(() => this.tickLiveMatch(), MATCH_TEMPOS[this.getTempo()].clock); 
         }
     }
 
