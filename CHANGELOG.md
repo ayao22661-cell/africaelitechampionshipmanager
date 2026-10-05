@@ -1,3 +1,26 @@
+# Correctif placement des joueurs — équipes trop hautes, hors-jeu (05/10/2026)
+
+**Symptôme** : les joueurs étaient placés très haut sur le terrain, plusieurs se trouvaient en position de
+hors-jeu, et le placement général paraissait faux. Le défaut vit dans le moteur `MATCHSIM` (`app.js`) : le rendu
+2D et le rendu 3D (`match3d.js`, inchangé) ne font que lire ses positions, les deux sont donc corrigés d'un coup.
+
+| # | Cause | Correction |
+|---|-------|------------|
+| POS-1 | Les formations sont dessinées sur une **demi-pelouse** (profondeur 0-50) mais `baseOf` les déployait **×2** sur le terrain entier : attaquants à 90 % de la longueur, milieux à 60-70 %, défense à la ligne médiane. Toute l'équipe campait dans le camp adverse, y compris au coup d'envoi | Courbe de profondeur par ligne : défense 21-30, milieux 36-53, attaquants 58-65 (% depuis son but). Laisses `ahead` des attaquants/ailiers/meneur élargies pour qu'ils atteignent toujours la surface ; la ligne « haute » élargit celle des défenseurs |
+| POS-2 | **Signe inversé** dans le garde-fou de hors-jeu : `dernier défenseur + 1,5` autorisait à le dépasser. De plus il ne visait que BT/ailiers/meneur (un milieu pouvait être hors-jeu), ignorait le ballon et lisait les positions du tour *précédent* de l'adversaire | Passe dédiée en fin de `applyTargets`, sur les cibles définitives des deux équipes : un cran **en retrait** du dernier défenseur, tous les joueurs de champ concernés, et conforme à la règle (derrière le ballon on est en jeu ; pas de hors-jeu sur corner) |
+| POS-3 | Au coup d'envoi, « tout le monde dans son camp » n'était qu'un commentaire : 11 joueurs sur 22 commençaient dans le camp adverse | Bornage au camp propre (hors porteur) ; l'équipe qui ne donne pas le coup d'envoi reste hors du rond central (9,15 m) ; replacement un peu plus rapide |
+
+**Mesuré** (moteur seul, sans navigateur, 15 formations × 300 tours) : joueurs en position de hors-jeu par tour
+**2,00 → 0,001** ; milieux de terrain en 4-4-2 à 64-71 % → **43-51 %**, défenseurs à ligne normale **~42 % → ~29 %** ;
+joueurs hors de leur camp au coup d'envoi **11 → 0**. Banc d'essai d'animation (`tests/sim_test.js`) inchangé :
+0 saut de ballon, déplacement max. d'un joueur 0,19 m par image, aux 3 tempos.
+Nouveau test : `node tests/pos_test.js` (hauteur des lignes et hors-jeu par formation).
+
+*Non vérifié ici : le rendu visuel dans un vrai navigateur (WebGL indisponible dans mon environnement). Les
+chiffres ci-dessus portent sur les positions calculées par le moteur, qui est ce que 2D et 3D affichent.*
+
+---
+
 # Correctif animation du match — sauts, penalties, coups francs, célébrations (05/10/2026)
 
 **Cause racine** : l'horloge du match (une minute toutes les 1,1 à 3,8 s) donnait un nouvel ordre à la

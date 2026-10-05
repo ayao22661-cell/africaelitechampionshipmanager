@@ -5178,15 +5178,17 @@ const MATCHSIM = {
     // appliquées AVANT cette laisse : elle a toujours le dernier mot.
     ZONES: {
         GK:   { dy: 10, ahead: 14, back:  4 },
+        // FIX #POS-1 : « ahead » recalibré pour les nouvelles bases (plus basses) — un
+        // buteur doit pouvoir atteindre la surface adverse (base ~56 + 34 = ~90).
         DC:   { dy: 15, ahead: 22, back: 10 },
         LATD: { dy: 13, ahead: 32, back: 10 },
         LATG: { dy: 13, ahead: 32, back: 10 },
         MDC:  { dy: 17, ahead: 18, back: 20 },
-        MC:   { dy: 20, ahead: 24, back: 22 },
-        MOC:  { dy: 20, ahead: 22, back: 26 },
-        AILD: { dy: 15, ahead: 26, back: 30 },
-        AILG: { dy: 15, ahead: 26, back: 30 },
-        BT:   { dy: 23, ahead: 18, back: 32 }
+        MC:   { dy: 20, ahead: 26, back: 22 },
+        MOC:  { dy: 20, ahead: 30, back: 26 },
+        AILD: { dy: 15, ahead: 36, back: 30 },
+        AILG: { dy: 15, ahead: 36, back: 30 },
+        BT:   { dy: 23, ahead: 34, back: 32 }
     },
 
     // --- Styles des clubs IA : déterministes, tirés du nom + de la force ---
@@ -5303,7 +5305,18 @@ const MATCHSIM = {
 
     baseOf(team, i) {
         const f = team.form[i];
-        return { x: team.dir > 0 ? f[0] * 2 : 100 - f[0] * 2, y: f[1] };
+        // FIX #POS-1 : les formations sont dessinées sur une DEMI-pelouse (profondeur 0-50).
+        // Elles étaient déployées x2 sur le terrain entier : attaquants à 90 %, milieux à
+        // 60-70 %, défense à la ligne médiane — toute l'équipe campait dans le camp adverse,
+        // même au coup d'envoi. Mapping réaliste (% de la longueur depuis son propre but). Le bloc coulisse
+        // ensuite vers le ballon (applyTargets) et peut monter bien plus haut en attaque.
+        // Courbe par ligne (et non un simple coefficient) : défense 21-30, milieux 36-53,
+        // attaquants 58-65 — un bloc compact qui occupe le terrain sans coloniser le camp adverse.
+        const f0 = f[0];
+        const depth = this.clamp(f0 <= 20 ? 4 + (f0 - 5) * 1.7
+            : f0 <= 38 ? 29.5 + (f0 - 20) * 1.3
+            : 53 + (f0 - 38) * 1.2, 3, 66);
+        return { x: team.dir > 0 ? depth : 100 - depth, y: f[1] };
     },
 
     dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); },
@@ -5350,16 +5363,8 @@ const MATCHSIM = {
                 }
             }
 
-            // --- LIGNE DE HORS-JEU ------------------------------------
-            // Le dernier joueur de champ adverse. Nos attaquants ne le
-            // dépassent pas : c'est ce qui les empêchait de finir DERRIÈRE
-            // le gardien, au fond des filets.
-            const OPP = this.team(this.other(key));
-            let offside = null;
-            OPP.p.forEach(q => {
-                if (q.role === 'GK') return;
-                if (offside === null || (q.x - offside) * T.dir > 0) offside = q.x;
-            });
+            // (La ligne de hors-jeu est appliquée APRÈS le calcul des deux équipes,
+            // voir « HORS-JEU » en fin de fonction — FIX #POS-2.)
 
             // --- HAUTEUR DE LA LIGNE DÉFENSIVE ------------------------
             const lineShift = T.line === 'high' ? 11 : T.line === 'low' ? -7 : 0;
@@ -5479,16 +5484,12 @@ const MATCHSIM = {
                     const push = String(slot).startsWith('BT') || String(slot).startsWith('AIL') || String(slot).startsWith('MOC') ? 18 : 9;
                     z = { dy: z.dy + 3, ahead: z.ahead + push, back: z.back };
                 }
+                // Ligne haute : défenseurs et latéraux ont le droit de monter d'autant
+                if (T.line === 'high' && (slot === 'DC' || slot === 'LATD' || slot === 'LATG')) z = { dy: z.dy, ahead: z.ahead + 8, back: z.back };
                 ty = this.clamp(ty, b.y - z.dy, b.y + z.dy);
                 const fwd = (tx - b.x) * T.dir;
                 if (fwd > z.ahead) tx = b.x + T.dir * z.ahead;
                 else if (fwd < -z.back) tx = b.x - T.dir * z.back;
-
-                // ----- HORS-JEU : on ne dépasse pas le dernier défenseur ---
-                if (offside !== null && (slot === 'BT' || slot === 'AILD' || slot === 'AILG' || slot === 'MOC')) {
-                    const limit = offside + T.dir * 1.5;
-                    if ((tx - limit) * T.dir > 0) tx = limit;
-                }
 
                 // Seul le porteur du ballon est dispensé de sa zone : il va
                 // chercher son ballon là où il est.
@@ -5505,6 +5506,35 @@ const MATCHSIM = {
                 if (p.role !== 'GK') p.tx = this.clamp(p.tx, 5, 95);
             });
         });
+
+        // ══ HORS-JEU (FIX #POS-2) ═══════════════════════════════════════
+        // Trois défauts de l'ancienne règle : (1) le signe était inversé — la limite
+        // était à +1,5 AU-DELÀ du dernier défenseur, donc volontairement hors-jeu ;
+        // (2) elle ne visait que BT/ailiers/meneur, un milieu pouvait donc être hors-jeu ;
+        // (3) elle lisait les positions du tour PRÉCÉDENT de l'adversaire, qui bouge en
+        // même temps. On la passe donc en fin de calcul, sur les cibles définitives des
+        // deux équipes. Règle du jeu : on n'est hors-jeu que si l'on est plus près de la
+        // ligne de but que le ballon ET que le dernier défenseur — derrière le ballon,
+        // on est toujours en jeu. Pas de hors-jeu sur corner.
+        if (!this._noOffside) {
+            ['H', 'A'].forEach(key => {
+                const T = this.team(key), O = this.team(this.other(key));
+                let line = null;
+                O.p.forEach(q => {
+                    if (q.role === 'GK') return;
+                    if (line === null || (q.tx - line) * T.dir > 0) line = q.tx;
+                });
+                if (line === null) return;
+                const byLine = line - T.dir * 1.5;            // un cran EN RETRAIT du dernier défenseur
+                const byBall = ball.x - T.dir * 0.5;          // ou à hauteur du ballon, derrière lui
+                const allowed = (byLine - byBall) * T.dir >= 0 ? byLine : byBall;
+                T.p.forEach(p => {
+                    if (p.role === 'GK') return;
+                    if (ball.side === key && p.i === ball.idx) return;   // le porteur va chercher son ballon
+                    if ((p.tx - allowed) * T.dir > 0) p.tx = allowed;
+                });
+            });
+        }
     },
 
     // Vitesse de pointe, en unités de terrain par seconde (≈ m/s).
@@ -5980,17 +6010,31 @@ const MATCHSIM = {
             // Engagement : tout le monde dans son camp, ballon au rond central
             ['H', 'A'].forEach(k => {
                 const T = this.team(k);
-                T.p.forEach(p => { const b = this.baseOf(T, p.i); p.tx = b.x; p.ty = b.y; });
+                T.p.forEach(p => {
+                    const b = this.baseOf(T, p.i); p.tx = b.x; p.ty = b.y;
+                    // FIX #POS-3 : règle de l'engagement — tout le monde DANS SON CAMP
+                    if (p.role !== 'GK') p.tx = T.dir > 0 ? Math.min(p.tx, 48.5) : Math.max(p.tx, 51.5);
+                });
             });
             this.kickoffSide = this.kickoffSide === 'H' ? 'A' : 'H';
             setSide(this.kickoffSide || 'H');
+            // ... et l'équipe qui ne donne pas le coup d'envoi reste hors du rond central (9,15 m)
+            const recv = this.team(this.other(this.ball.side));
+            recv.p.forEach(p => {
+                if (p.role === 'GK') return;
+                const dym = (p.ty - 50) * 0.68;
+                if (Math.abs(dym) < 9.8) {
+                    const need = Math.sqrt(9.8 * 9.8 - dym * dym) / 1.05;
+                    if (Math.abs(p.tx - 50) < need) p.tx = 50 - recv.dir * need;
+                }
+            });
             const T = this.team(this.ball.side);
             const att = T.p.filter(p => p.role === 'ATT');
             this.ball.idx = (att[0] || T.p[9]).i;
             const c = T.p[this.ball.idx];
             c.tx = 50 - T.dir * 1.5; c.ty = 50;
             this.phase = 'kickoff'; this.locked = 1;
-            this.commit(this.TICK * 1.1);
+            this.commit(this.TICK * 1.1, 1.6);   // replacement à l'engagement : on trottine plus vite qu'en jeu
             // Le ballon retourne au point central en roulant (plus de téléportation)
             const dc = Math.hypot(50 - cur.x, 50 - cur.y);
             if (dc < 1) { this.placeBall(50, 50); }
@@ -6151,7 +6195,9 @@ const MATCHSIM = {
         const outO = O.p.filter(p => p.role !== 'GK');
         // 1. les blocs se placent autour du point (ballon provisoirement dessus)
         this.ball.x = bx; this.ball.y = by; this.ball.side = key; this.ball.idx = taker.i;
+        this._noOffside = (kind === 'corner');     // pas de hors-jeu sur corner
         this.applyTargets();
+        this._noOffside = false;
         // 2. rôles précis
         const gk = O.p[0];
         gk.tx = gx + O.dir * (kind === 'corner' ? 1.8 : 1.0);
