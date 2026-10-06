@@ -6368,7 +6368,8 @@ const MATCHSIM = {
         const s = this.shotFly, o = this.outcome;
         if (!s || !o) return;
         const T = this.team(s.side), sgn = Math.random() < 0.5 ? -1 : 1;
-        if (o === 'goal') { s.toX = T.dir > 0 ? 99.5 : 0.5; s.toY = 50 + sgn * (1.6 + Math.random() * 3.2); }
+        if (o === 'goal') { s.toX = T.dir > 0 ? 100.9 : -0.9;   // FIX #DECOR : 0,9 m AU FOND du filet (était 0,5 m AVANT la ligne)
+            s.toY = 50 + sgn * (1.6 + Math.random() * 3.2); }
         else if (o === 'save') { s.toX = T.dir > 0 ? 97.6 : 2.4; s.toY = 50 + sgn * (0.5 + Math.random() * 3); s.peak = Math.min(s.peak, 1.0); }
         else { s.toX = T.dir > 0 ? 101 : -1; s.toY = 50 + sgn * (7 + Math.random() * 7); s.peak += 1.4; }
     },

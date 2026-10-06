@@ -1,3 +1,31 @@
+# Décor 3D : buts, filets, stade (06/10/2026)
+
+**Avant** : deux boîtes blanches carrées + un filet « filaire » flou, et tout ce qui dépassait du terrain était un grand vide noir.
+
+| Élément | Détail |
+|---------|--------|
+| Buts | Poteaux **ronds** (Ø 15 cm), barre, rails de filet, arceaux arrière en pente, aux cotes réglementaires (7,32 × 2,44 m) |
+| Filets | Vraies **mailles** (texture alpha répétée, 30 cm), 4 pans : dessus, fond incliné, 2 côtés. Sur un but, **le fond du filet ondule** et le public s'agite |
+| Ballon | Le moteur arrêtait le ballon d'un but à 99,5 % — **0,5 m avant la ligne**. Il finit maintenant 0,9 m **au fond du filet** (`applyOutcome`, `app.js`) |
+| Tribunes | 4 gradins en pente (≈ 5 000 spectateurs peints, blocs de supporters, allées), façades, murs, joues de virages : pas de trou dans le bol |
+| Panneaux LED | Tout le tour du terrain, texte lisible depuis le centre. Marques **fictives** (AECM Elite, Kili Air, Sahel Bank, Nil Telecom) |
+| Détails | 4 piquets de corner avec fanion, bancs de touche vitrés (côté lointain), 4 pylônes d'éclairage, dalle autour du terrain |
+| Public vivant | Sur un but, les gradins « bondissent » ~5,5 s avec un éclat de luminosité (`decorCheer` / `updateDecor`) |
+
+**Technique** : le bundle Babylon embarqué (`vendor/babylon-aecm.js`) n'expose ni `CreateCylinder`, ni `CreateTube`, ni `VertexData`.
+Le décor est donc fabriqué à la main (sommets/indices/UV) et **fusionné par matériau** : ≈ 25 maillages pour tout le stade.
+Tout est en matériaux sans éclairage (aucune ombre, aucun coût de lumière). Textures peintes une seule fois au démarrage.
+**Mobile faible** (`lowEnd`) : public en 512×256, tessellation réduite, **sans** bancs ni pylônes. Chaque construction est dans
+un `try/catch` : un souci de décor n'envoie jamais le match en 2D.
+Piège rencontré : `DynamicTexture` est en mode *clamp* par défaut — sans `wrapU/V = WRAP`, les mailles, les rangs du public et
+les panneaux s'étirent sur le pixel du bord.
+
+**Vérifié par rendu réel** (Chromium headless, vrai `match3d.js` + vrai `MATCHSIM`) : caméra suivie, vue d'ensemble, gros plans
+but/filet/tribune, séquence de but (ballon à 53,45 m pour une ligne à 52,5 m ; filet ×1,11 ; public décalé), mode `lowEnd`.
+Non vérifié : performances sur un vrai téléphone (rendu logiciel ici, donc pas de mesure d'images/s fiable).
+
+---
+
 # Correctif placement des joueurs — équipes trop hautes, hors-jeu (05/10/2026)
 
 **Symptôme** : les joueurs étaient placés très haut sur le terrain, plusieurs se trouvaient en position de

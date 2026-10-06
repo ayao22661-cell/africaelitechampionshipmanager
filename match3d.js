@@ -46,7 +46,7 @@
         players: { H: [], A: [] }, ref: null, ball: null, ballShadow: null, ring: null,
         teams: { home: null, away: null }, matCache: new Map(),
         camMode: 'follow', camX: 0, camZ: 0, lastEvId: 0, lastT: 0, timers: [],
-        quality: 'far', lowEnd: false
+        quality: 'far', lowEnd: false, decor: {}
     };
 
     // ---- Utilitaires --------------------------------------------------
@@ -235,23 +235,263 @@
         const ground = B.CreateGround('pitch', { width: FIELD_W, height: FIELD_H }, scene);
         ground.material = gmat; ground.isPickable = false;
         ground.freezeWorldMatrix();
+        // (buts, filets et décor : voir buildGoals() / buildStadium())
+    }
 
-        // Buts : poteaux, barre, filet filaire
-        const wood = new B.StandardMaterial('goalMat', scene);
-        wood.emissiveColor = new B.Color3(0.95, 0.95, 0.95); wood.disableLighting = true;
-        const net = new B.StandardMaterial('netMat', scene);
-        net.emissiveColor = new B.Color3(0.9, 0.9, 0.9); net.wireframe = true; net.alpha = 0.35; net.disableLighting = true;
-        [-1, 1].forEach(s => {
-            const gx = s * PITCH_W / 2, bar = 0.12, gh = 2.44, gw = 7.32;
-            [-1, 1].forEach(t => {
-                const p = B.CreateBox('post', { width: bar, height: gh, depth: bar }, scene);
-                p.position.set(gx, gh / 2, t * gw / 2); p.material = wood; p.isPickable = false; p.freezeWorldMatrix();
-            });
-            const cb = B.CreateBox('bar', { width: bar, height: bar, depth: gw + bar }, scene);
-            cb.position.set(gx, gh, 0); cb.material = wood; cb.isPickable = false; cb.freezeWorldMatrix();
-            const nt = B.CreateBox('net', { width: 2.2, height: gh, depth: gw }, scene);
-            nt.position.set(gx + s * 1.1, gh / 2, 0); nt.material = net; nt.isPickable = false; nt.freezeWorldMatrix();
+    // ---- Décor : kit de géométrie --------------------------------------
+    // Le bundle Babylon embarqué n'expose ni CreateCylinder ni VertexData : les maillages du
+    // décor sont fabriqués à la main (sommets + indices + UV) et fusionnés par matériau, ce
+    // qui garde le nombre d'appels de dessin très bas (≈ 20 pour tout le stade).
+    const Z2 = [0, 0];
+    function geo() { return { p: [], uv: [], i: [] }; }
+    function gTri(g, a, b, c, ua, ub, uc) {
+        const n = g.p.length / 3;
+        g.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+        g.uv.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]);
+        g.i.push(n, n + 1, n + 2);
+    }
+    function gQuad(g, a, b, c, d, ua, ub, uc, ud) {
+        ua = ua || Z2; ub = ub || Z2; uc = uc || Z2; ud = ud || Z2;
+        gTri(g, a, b, c, ua, ub, uc); gTri(g, a, c, d, ua, uc, ud);
+    }
+    function gTube(g, a, b, r, seg) {                       // cylindre plein de a à b
+        seg = seg || 8;
+        const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(d[0], d[1], d[2]) || 1;
+        const n = [d[0] / L, d[1] / L, d[2] / L], h = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+        let u = [n[1] * h[2] - n[2] * h[1], n[2] * h[0] - n[0] * h[2], n[0] * h[1] - n[1] * h[0]];
+        const ul = Math.hypot(u[0], u[1], u[2]); u = [u[0] / ul, u[1] / ul, u[2] / ul];
+        const v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+        const ring = (c, k) => { const t = k / seg * Math.PI * 2, co = Math.cos(t) * r, si = Math.sin(t) * r;
+            return [c[0] + u[0] * co + v[0] * si, c[1] + u[1] * co + v[1] * si, c[2] + u[2] * co + v[2] * si]; };
+        for (let k = 0; k < seg; k++) {
+            const a0 = ring(a, k), a1 = ring(a, k + 1), b0 = ring(b, k), b1 = ring(b, k + 1);
+            gQuad(g, a0, a1, b1, b0);
+            gTri(g, a, a1, a0, Z2, Z2, Z2); gTri(g, b, b0, b1, Z2, Z2, Z2);
+        }
+    }
+    function gBox(g, cx, cy, cz, sx, sy, sz) {
+        const x0 = cx - sx / 2, x1 = cx + sx / 2, y0 = cy - sy / 2, y1 = cy + sy / 2, z0 = cz - sz / 2, z1 = cz + sz / 2;
+        const q = (a, b, c, d) => gQuad(g, a, b, c, d);
+        q([x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]); q([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]);
+        q([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]); q([x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0]);
+        q([x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]); q([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]);
+    }
+    function toMesh(name, g, mat, live) {
+        if (!g.i.length) return null;
+        const m = new S.B.Mesh(name, S.scene);
+        m.setVerticesData('position', g.p, false);
+        m.setVerticesData('uv', g.uv, false);
+        m.setIndices(g.i);
+        m.material = mat; m.isPickable = false;
+        if (!live) m.freezeWorldMatrix();
+        return m;
+    }
+    function flatMat(name, r, g, b, alpha) {                  // couleur unie, insensible aux lumières
+        const B = S.B, m = new B.StandardMaterial(name, S.scene);
+        m.diffuseColor = new B.Color3(0, 0, 0); m.specularColor = new B.Color3(0, 0, 0);
+        m.emissiveColor = new B.Color3(r, g, b); m.disableLighting = true; m.backFaceCulling = false;
+        if (alpha != null) m.alpha = alpha;
+        return m;
+    }
+    function texMat(name, tex, k, useAlpha) {
+        const B = S.B, m = new B.StandardMaterial(name, S.scene);
+        // Sans lumière, seule la part ÉMISSIVE compte : émissif = k × texture (k règle la luminosité).
+        m.diffuseTexture = tex; m.diffuseColor = new B.Color3(0, 0, 0); m.specularColor = new B.Color3(0, 0, 0);
+        m.emissiveColor = new B.Color3(k, k, k); m.disableLighting = true; m.backFaceCulling = false;
+        if (useAlpha) m.useAlphaFromDiffuseTexture = true;
+        return m;
+    }
+    function rng(seed) {
+        let a = seed >>> 0;
+        return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    }
+
+    // ---- Décor : textures peintes (une seule fois, au démarrage) --------
+    function crowdTexture(seed, W, H) {
+        const tex = new S.B.DynamicTexture('crowd' + seed, { width: W, height: H }, S.scene, true);
+        const c = tex.getContext(), R = rng(seed), rows = 16, rh = H / rows, seats = 40, sw = W / seats;
+        c.fillStyle = '#1a1f2b'; c.fillRect(0, 0, W, H);
+        const KIT = ['#16a34a', '#facc15', '#dc2626', '#f8fafc', '#2563eb', '#f97316', '#0f172a', '#ec4899', '#14b8a6'];
+        const SKIN = ['#3b2416', '#4a2d1c', '#5a3825', '#6d4530', '#8d5a3c', '#b57d56'];
+        const SEAT = ['#233a6b', '#1f5e3b', '#6b2530', '#3a3f4d'];
+        for (let r = 0; r < rows; r++) {
+            const y0 = H - (r + 1) * rh;                        // rangée 0 = devant (bas du motif)
+            c.fillStyle = '#2a3142'; c.fillRect(0, y0 + rh * 0.86, W, rh * 0.14);   // marche
+            let block = null;
+            for (let s = 0; s < seats; s++) {
+                if (s % 8 === 0) block = R() < 0.6 ? KIT[(R() * 5) | 0] : null;      // blocs de supporters en couleurs de club
+                const x0 = s * sw;
+                if (s % 20 === 10) { c.fillStyle = '#10141c'; c.fillRect(x0, y0, sw, rh); continue; }   // allée
+                c.fillStyle = SEAT[((s / 10) | 0) % SEAT.length]; c.fillRect(x0 + 1, y0 + rh * 0.42, sw - 2, rh * 0.46);
+                if (R() < 0.9) {
+                    c.fillStyle = (block && R() < 0.8) ? block : KIT[(R() * KIT.length) | 0];
+                    c.fillRect(x0 + sw * 0.16, y0 + rh * 0.36, sw * 0.68, rh * 0.5);                      // buste
+                    c.fillStyle = SKIN[(R() * SKIN.length) | 0];
+                    c.beginPath(); c.arc(x0 + sw * 0.5, y0 + rh * 0.26, sw * 0.2, 0, Math.PI * 2); c.fill();   // tête
+                }
+            }
+        }
+        tex.wrapU = tex.wrapV = S.B.Texture.WRAP_ADDRESSMODE;      // DynamicTexture est en CLAMP par défaut : on veut des tuiles qui se répètent
+        tex.anisotropicFilteringLevel = 4; tex.update();
+        return tex;
+    }
+    function boardTexture() {                                   // panneaux publicitaires (marques fictives)
+        const W = 2048, H = 64, tex = new S.B.DynamicTexture('boards', { width: W, height: H }, S.scene, true);
+        const c = tex.getContext();
+        [['AECM  ELITE', '#0b0f19', '#f5c518', '#f5c518'], ['KILI AIR', '#0d47a1', '#ffffff', '#ffd54f'],
+         ['SAHEL BANK', '#0b6b3a', '#ffffff', '#ffe082'], ['NIL TELECOM', '#b71c1c', '#ffffff', '#ffffff']].forEach((a, k) => {
+            const x = k * 512; c.fillStyle = a[1]; c.fillRect(x, 0, 512, H);
+            c.fillStyle = a[3]; c.fillRect(x, 0, 512, 5); c.fillRect(x, H - 5, 512, 5);
+            c.fillStyle = a[2]; c.font = 'bold 34px Arial, Helvetica, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.fillText(a[0], x + 256, H / 2 + 1);
         });
+        tex.wrapU = tex.wrapV = S.B.Texture.WRAP_ADDRESSMODE;
+        tex.anisotropicFilteringLevel = 4; tex.update();
+        return tex;
+    }
+
+    // ---- Buts : poteaux ronds, barre, armature, filet à mailles ----------
+    const GOAL_H = 2.44, GOAL_HW = 3.66, NET_TOP_D = 1.0, NET_TOP_H = 2.0, NET_BACK_D = 2.1, NET_CELL = 0.3;
+    function buildGoals() {
+        const B = S.B, scene = S.scene, seg = S.lowEnd ? 6 : 12;
+        const white = flatMat('goalWhite', 0.97, 0.97, 0.97);
+        const netTex = new B.DynamicTexture('netTex', { width: 64, height: 64 }, scene, true);
+        const nc = netTex.getContext(); nc.clearRect(0, 0, 64, 64);
+        nc.strokeStyle = 'rgba(255,255,255,0.95)'; nc.lineWidth = 9;
+        nc.beginPath(); nc.moveTo(0, 0); nc.lineTo(64, 0); nc.moveTo(0, 0); nc.lineTo(0, 64); nc.stroke();
+        netTex.hasAlpha = true; netTex.wrapU = netTex.wrapV = B.Texture.WRAP_ADDRESSMODE; netTex.anisotropicFilteringLevel = 4; netTex.update();
+        const netMat = texMat('netMat', netTex, 1.0, true);
+        netMat.emissiveColor = new B.Color3(0.9, 0.92, 0.95);
+        const gF = geo();
+        S.decor.nets = {};
+        [-1, 1].forEach(s => {
+            const gx = s * PITCH_W / 2, hw = GOAL_HW, X = (d) => gx + s * d;
+            // armature blanche : poteaux Ø 15 cm, barre, rails de filet, arceaux arrière
+            [-hw, hw].forEach(z => {
+                gTube(gF, [gx, 0, z], [gx, GOAL_H, z], 0.075, seg);
+                gTube(gF, [gx, GOAL_H, z], [X(NET_TOP_D), NET_TOP_H, z], 0.035, 6);
+                gTube(gF, [X(NET_TOP_D), NET_TOP_H, z], [X(NET_BACK_D), 0.03, z], 0.035, 6);
+                gTube(gF, [gx, 0.03, z], [X(NET_BACK_D), 0.03, z], 0.035, 6);
+            });
+            gTube(gF, [gx, GOAL_H, -hw - 0.075], [gx, GOAL_H, hw + 0.075], 0.075, seg);
+            gTube(gF, [X(NET_TOP_D), NET_TOP_H, -hw], [X(NET_TOP_D), NET_TOP_H, hw], 0.035, 6);
+            gTube(gF, [X(NET_BACK_D), 0.03, -hw], [X(NET_BACK_D), 0.03, hw], 0.035, 6);
+            // filet : 4 pans (dessus, fond, 2 côtés), mailles de 30 cm — origine sur la ligne de but
+            const g = geo(), C = NET_CELL, P = (d, y, z) => [s * d, y, z];
+            const slope = Math.hypot(NET_BACK_D - NET_TOP_D, NET_TOP_H);
+            gQuad(g, P(0, GOAL_H, -hw), P(0, GOAL_H, hw), P(NET_TOP_D, NET_TOP_H, hw), P(NET_TOP_D, NET_TOP_H, -hw),
+                [-hw / C, 0], [hw / C, 0], [hw / C, NET_TOP_D / C], [-hw / C, NET_TOP_D / C]);
+            gQuad(g, P(NET_TOP_D, NET_TOP_H, -hw), P(NET_TOP_D, NET_TOP_H, hw), P(NET_BACK_D, 0, hw), P(NET_BACK_D, 0, -hw),
+                [-hw / C, 0], [hw / C, 0], [hw / C, slope / C], [-hw / C, slope / C]);
+            [-hw, hw].forEach(z => {
+                const u = (d) => d / C, v = (y) => y / C;
+                gQuad(g, P(0, 0, z), P(0, GOAL_H, z), P(NET_TOP_D, NET_TOP_H, z), P(NET_BACK_D, 0, z),
+                    [u(0), v(0)], [u(0), v(GOAL_H)], [u(NET_TOP_D), v(NET_TOP_H)], [u(NET_BACK_D), v(0)]);
+            });
+            const nm = toMesh('net' + s, g, netMat, true);
+            if (nm) { nm.position.x = gx; nm.alphaIndex = 5; S.decor.nets[s] = nm; }
+        });
+        toMesh('goalFrame', gF, white);
+    }
+
+    // ---- Stade : tribunes, public, panneaux, mâts, bancs, piquets -------
+    function buildStadium() {
+        const B = S.B, scene = S.scene, lo = S.lowEnd, D = S.decor;
+        scene.clearColor = new B.Color4(0.025, 0.04, 0.07, 1);
+        // dalle autour du terrain : plus de grand vide noir
+        const apron = B.CreateGround('apron', { width: 260, height: 220 }, scene);
+        apron.material = flatMat('apronMat', 0.11, 0.13, 0.16); apron.position.y = -0.04; apron.isPickable = false; apron.freezeWorldMatrix();
+
+        const HX = PITCH_W / 2, HZ = PITCH_H / 2, BZ = HZ + 6, BX = HX + 6, SZ = BZ + 3.5, SX = BX + 4;
+        const DEP = 22, H0 = 1.8, H1 = 15, OX = SX + DEP, OZ = SZ + DEP;
+        const texA = crowdTexture(7, lo ? 512 : 1024, lo ? 256 : 512), texB = crowdTexture(23, lo ? 512 : 1024, lo ? 256 : 512);
+        const mA = texMat('crowdA', texA, 0.78), mB = texMat('crowdB', texB, 0.78);
+        D.crowd = [texA, texB]; D.crowdMats = [mA, mB];
+        const gA = geo(), gB = geo(), gC = geo(), gK = geo();
+        const slope = Math.hypot(DEP, H1 - H0), UC = 20, VC = 12.8;
+        const ramp = (g, x0, z0, x1, z1, nx, nz) => {
+            const len = Math.hypot(x1 - x0, z1 - z0), u1 = len / UC, v1 = slope / VC;
+            gQuad(g, [x0, H0, z0], [x1, H0, z1], [x1 + nx * DEP, H1, z1 + nz * DEP], [x0 + nx * DEP, H1, z0 + nz * DEP], [0, 0], [u1, 0], [u1, v1], [0, v1]);
+            gQuad(gC, [x0, 0, z0], [x1, 0, z1], [x1, H0, z1], [x0, H0, z0]);                                                   // façade
+            gQuad(gK, [x0 + nx * DEP, 0, z0 + nz * DEP], [x1 + nx * DEP, 0, z1 + nz * DEP], [x1 + nx * DEP, H1, z1 + nz * DEP], [x0 + nx * DEP, H1, z0 + nz * DEP]);   // mur arrière
+        };
+        ramp(gA, -OX, SZ, OX, SZ, 0, 1);          // tribune lointaine
+        ramp(gA, OX, -SZ, -OX, -SZ, 0, -1);       // tribune proche
+        ramp(gB, SX, -SZ, SX, SZ, 1, 0);          // virage droit
+        ramp(gB, -SX, SZ, -SX, -SZ, -1, 0);       // virage gauche
+        [-1, 1].forEach(s => [-1, 1].forEach(t => {
+            // bouchons latéraux des grandes tribunes et joues des virages : pas de trou dans le bol
+            gQuad(gK, [s * OX, 0, t * SZ], [s * OX, 0, t * OZ], [s * OX, H1, t * OZ], [s * OX, H0, t * SZ]);
+            gTri(gK, [s * SX, H0, t * SZ], [s * OX, H0, t * SZ], [s * OX, H1, t * SZ], Z2, Z2, Z2);
+        }));
+        toMesh('standsA', gA, mA); toMesh('standsB', gB, mB);
+        toMesh('standFacade', gC, flatMat('facade', 0.17, 0.19, 0.23)); toMesh('standBack', gK, flatMat('standBack', 0.10, 0.11, 0.14));
+
+        // panneaux publicitaires LED : le texte se lit depuis le centre du terrain
+        const gBd = geo(), bd = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0) / 48;
+            gQuad(gBd, [x0, 0, z0], [x1, 0, z1], [x1, 1.05, z1], [x0, 1.05, z0], [0, 0], [L, 0], [L, 1], [0, 1]); };
+        bd(-BX, BZ, BX, BZ); bd(BX, -BZ, -BX, -BZ); bd(BX, BZ, BX, -BZ); bd(-BX, -BZ, -BX, BZ);
+        toMesh('boards', gBd, texMat('boardsMat', boardTexture(), 1.0));
+
+        // piquets de corner (1,50 m, fanion jaune)
+        const gPo = geo(), gFl = geo();
+        [-1, 1].forEach(s => [-1, 1].forEach(t => {
+            const x = s * HX, z = t * HZ;
+            gTube(gPo, [x, 0, z], [x, 1.5, z], 0.025, 6);
+            gTri(gFl, [x, 1.5, z], [x, 1.15, z], [x - s * 0.5, 1.32, z], Z2, Z2, Z2);
+        }));
+        toMesh('cornerPoles', gPo, flatMat('poleMat', 0.95, 0.95, 0.95)); toMesh('cornerFlags', gFl, flatMat('flagMat', 0.98, 0.8, 0.05));
+
+        if (lo) return;                           // mobile faible : on s'arrête au décor essentiel
+        // bancs de touche (côté lointain) : abri vitré, banc rouge
+        const gGl = geo(), gBn = geo(), gFr = geo();
+        [-1, 1].forEach(s => {
+            const x0 = s > 0 ? 9 : -20, x1 = x0 + 11, z0 = HZ + 1.8, z1 = HZ + 4.4, hh = 2.1;
+            gQuad(gGl, [x0, 0, z1], [x1, 0, z1], [x1, hh, z1], [x0, hh, z1]);
+            gQuad(gGl, [x0, 0, z0], [x0, 0, z1], [x0, hh, z1], [x0, hh, z0]); gQuad(gGl, [x1, 0, z0], [x1, 0, z1], [x1, hh, z1], [x1, hh, z0]);
+            gQuad(gGl, [x0, hh, z0], [x1, hh, z0], [x1, hh, z1], [x0, hh, z1]);
+            gBox(gBn, (x0 + x1) / 2, 0.3, z1 - 0.7, 10, 0.6, 0.5);
+            [[x0, z0], [x1, z0], [x0, z1], [x1, z1]].forEach(p => gTube(gFr, [p[0], 0, p[1]], [p[0], hh, p[1]], 0.05, 5));
+        });
+        toMesh('dugoutGlass', gGl, flatMat('glassMat', 0.45, 0.65, 0.8, 0.22)); toMesh('dugoutBench', gBn, flatMat('benchMat', 0.55, 0.08, 0.1)); toMesh('dugoutFrame', gFr, flatMat('frameMat', 0.8, 0.8, 0.8));
+        // pylônes d'éclairage dans les angles
+        const gMs = geo(), gHd = geo(), gGw = geo();
+        [-1, 1].forEach(s => [-1, 1].forEach(t => {
+            const x = s * (SX + 10), z = t * (SZ + 10), hb = H0 + (SZ + 10 - SZ) / DEP * (H1 - H0), top = hb + 24;
+            gTube(gMs, [x, hb, z], [x, top, z], 0.35, 6);
+            const dx = -x, dz = -z, L = Math.hypot(dx, dz), px = -dz / L, pz = dx / L;     // perpendiculaire, face au terrain
+            const quad = (g, w, h, cy) => gQuad(g, [x - px * w, cy - h, z - pz * w], [x + px * w, cy - h, z + pz * w], [x + px * w, cy + h, z + pz * w], [x - px * w, cy + h, z - pz * w]);
+            quad(gHd, 3.2, 1.7, top + 1); quad(gGw, 5.2, 3.2, top + 1);
+        }));
+        toMesh('mastPoles', gMs, flatMat('mastMat', 0.35, 0.37, 0.4)); toMesh('mastHeads', gHd, flatMat('headMat', 1, 0.97, 0.85));
+        const glow = toMesh('mastGlow', gGw, flatMat('glowMat', 1, 0.95, 0.75, 0.22)); if (glow) glow.alphaIndex = 9;
+    }
+
+    // ---- Décor vivant : le public saute et le filet ondule sur un but ----
+    function decorCheer(side, delayMs) {
+        schedule(delayMs, () => {
+            S.decor.cheer = now();
+            const net = S.decor.nets && S.decor.nets[side === 'H' ? 1 : -1];
+            if (net) S.decor.pulse = { net, t0: now() };
+        });
+    }
+    function updateDecor() {
+        const D = S.decor; if (!D) return;
+        const t = now();
+        if (D.pulse) {                                         // le fond du filet part vers l'arrière puis revient
+            const e = (t - D.pulse.t0) / 1000, n = D.pulse.net;
+            if (e > 2.4) { n.scaling.x = 1; n.scaling.y = 1; D.pulse = null; }
+            else { const a = Math.exp(-2.6 * e) * Math.min(1, e / 0.08); n.scaling.x = 1 + 0.34 * a * (0.6 + 0.4 * Math.cos(e * 15)); n.scaling.y = 1 - 0.05 * a; }
+        }
+        if (D.cheer != null && D.crowd) {                      // tout le stade bondit ~5,5 s
+            const e = (t - D.cheer) / 1000, amp = Math.max(0, 1 - e / 5.5);
+            const jump = amp > 0 ? amp * 0.024 * Math.abs(Math.sin(e * 9)) : 0;
+            D.crowd.forEach(x => { x.vOffset = jump; });
+            const k = 0.78 + 0.16 * amp * (0.5 + 0.5 * Math.sin(e * 14));
+            D.crowdMats.forEach(m => { m.emissiveColor.set(k, k, k); });
+            if (amp <= 0) D.cheer = null;
+        }
     }
 
     function buildBall() {
@@ -391,6 +631,7 @@
             // Le ballon arrive au fond des filets : tout est calé sur SON arrivée.
             const sh = (typeof MATCHSIM !== 'undefined') ? MATCHSIM.shotFly : null;
             const delay = sh ? Math.max(0, sh.t0 + sh.dur - now()) : 0;
+            decorCheer(ev.side, delay);
             // gardien battu : il plonge pendant que le ballon arrive, pas avant
             const other = ev.side === 'H' ? 'A' : 'H';
             const gk = S.players[other][0];
@@ -468,6 +709,7 @@
 
         // nouveaux événements
         (f.ev || []).forEach(ev => { if (ev.id > S.lastEvId) { S.lastEvId = ev.id; try { handleEvent(ev); } catch (e) { console.warn('[3D] ev', e); } } });
+        updateDecor();
 
         // joueurs
         let carrier = null;
@@ -617,6 +859,9 @@
 
             buildPitch();
             buildBall();
+            S.decor = {};
+            try { buildGoals(); } catch (e) { console.warn('[3D] buts', e); }
+            try { buildStadium(); } catch (e) { console.warn('[3D] stade', e); }
 
             // Modèles (un fichier par apparence) + bibliothèques d'animations
             const q = S.quality;
@@ -669,7 +914,7 @@
         if (S.canvas && !S.canvas.isConnected) {             // l'écran de match a été reconstruit
             try { S.engine && S.engine.dispose(); } catch (e) {}
             Object.assign(S, { engine: null, scene: null, camera: null, ready: false, booting: false, running: false,
-                containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, matCache: new Map(), lastEvId: 0 });
+                containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, matCache: new Map(), lastEvId: 0, decor: {} });
             S.canvas = null; S.btn = null;
         }
         if (!S.canvas) {
