@@ -1,3 +1,22 @@
+# Écran de match sur mobile : terrain agrandi, plein écran, caméra rapprochée (06/10/2026)
+
+**Symptôme** : sur téléphone en portrait, le terrain ne faisait que 192 px de haut (`h-48`) sous un bandeau de score de 96 px : les joueurs en 3D tenaient en ~22 px et on ne distinguait presque rien.
+
+| Changement | Détail |
+|------------|--------|
+| Hauteur du terrain | `clamp(260px, 45dvh, 520px)` au lieu de 192 px fixes (`dvh` suit la barre d'adresse du navigateur) |
+| Bandeau de score | 64 px au lieu de 96 px sur mobile (logos 36 px, score `text-4xl`), marges de la zone centrale et du pied de page réduites, encoche et barre du bas respectées |
+| Plein écran | Nouveau bouton (`#pitch-full`, `app.togglePitchFull`) : le terrain recouvre tout l'écran, avec un mini-score/chrono recopié (`#pitch-hud`). Quitté automatiquement au coup de sifflet final |
+| Paysage | Téléphone couché : terrain à gauche (60 %), direct à droite (40 %), bandeau réduit |
+| Boutons du terrain | Tempo, plein écran et réduire sont alignés en haut à droite (avant, tempo et réduire se **chevauchaient** sur mobile) |
+| Caméra 3D (`match3d.js`) | Vue suivie en portrait : ~13,5 px/m au lieu de 11 (joueurs plus gros), élévation 44° ; vue d'ensemble en portrait : caméra **tournée de 90°**, la longueur du terrain suit la hauteur de l'écran au lieu d'un mince ruban |
+
+**Pixellisation des personnages (cause trouvée)** : `setHardwareScalingLevel(Math.max(1, dpr / 1.5))` produisait un niveau de **2** sur un écran dpr 3 (**3** sur mobile faible) — soit un rendu à 1/2 ou 1/3 de la définition CSS, ensuite étiré. Désormais le rendu se fait à `min(dpr, 2)` (mobile faible : `min(dpr, 1,25)`), avec repli automatique : si l'appareil rame, la résolution retombe d'abord à 1 px CSS avant que la 3D soit coupée (`guardFps`).
+
+**Non vérifié** : aucun rendu sur un vrai téléphone ni dans un navigateur (pas de Chromium dans mon environnement). Contrôles faits : syntaxe JS (`app.js`, `match3d.js`) et équilibre des balises de l'écran de match. À tester : portrait, paysage, plein écran, tap sur le terrain (suivie ↔ d'ensemble). Si la vue d'ensemble tournée déplaît, retirer la variable `rot` dans `updateCamera`.
+
+---
+
 # Décor 3D : buts, filets, stade (06/10/2026)
 
 **Avant** : deux boîtes blanches carrées + un filet « filaire » flou, et tout ce qui dépassait du terrain était un grand vide noir.

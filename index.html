@@ -274,9 +274,39 @@
         /* Terrain replié : uniquement sur téléphone — sur grand écran le
            terrain occupe une colonne, il n'y a rien à récupérer. */
         @media (max-width: 1023.98px) {
-            #pitch-container { transition: height .25s cubic-bezier(.16,1,.3,1); }
+            /* Le terrain prend ~45 % de la hauteur visible (au lieu de 192 px fixes) :
+               en portrait, le fil du direct garde le reste. dvh suit la barre d'URL. */
+            #pitch-container {
+                height: clamp(260px, 45vh, 520px);
+                height: clamp(260px, 45dvh, 520px);
+                transition: height .25s cubic-bezier(.16,1,.3,1);
+            }
             #pitch-container.is-min { height: 5.5rem !important; }
+            /* Téléphone en paysage : le terrain prend toute la hauteur utile, le direct passe à côté */
+            @media (orientation: landscape) and (max-height: 520px) {
+                #match-body { flex-direction: row !important; }
+                #pitch-container { height: auto; flex: 1 1 60%; min-width: 0; }
+                #match-body > .panel-glass { flex: 1 1 40%; min-width: 0; }
+                #match-header { height: 3.25rem; }
+                #pitch-container.is-min { height: auto !important; flex-basis: 5.5rem; }
+            }
+            /* Plein écran : le terrain recouvre tout, on garde l'encoche et la barre du bas */
+            #pitch-container.is-full {
+                position: fixed; inset: 0; z-index: 70; height: 100vh; height: 100dvh;
+                border-radius: 0; border: 0; max-height: none;
+                padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+            }
+            #pitch-container.is-full #pitch-hud { display: block; }
+            #pitch-container.is-full #pitch-3d-btn,
+            #pitch-container.is-full #pitch-toggle,
+            #pitch-container.is-full #pitch-full { margin-top: env(safe-area-inset-top); }
+            #pitch-container.is-full #pitch-toggle { display: none; }
+            /* Rangée de commandes en haut à droite : tempo | plein écran | réduire (avant, tempo et réduire se chevauchaient) */
+            #pitch-tempo-btn { inset-inline-end: 5.5rem !important; }
+            #pitch-container.is-full #pitch-full { inset-inline-end: .5rem; }
+            #pitch-container.is-full #pitch-tempo-btn { inset-inline-end: 3rem !important; margin-top: env(safe-area-inset-top); }
         }
+        #pitch-full[aria-pressed="true"] { background: rgba(249,115,22,.55); }
         #pitch-toggle[aria-pressed="true"] #pitch-toggle-ico { transform: rotate(180deg); }
 
         /* ── BULLE DE L'ADJOINT ──────────────────────────────────────────
@@ -1417,29 +1447,29 @@ body{background:#0a0e17;color:#e2e8f0;font-family:'Inter',sans-serif;font-size:1
             <!-- ================= VIEW : MATCH EN DIRECT ================= -->
             <div id="view-match" class="hidden-view h-full flex flex-col absolute inset-0 z-50 bg-ui-900 animate-[fadeIn_0.3s_ease-out]">
                 
-                <div class="h-24 lg:h-28 panel-glass flex justify-between items-center px-3 lg:px-12 shrink-0 relative overflow-hidden border-b border-white/5">
+                <div id="match-header" class="h-16 sm:h-24 lg:h-28 panel-glass flex justify-between items-center px-3 lg:px-12 shrink-0 relative overflow-hidden border-b border-white/5 pt-[env(safe-area-inset-top)]">
                     <div class="absolute inset-0 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none"></div>
                     <!-- Domicile -->
                     <div class="flex items-center gap-2 lg:gap-3 flex-1 min-w-0 z-10 justify-start">
-                        <div class="w-12 h-12 lg:w-14 lg:h-14 shrink-0 drop-shadow-lg" id="live-home-logo"></div>
+                        <div class="w-9 h-9 sm:w-12 sm:h-12 lg:w-14 lg:h-14 shrink-0 drop-shadow-lg" id="live-home-logo"></div>
                         <div class="w-6 h-6 shrink-0 hidden sm:block" id="live-home-kit"></div>
                         <span class="text-xs sm:text-sm font-bold text-white leading-tight truncate" id="live-home-name">--</span>
                     </div>
                     <!-- Score -->
                     <div class="flex flex-col items-center justify-center shrink-0 px-3 lg:px-6 z-10">
-                        <div id="live-score" role="status" aria-live="polite" aria-atomic="true" class="text-5xl lg:text-6xl font-teko text-white font-black leading-none tracking-wider tabular-nums">0 - 0</div>
+                        <div id="live-score" role="status" aria-live="polite" aria-atomic="true" class="text-4xl sm:text-5xl lg:text-6xl font-teko text-white font-black leading-none tracking-wider tabular-nums">0 - 0</div>
                         <div id="live-time" class="mt-1 text-brand-500 font-bold text-[10px] uppercase tracking-[0.2em] tabular-nums">00:00</div>
                     </div>
                     <!-- Extérieur -->
                     <div class="flex items-center gap-2 lg:gap-3 flex-1 min-w-0 z-10 justify-end text-end">
                         <span class="text-xs sm:text-sm font-bold text-white leading-tight truncate" id="live-away-name">--</span>
                         <div class="w-6 h-6 shrink-0 hidden sm:block" id="live-away-kit"></div>
-                        <div class="w-12 h-12 lg:w-14 lg:h-14 shrink-0 drop-shadow-lg" id="live-away-logo"></div>
+                        <div class="w-9 h-9 sm:w-12 sm:h-12 lg:w-14 lg:h-14 shrink-0 drop-shadow-lg" id="live-away-logo"></div>
                     </div>
                 </div>
 
-                <div class="flex-1 flex flex-col lg:flex-row gap-4 p-4 min-h-0 bg-ui-900 relative">
-                    <div class="h-48 sm:h-64 lg:h-full lg:flex-1 pitch-bg rounded-xl relative overflow-hidden flex-shrink-0 shadow-inner flex items-center justify-center border border-white/10" id="pitch-container">
+                <div id="match-body" class="flex-1 flex flex-col lg:flex-row gap-2 lg:gap-4 p-2 lg:p-4 min-h-0 bg-ui-900 relative">
+                    <div class="lg:h-full lg:flex-1 pitch-bg rounded-xl relative overflow-hidden flex-shrink-0 shadow-inner flex items-center justify-center border border-white/10" id="pitch-container">
                         <!-- Terrain vectoriel : lignes proportionnelles, elles restent
                              justes à toutes les tailles d'écran contrairement à des
                              div en pixels. Bandes de tonte pour la profondeur. -->
@@ -1477,6 +1507,16 @@ body{background:#0a0e17;color:#e2e8f0;font-family:'Inter',sans-serif;font-size:1
                         <!-- Sur téléphone, le terrain et le fil du direct se
                              disputent 600 px de haut. Un tap réduit le terrain
                              de moitié et rend l'espace au commentaire. -->
+                        <button type="button" id="pitch-full" onclick="app.togglePitchFull()"
+                                class="lg:hidden absolute top-2 end-12 z-40 w-9 h-9 rounded-lg bg-black/45 border border-white/15 text-white/85 flex items-center justify-center backdrop-blur-sm"
+                                aria-label="Terrain en plein écran" aria-pressed="false">
+                            <svg id="pitch-full-ico" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+                        </button>
+                        <!-- Score repris sur le terrain en plein écran (copie de #live-score / #live-time) -->
+                        <div id="pitch-hud" class="hidden absolute top-2 start-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-lg bg-black/55 border border-white/15 backdrop-blur-sm text-center pointer-events-none">
+                            <span id="pitch-hud-score" class="font-teko text-2xl text-white leading-none tabular-nums">0 - 0</span>
+                            <span id="pitch-hud-time" class="ms-2 text-[10px] font-bold text-brand-500 tabular-nums">00:00</span>
+                        </div>
                         <button type="button" id="pitch-toggle" onclick="app.togglePitchSize()"
                                 class="lg:hidden absolute top-2 end-2 z-40 w-9 h-9 rounded-lg bg-black/45 border border-white/15 text-white/85 flex items-center justify-center backdrop-blur-sm"
                                 aria-label="Réduire le terrain" aria-pressed="false">
@@ -1522,8 +1562,8 @@ body{background:#0a0e17;color:#e2e8f0;font-family:'Inter',sans-serif;font-size:1
                     </div>
                 </div>
 
-                <div class="p-4 shrink-0 panel-glass rounded-t-xl z-20 transition-all border-t border-white/10">
-                    <button id="btn-end-match" onclick="app.finishLiveMatch()" class="hidden w-full btn-primary py-4 rounded-xl font-bold uppercase text-white tracking-widest text-sm shadow-[0_0_15px_rgba(249,115,22,0.4)]">
+                <div class="p-2 lg:p-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] lg:pb-4 shrink-0 panel-glass rounded-t-xl z-20 transition-all border-t border-white/10">
+                    <button id="btn-end-match" onclick="app.finishLiveMatch()" class="hidden w-full btn-primary py-3 lg:py-4 rounded-xl font-bold uppercase text-white tracking-widest text-sm shadow-[0_0_15px_rgba(249,115,22,0.4)]">
                         <span data-i18n="Voir les résultats de la journée">Voir les résultats de la journée</span>
                     </button>
                     <div id="match-loading-msg" class="text-center text-xs text-slate-400 font-bold uppercase animate-pulse">Simulation en cours...</div>

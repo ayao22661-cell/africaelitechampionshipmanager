@@ -662,9 +662,16 @@
         const cam = S.camera, B = S.B;
         const aspect = Math.max(0.5, S.engine.getAspectRatio(cam));
         const wide = S.camMode === 'wide';
+        const portrait = aspect < 1.15;                         // téléphone en portrait : cadre presque carré ou haut
         const cw = S.canvas.clientWidth || 360;
-        const viewW = wide ? FIELD_W - 2 : clamp(cw / 11, 30, 42);          // largeur de terrain visible au sol (m) : ~11 px par mètre
-        const el = (wide ? 52 : 36) * Math.PI / 180;
+        const el = (wide ? 52 : (portrait ? 44 : 36)) * Math.PI / 180;
+        // Vue d'ensemble en portrait : on tourne la caméra de 90° pour que la longueur du terrain (105 m)
+        // aille dans le sens de la hauteur de l'écran — le terrain remplit le cadre au lieu d'être un fin ruban.
+        const rot = wide && portrait;
+        let viewW;                                              // largeur de terrain visible au sol (m)
+        if (rot) viewW = Math.max(FIELD_H, FIELD_W * Math.sin(el) * aspect) - 2;
+        else if (wide) viewW = FIELD_W - 2;
+        else viewW = clamp(cw / (portrait ? 13.5 : 11), portrait ? 24 : 30, 42);   // vue suivie : ~11 px/m (13,5 en portrait : joueurs plus gros)
         const th = Math.tan(cam.fov / 2);
         const dist = (viewW / 2) / (th * aspect);
         const lim = Math.max(0, FIELD_W / 2 - viewW / 2 - 2);
@@ -672,7 +679,8 @@
         const tz = wide ? 0 : clamp(ballZ * 0.35, -10, 10);
         const k = 1 - Math.exp(-dt * (wide ? 6 : 3.2));
         S.camX += (tx - S.camX) * k; S.camZ += (tz - S.camZ) * k;
-        cam.position.set(S.camX, Math.sin(el) * dist, S.camZ - Math.cos(el) * dist);
+        if (rot) cam.position.set(S.camX - Math.cos(el) * dist, Math.sin(el) * dist, S.camZ);
+        else cam.position.set(S.camX, Math.sin(el) * dist, S.camZ - Math.cos(el) * dist);
         (S.tgt || (S.tgt = new B.Vector3())).set(S.camX, 0, S.camZ);
         cam.setTarget(S.tgt);
     }
@@ -787,6 +795,12 @@
         S.guardLast = t;
         const fps = S.engine.getFps();
         S.slowCount = fps < (S.lowEnd ? 14 : 20) ? S.slowCount + 1 : 0;
+        // 1re réaction à la lenteur : baisser la résolution (retour à 1 px CSS) avant d'abandonner la 3D
+        if (S.slowCount >= 3 && S.resTarget > 1) {
+            S.resTarget = 1; S.engine.setHardwareScalingLevel(1);
+            S.slowCount = 0; S.guardT0 = t; S.guardLast = t;
+            return;
+        }
         if (S.slowCount >= 5) {
             console.warn('[Match3D] trop lent (' + fps.toFixed(0) + ' i/s) : retour à la 2D');
             setEnabled(false);
@@ -843,7 +857,11 @@
 
             const dpr = window.devicePixelRatio || 1;
             const engine = S.engine = new B.Engine(S.canvas, !S.lowEnd, { alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false, stencil: false }, false);
-            engine.setHardwareScalingLevel(Math.max(1, dpr / (S.lowEnd ? 1 : 1.5)));
+            // Résolution de rendu. Babylon : niveau 1 = 1 pixel par pixel CSS, 0,5 = 2x plus fin.
+            // Avant : max(1, dpr/1,5) donnait un niveau de 2 (écran dpr 3) à 3 (mobile faible) : le rendu
+            // était calculé à 1/2 ou 1/3 de la définition CSS puis étiré = personnages pixélisés.
+            S.resTarget = S.lowEnd ? Math.min(dpr, 1.25) : Math.min(dpr, 2);
+            engine.setHardwareScalingLevel(1 / Math.max(1, S.resTarget));
             const scene = S.scene = new B.Scene(engine);
             scene.clearColor = new B.Color4(0.04, 0.09, 0.07, 1);
             scene.autoClearDepthAndStencil = true;

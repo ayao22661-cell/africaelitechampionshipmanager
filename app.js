@@ -22165,6 +22165,39 @@ simulateAIBypassMatchday(otherMatches) {
         btn.setAttribute('aria-label', t(min ? 'Agrandir le terrain' : 'Réduire le terrain'));
     }
 
+    // Terrain en plein écran sur téléphone : le score est recopié dans un petit
+    // bandeau (#pitch-hud) puisque le bandeau du haut est recouvert.
+    togglePitchFull(force) {
+        const pitch = document.getElementById('pitch-container');
+        const btn = document.getElementById('pitch-full');
+        if (!pitch || !btn) return;
+        const on = typeof force === 'boolean' ? force : !pitch.classList.contains('is-full');
+        if (on) {
+            pitch.classList.remove('is-min');
+            const tg = document.getElementById('pitch-toggle');
+            if (tg) { tg.setAttribute('aria-pressed', 'false'); }
+        }
+        pitch.classList.toggle('is-full', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('aria-label', t(on ? 'Quitter le plein écran' : 'Terrain en plein écran'));
+        const sync = () => {
+            const sc = document.getElementById('live-score'), tm = document.getElementById('live-time');
+            const hs = document.getElementById('pitch-hud-score'), ht = document.getElementById('pitch-hud-time');
+            if (sc && hs) hs.textContent = sc.textContent;
+            if (tm && ht) ht.textContent = tm.textContent;
+        };
+        if (on) {
+            sync();
+            if (!this._pitchHudObs && window.MutationObserver) {
+                this._pitchHudObs = new MutationObserver(sync);
+                ['live-score', 'live-time'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) this._pitchHudObs.observe(el, { childList: true, characterData: true, subtree: true });
+                });
+            }
+        }
+    }
+
     dismissAssistantTip() {
         clearTimeout(this._coachTipTimer);
         const box = document.getElementById('coach-tip');
@@ -23006,6 +23039,7 @@ simulateAIBypassMatchday(otherMatches) {
 
     finishLiveMatch() {
         this.dismissAssistantTip();
+        this.togglePitchFull(false);   // le terrain quitte le plein écran avant l'écran des résultats
         // Coup de sifflet final : sifflet long, puis l'ambiance retombe.
         SFX.whistle(true); SFX.stopCrowd();
         this._matchOver = true; // LOT 15 : plus aucun ordre de scène accepté
