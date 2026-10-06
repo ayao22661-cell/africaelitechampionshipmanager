@@ -1,0 +1,600 @@
+/* =====================================================================
+ * AECM — sm-shell.css
+ * Coquille « paysage » des écrans de gestion, sur le modèle des jeux de
+ * gestion de football (Soccer Manager / Football Manager) : menu latéral à
+ * gauche, barre du haut avec écusson, monnaies et bouton « Continuer »,
+ * panneaux côte à côte.
+ *
+ * Active quand html.land (voir sm-shell.js : écran plus large que haut).
+ * Couleurs : UNIQUEMENT la charte existante (brand-500 #f97316 / brand-600
+ * #ea580c, ui-900 #0a0e17, ui-800 #111827, ui-700 #1f2937 et les jetons
+ * --surface-grad, --text, --text-muted, --border, --brand…).
+ * ===================================================================== */
+
+:root {
+    --sm-brand-grad: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    --sm-side-w: 188px;
+    --sm-head-h: 52px;
+}
+
+/* ---- Menu latéral --------------------------------------------------- */
+html.land aside.sm-side {
+    display: flex !important;
+    width: var(--sm-side-w);
+    background: #111827;
+    border-inline-end: 1px solid var(--border);
+}
+html.land aside.sm-side > .sm-side-brand { height: var(--sm-head-h); }
+aside.sm-side .sm-side-brand {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 14px; border-bottom: 1px solid var(--border);
+}
+aside.sm-side .sm-side-brand b { font-family: 'Teko', sans-serif; font-size: 24px; line-height: 1; color: #fff; letter-spacing: .02em; }
+aside.sm-side .sm-side-brand b i { font-style: normal; color: #f97316; }
+aside.sm-side nav.sm-side-nav { flex: 1; overflow-y: auto; padding: 4px 0 8px; scrollbar-width: none; }
+aside.sm-side nav.sm-side-nav::-webkit-scrollbar { display: none; }
+aside.sm-side .sm-item {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 7px 12px 7px 14px; min-height: 34px;
+    color: var(--text); font-weight: 700; font-size: 12.5px; letter-spacing: .01em;
+    background: transparent; border: 0; text-align: start; position: relative;
+    transition: background .15s, color .15s;
+}
+aside.sm-side .sm-item svg.sm-ico { width: 16px; height: 16px; fill: currentColor; flex: 0 0 16px; opacity: .9; }
+aside.sm-side .sm-item .sm-chev { margin-inline-start: auto; width: 12px; height: 12px; opacity: .55; fill: none; stroke: currentColor; stroke-width: 2.4; }
+aside.sm-side .sm-item:hover { background: rgba(255, 255, 255, .04); }
+/* élément actif : aplat dégradé de la marque, comme l'onglet sélectionné des captures */
+aside.sm-side .sm-item.text-brand-500,
+aside.sm-side .sm-item.is-active {
+    background: var(--sm-brand-grad); color: #fff;
+}
+aside.sm-side .sm-item.text-brand-500 .sm-chev,
+aside.sm-side .sm-item.is-active .sm-chev { opacity: 1; }
+aside.sm-side .sm-sep { height: 2px; margin: 4px 12px; background: #f97316; opacity: .45; border-radius: 2px; }
+aside.sm-side .sm-side-foot {
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 8px 6px; border-top: 1px solid var(--border);
+}
+aside.sm-side .sm-side-foot button { color: var(--text-muted); padding: 6px; border-radius: 9px; }
+aside.sm-side .sm-side-foot button:hover { color: #fff; background: rgba(255, 255, 255, .05); }
+aside.sm-side .sm-side-foot svg { width: 22px; height: 22px; fill: currentColor; }
+/* badge de messages non lus dans le menu */
+aside.sm-side .sm-badge {
+    min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+    background: #ef4444; color: #fff; font-size: 10px; line-height: 16px; text-align: center;
+}
+
+/* ---- Barre du haut -------------------------------------------------- */
+html.land #main-header {
+    height: var(--sm-head-h) !important; padding: 0 0 0 10px !important;
+    background: linear-gradient(90deg, #111827 0%, #0a0e17 100%);
+    gap: 10px;
+}
+html.land #main-header .sm-back {
+    width: 34px; height: 34px; border-radius: 999px; flex: 0 0 34px;
+    display: grid; place-items: center; background: var(--sm-brand-grad); color: #fff;
+    box-shadow: var(--shadow-lift);
+}
+html.land #main-header .sm-back svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.6; }
+html.land #main-header .sm-back[disabled] { opacity: .35; }
+.sm-only { display: none !important; }
+html.land .sm-only { display: flex !important; }
+html.land .sm-hide { display: none !important; }
+html.land #main-header .sm-search {
+    flex: 1 1 auto; max-width: 300px; height: 32px; border-radius: 999px;
+    align-items: center; gap: 8px; padding: 0 6px 0 14px;
+    background: #1f2937; border: 1px solid var(--border); color: var(--text-muted);
+    font-size: 12.5px; font-weight: 600;
+}
+html.land #main-header .sm-search span { flex: 1; text-align: start; }
+html.land #main-header .sm-search i {
+    width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center;
+    background: var(--sm-brand-grad); color: #fff;
+}
+html.land #main-header .sm-search svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.6; }
+html.land #main-header .sm-pills { align-items: center; gap: 6px; }
+html.land #main-header .sm-pill {
+    height: 30px; border-radius: 999px; align-items: center; gap: 6px; padding: 0 3px 0 10px;
+    background: #0a0e17; border: 1px solid var(--border-strong); color: #fff;
+    font-family: 'Teko', sans-serif; font-size: 19px; line-height: 1;
+}
+html.land #main-header .sm-pill svg { width: 15px; height: 15px; }
+html.land #main-header .sm-pill .sm-plus {
+    width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center;
+    background: var(--sm-brand-grad); color: #fff; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 800;
+}
+/* « Continuer » : grand bouton en bout de barre, coin biseauté */
+html.land #main-header .sm-continue {
+    align-self: stretch; align-items: center; gap: 10px; padding: 0 14px 0 26px;
+    background: var(--sm-brand-grad); color: #fff;
+    clip-path: polygon(14px 0, 100% 0, 100% 100%, 0 100%);
+}
+html.land #main-header .sm-continue .sm-c-txt { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; }
+html.land #main-header .sm-continue b { font-family: 'Teko', sans-serif; font-size: 22px; font-weight: 600; letter-spacing: .02em; }
+html.land #main-header .sm-continue small { font-size: 10.5px; font-weight: 700; opacity: .9; }
+html.land #main-header .sm-continue svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 3; }
+html.land #main-header .sm-continue:active { filter: brightness(.92); }
+
+/* ---- Zone de contenu ------------------------------------------------ */
+html.land #mobile-nav { display: none !important; }
+html.land main { padding: 12px 14px 14px !important; }
+html.land #tier-bar { padding-top: 3px; padding-bottom: 3px; }
+
+/* ---- Panneaux : langage commun des écrans de gestion --------------- */
+html.land .card,
+html.land .panel-glass:not(#main-header) {
+    border-radius: var(--r-card, 14px);
+    background: var(--surface-grad);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lift);
+}
+/* titres de section : capitales, filet de la marque à gauche */
+html.land .sec-title { letter-spacing: .06em; }
+
+/* ---- Tableau de bord en paysage : panneaux côte à côte -------------- */
+html.land #view-dashboard .db-wrap {
+    display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 12px; align-items: start; max-width: none;
+}
+html.land #view-dashboard .db-wrap > .match-card { grid-row: span 3; }
+html.land #view-dashboard .db-wrap > .btn-office { grid-column: 2; }
+
+/* retouches coquille */
+aside.sm-side .sm-side-brand svg { width: 22px; height: 22px; fill: #f97316; flex: 0 0 22px; }
+html.land #main-header > div:first-child { flex: 0 1 auto !important; gap: 8px; }
+html.land #main-header #header-club-name { font-size: 20px !important; max-width: 150px; }
+html.land #main-header #header-league-name { max-width: 150px; }
+html.land #main-header .sm-search { max-width: 210px; min-width: 120px; }
+html.land #main-header .sm-pill { white-space: nowrap; font-size: 17px; padding-inline-start: 8px; }
+html.land #main-header #header-club-name { max-width: 120px; }
+html.land #main-header #header-league-name { max-width: 120px; }
+@media (max-width: 980px) {
+    html.land #main-header .sm-search { min-width: 0; width: 32px; flex: 0 0 32px; padding: 0 3px; justify-content: center; }
+    html.land #main-header .sm-search span { display: none; }
+    html.land #main-header .sm-continue { padding-inline-start: 22px; }
+    html.land #main-header .sm-continue b { font-size: 19px; }
+}
+/* barre de progression de carrière : rangée dans le menu latéral en paysage */
+html.land aside.sm-side #tier-bar { padding: 6px 12px 7px !important; background: transparent; border-bottom: 1px solid var(--border); }
+html.land aside.sm-side #tier-bar #tier-bar-label { font-size: 9px; }
+
+/* =====================================================================
+ * ÉCRANS EN PAYSAGE — règles communes
+ * ===================================================================== */
+/* pleine largeur : les écrans étaient bornés pour la lecture sur ordinateur */
+html.land main > [id^="view-"]:not(#view-match) { max-width: none !important; }
+
+/* onglets de section : texte + soulignement de la marque, comme les onglets des captures */
+html.land #subnav.seg:not(.hidden) {
+    display: flex; gap: 0; padding: 0 6px; margin-bottom: 10px !important;
+    background: var(--surface-grad); border: 1px solid var(--border); border-radius: var(--r-card, 14px);
+    height: 38px; align-items: stretch;
+}
+html.land #subnav .seg-btn {
+    flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+    background: transparent !important; box-shadow: none !important; border-radius: 0 !important;
+    color: var(--text-muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; position: relative;
+}
+html.land #subnav .seg-btn svg { width: 15px; height: 15px; }
+html.land #subnav .seg-btn.is-active { color: #fff; }
+html.land #subnav .seg-btn.is-active::after {
+    content: ''; position: absolute; left: 14%; right: 14%; bottom: 0; height: 3px; border-radius: 3px 3px 0 0;
+    background: var(--sm-brand-grad);
+}
+
+/* titres d'écran : plus compacts, sous-titres explicatifs masqués (la hauteur est rare en paysage) */
+html.land main [id^="view-"] h3.font-teko.text-3xl { font-size: 24px !important; line-height: 1.1; }
+html.land main [id^="view-"] h3.font-teko.text-3xl + p.text-xs { display: none; }
+
+/* Effectif : grille plus dense */
+html.land #squad-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 10px !important; }
+@media (min-width: 1100px) { html.land #squad-grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; } }
+html.land .squad-toolbar { margin-bottom: 10px !important; }
+
+/* tous les sélecteurs à onglets : même langage que les onglets de section */
+html.land .seg:not(.hidden):not(#subnav) {
+    background: var(--surface-grad); border: 1px solid var(--border); border-radius: var(--r-card, 14px);
+    padding: 0 6px; min-height: 36px; margin-bottom: 10px !important;
+}
+html.land .seg:not(#subnav) .seg-btn {
+    background: transparent !important; box-shadow: none !important; border-radius: 0 !important;
+    color: var(--text-muted); position: relative; padding-top: 6px; padding-bottom: 6px;
+}
+html.land .seg:not(#subnav) .seg-btn.is-active { color: #fff; }
+html.land .seg:not(#subnav) .seg-btn.is-active::after {
+    content: ''; position: absolute; left: 14%; right: 14%; bottom: 0; height: 3px; border-radius: 3px 3px 0 0;
+    background: var(--sm-brand-grad);
+}
+
+/* Tactique : terrain à gauche, effectif en colonne à droite, tout à la hauteur de l'écran */
+html.land #view-tactics > .flex:first-child { margin-bottom: 6px !important; }
+html.land #tac-pane-pitch:not(.hidden) {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 32%); gap: 10px;
+    height: calc(100dvh - var(--sm-head-h) - 118px); min-height: 230px;
+}
+html.land #tac-pane-pitch > div:first-child { height: 100% !important; min-height: 0 !important; }
+html.land #tac-pane-pitch > .mt-3 { margin-top: 0 !important; min-height: 0; }
+html.land #tac-pane-pitch > .mt-3 > .panel-glass { height: 100%; overflow-y: auto; scrollbar-width: thin; }
+html.land #tactics-titulaires, html.land #tactics-remplacants, html.land #tactics-reservistes {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+html.land #tac-pane-pitch > .mt-3 p.text-center { display: none; }
+
+/* Terrain tactique en paysage : mini-cartes joueurs */
+.sm-tok {
+    position: absolute; z-index: 20; transform: translate(-50%, -50%);
+    display: grid; grid-template-columns: 26px auto; grid-template-rows: 26px auto auto;
+    column-gap: 2px; align-items: center; width: 64px; pointer-events: none;
+    transition: left .7s, top .7s;
+}
+.sm-tok-face {
+    grid-column: 1; grid-row: 1; width: 26px; height: 26px; border-radius: 999px; overflow: hidden;
+    background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.02)); border: 1px solid var(--border-strong);
+    justify-self: end;
+}
+.sm-tok-face svg { width: 100%; height: 100%; }
+.sm-tok-ovr {
+    grid-column: 2; grid-row: 1; justify-self: start; align-self: start;
+    min-width: 21px; height: 21px; padding: 0 3px; border-radius: 999px; display: grid; place-items: center;
+    background: #0a0e17; border: 2px solid #f97316; color: #fff;
+    font-family: 'Teko', sans-serif; font-size: 15px; line-height: 1;
+}
+.sm-tok-pos {
+    grid-column: 2; grid-row: 1; align-self: end; justify-self: start; margin-top: 18px;
+    font-size: 8.5px; font-weight: 800; letter-spacing: .04em; padding: 0 4px; border-radius: 3px;
+    background: var(--sm-brand-grad); color: #fff; line-height: 12px;
+}
+.sm-tok-name {
+    grid-column: 1 / 3; grid-row: 2; margin-top: 2px; text-align: center;
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #fff;
+    background: rgba(10, 14, 23, .88); border-radius: 4px 4px 0 0; padding: 1px 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sm-tok-name i { font-style: normal; color: #f97316; margin-inline-start: 2px; }
+.sm-tok-bar { grid-column: 1 / 3; grid-row: 3; height: 3px; background: rgba(10, 14, 23, .88); border-radius: 0 0 3px 3px; overflow: hidden; }
+.sm-tok-bar b { display: block; height: 100%; }
+.sm-tok.is-bad .sm-tok-name { background: #ef4444; }
+
+/* =====================================================================
+ * MATCH EN PAYSAGE — 3D plein écran, éléments superposés
+ * ===================================================================== */
+html.land.in-match aside.sm-side,
+html.land.in-match #main-header,
+html.land.in-match #tier-bar { display: none !important; }
+html.land.in-match main { padding: 0 !important; overflow: hidden !important; }
+html.land.in-match #view-match { position: fixed !important; inset: 0 !important; z-index: 70; }
+html.land.in-match #match-body { position: absolute !important; inset: 0 !important; padding: 0 !important; gap: 0 !important; display: block !important; }
+html.land.in-match #pitch-container {
+    position: absolute !important; inset: 0 !important; height: auto !important; width: auto !important;
+    border-radius: 0 !important; border: 0 !important;
+}
+html.land.in-match #pitch-full, html.land.in-match #pitch-toggle, html.land.in-match #pitch-hud { display: none !important; }
+
+/* pastille de score, centrée en haut */
+html.land.in-match #match-header {
+    position: absolute !important; top: 8px; left: 50%; transform: translateX(-50%); z-index: 75;
+    height: 34px !important; padding: 0 !important; gap: 0; border-radius: 9px; overflow: hidden;
+    background: #0a0e17 !important; border: 1px solid var(--border-strong) !important; box-shadow: var(--shadow-lift);
+    width: auto; max-width: 70vw;
+}
+html.land.in-match #match-header > .absolute { display: none; }
+html.land.in-match #match-header > div { flex: 0 0 auto !important; gap: 6px !important; }
+html.land.in-match #match-header > div:first-child { padding-inline-start: 8px; }
+html.land.in-match #match-header > div:last-child { padding-inline-end: 8px; }
+html.land.in-match #live-home-logo, html.land.in-match #live-away-logo { width: 22px !important; height: 22px !important; }
+html.land.in-match #live-home-kit, html.land.in-match #live-away-kit { display: none !important; }
+html.land.in-match #live-home-name, html.land.in-match #live-away-name {
+    font-family: 'Teko', sans-serif; font-size: 18px !important; font-weight: 600; text-transform: uppercase; max-width: 110px; letter-spacing: .02em;
+}
+html.land.in-match #match-header > div:nth-child(3) {
+    flex-direction: row-reverse !important; align-items: stretch; padding: 0 !important; margin: 0 8px; align-self: stretch;
+}
+html.land.in-match #live-score {
+    font-size: 26px !important; padding: 0 10px; display: flex; align-items: center;
+    background: var(--sm-brand-grad); color: #fff;
+}
+html.land.in-match #live-time {
+    margin: 0 !important; padding: 0 10px; display: flex; align-items: center;
+    background: #1f2937; color: #fff !important; font-size: 12px !important; letter-spacing: .06em !important;
+}
+
+/* panneau du direct / stats / notes / zones : par-dessus la 3D, à droite, masqué par défaut */
+html.land.in-match #match-body > .panel-glass {
+    position: absolute !important; top: 52px; bottom: 56px; right: 66px; width: min(340px, 44vw); flex: none !important;
+    z-index: 72; background: rgba(17, 24, 39, .9) !important; backdrop-filter: blur(6px);
+    transition: opacity .2s, transform .2s;
+}
+html.land.in-match:not(.sm-panel-open) #match-body > .panel-glass { opacity: 0; pointer-events: none; transform: translateX(16px); }
+html.land.in-match #match-body > .panel-glass > .absolute.bottom-0 { display: none; }
+html.land.in-match #live-commentary, html.land.in-match #live-stats,
+html.land.in-match #live-ratings, html.land.in-match #live-heat { padding-bottom: 12px !important; }
+
+/* rail d'actions à droite */
+.sm-rail { display: none; }
+html.land.in-match .sm-rail { display: flex; flex-direction: column; gap: 6px; position: fixed; right: 8px; top: 52px; z-index: 76; }
+.sm-rail button {
+    width: 50px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 5px;
+    border-radius: 12px; background: rgba(10, 14, 23, .82); border: 1px solid var(--border-strong); color: #fff;
+    font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; backdrop-filter: blur(4px);
+}
+.sm-rail button svg { width: 20px; height: 20px; }
+.sm-rail button.is-on { background: var(--sm-brand-grad); border-color: transparent; }
+
+/* bandeau du direct, en bas */
+.sm-ticker { display: none; }
+html.land.in-match .sm-ticker {
+    display: block; position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 74;
+    max-width: min(620px, 66vw); padding: 7px 16px; border-radius: 999px;
+    background: rgba(10, 14, 23, .86); border: 1px solid var(--border-strong); color: #fff;
+    font-size: 12.5px; font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    backdrop-filter: blur(4px);
+}
+html.land.in-match .sm-ticker:empty { display: none; }
+.sm-ticker .op { opacity: .55; font-weight: 800; margin-inline-end: 6px; }
+
+/* barre du bas d'origine : seul le bouton de fin de match reste, en bas à droite */
+html.land.in-match #view-match > .panel-glass:last-of-type {
+    position: fixed !important; right: 8px; bottom: 8px; left: auto; width: auto; z-index: 77;
+    padding: 0 !important; background: transparent !important; border: 0 !important; box-shadow: none !important;
+}
+html.land.in-match #match-loading-msg { display: none; }
+html.land.in-match #btn-end-match { padding: 10px 18px !important; font-size: 12px !important; }
+html.land.in-match #live-tactics-modal { z-index: 80; }
+
+/* Fiche joueur en paysage : grande fenêtre, identité et actions à gauche, détail à droite */
+html.land #player-card-modal { align-items: center !important; }
+html.land #player-card-modal > .relative {
+    max-width: min(880px, 94vw) !important; width: 94vw; max-height: 92dvh; border-radius: var(--r-card, 14px) !important;
+    display: grid !important; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+    border: 1px solid var(--border-strong) !important;
+}
+html.land #player-card-modal > .relative > div:nth-child(1) {
+    grid-column: 1; grid-row: 1; flex-wrap: wrap; border-bottom: 0 !important; padding-bottom: 12px !important;
+    background: linear-gradient(160deg, rgba(249, 115, 22, .16), transparent 70%);
+}
+html.land #player-card-modal > .relative > div:nth-child(2) {
+    grid-column: 2; grid-row: 1 / span 2; overflow-y: auto; padding: 14px 16px !important;
+    border-inline-start: 1px solid var(--border);
+}
+html.land #player-card-modal > .relative > div:nth-child(3) {
+    grid-column: 1; grid-row: 2; align-self: end; border-top: 0 !important;
+}
+html.land #player-card-modal > .relative > div:nth-child(2) > .grid.grid-cols-2 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+html.land #player-card-modal > .relative > div:nth-child(1) .truncate { white-space: normal; overflow: visible; }
+
+/* Classement en paysage : vrai tableau */
+.sm-table { width: 100%; border-collapse: separate; border-spacing: 0 3px; font-size: 12.5px; }
+.sm-table thead th {
+    position: sticky; top: 0; z-index: 2; padding: 6px 8px; text-align: center;
+    font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);
+    background: #111827; border-bottom: 1px solid var(--border);
+}
+.sm-table thead th:nth-child(2) { text-align: start; }
+.sm-table tbody tr { cursor: pointer; }
+.sm-table tbody td {
+    padding: 6px 8px; text-align: center; color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums;
+    background: rgba(31, 41, 55, .55); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.sm-table tbody td:first-child { border-inline-start: 3px solid transparent; border-start-start-radius: 9px; border-end-start-radius: 9px; }
+.sm-table tbody td:last-child { border-start-end-radius: 9px; border-end-end-radius: 9px; }
+.sm-table tbody tr:hover td { background: rgba(255, 255, 255, .06); }
+.sm-table tr.z-champ td:first-child { border-inline-start-color: #facc15; }
+.sm-table tr.z-cont td:first-child { border-inline-start-color: #10b981; }
+.sm-table tr.z-rel td:first-child { border-inline-start-color: #ef4444; }
+.sm-table tr.is-me td { background: linear-gradient(90deg, rgba(249, 115, 22, .32), rgba(249, 115, 22, .12)); }
+.sm-table .c-rk span {
+    display: inline-grid; place-items: center; min-width: 24px; height: 24px; border-radius: 7px;
+    background: #0a0e17; border: 1px solid var(--border-strong); font-family: 'Teko', sans-serif; font-size: 16px;
+}
+.sm-table tr.is-me .c-rk span { background: var(--sm-brand-grad); border-color: transparent; }
+.sm-table .c-club { text-align: start; display: flex; align-items: center; gap: 8px; min-width: 150px; }
+.sm-table .c-club b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.sm-table .c-crest { width: 22px; height: 22px; flex: 0 0 22px; }
+.sm-table .c-crest svg { width: 100%; height: 100%; }
+.sm-table .c-pts { font-family: 'Teko', sans-serif; font-size: 18px; color: #fff; }
+.sm-table td.pos { color: #10b981; } .sm-table td.neg { color: #ef4444; }
+.sm-table .c-form { white-space: nowrap; }
+.sm-table .c-form i {
+    display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; margin: 0 1px;
+    font-style: normal; font-size: 9px; font-weight: 800; color: #fff;
+}
+.sm-table .c-form .f-w { background: #10b981; } .sm-table .c-form .f-d { background: #64748b; } .sm-table .c-form .f-l { background: #ef4444; }
+html.land #standings-body { display: block !important; }
+
+/* Attributs en pastilles rondes (fiche joueur, paysage) */
+.sm-attr-title {
+    display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px;
+    font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);
+}
+.sm-attr-title span {
+    min-width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center;
+    border: 3px solid #f97316; background: #0a0e17; color: #fff; font-family: 'Teko', sans-serif; font-size: 20px;
+}
+.sm-attrs {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px;
+    padding: 10px; border-radius: var(--r-card, 14px); background: rgba(10, 14, 23, .55); border: 1px solid var(--border);
+}
+.sm-attr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; padding: 4px 2px; }
+.sm-attr-l { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sm-attr-v {
+    width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center;
+    border: 3px solid; background: #0a0e17; color: #fff; font-family: 'Teko', sans-serif; font-size: 17px; line-height: 1;
+}
+.sm-attr-bar { grid-column: 1 / 3; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.sm-attr-bar b { display: block; height: 100%; border-radius: 4px; }
+
+/* Barre des joueurs en bas du match (paysage) */
+.sm-strip { display: none; }
+html.land.in-match .sm-strip {
+    display: flex; align-items: stretch; gap: 0; position: fixed; left: 8px; right: 66px; bottom: 8px; z-index: 74;
+    background: rgba(10, 14, 23, .88); border: 1px solid var(--border-strong); border-radius: 11px; overflow: hidden;
+    backdrop-filter: blur(5px); transition: transform .2s;
+}
+html.land.in-match.sm-strip-min .sm-strip { transform: translateY(calc(100% - 26px)); }
+.sm-strip-tog {
+    flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    padding: 0 8px; color: #fff; background: rgba(255, 255, 255, .05); border-inline-end: 1px solid var(--border);
+    font-size: 9px; font-weight: 800; white-space: nowrap;
+}
+.sm-strip-tog svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 3; transition: transform .2s; }
+html.land.in-match.sm-strip-min .sm-strip-tog svg { transform: rotate(180deg); }
+.sm-strip-row { flex: 1; display: flex; overflow-x: auto; scrollbar-width: none; }
+.sm-strip-row::-webkit-scrollbar { display: none; }
+.sm-pl {
+    flex: 1 0 68px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center;
+    column-gap: 4px; padding: 4px 6px; border-inline-end: 1px solid var(--border); cursor: pointer; min-width: 68px;
+}
+.sm-pl:last-child { border-inline-end: 0; }
+.sm-pl-pos { grid-row: 1; grid-column: 1; font-size: 10px; font-weight: 800; color: #fff; }
+.sm-pl-name { grid-row: 1; grid-column: 2; font-size: 9.5px; font-weight: 700; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sm-pl-name i { display: inline-block; width: 6px; height: 8px; border-radius: 1px; margin-inline-start: 3px; vertical-align: -1px; }
+.sm-pl-name i.yc { background: #facc15; } .sm-pl-name i.rc { background: #ef4444; }
+.sm-pl-en { grid-row: 2; grid-column: 1; width: 13px; height: 13px; fill: currentColor; }
+.sm-pl-note {
+    grid-row: 2; grid-column: 2; justify-self: start; min-width: 34px; text-align: center; padding: 0 6px; border-radius: 999px;
+    font-family: 'Teko', sans-serif; font-size: 15px; line-height: 17px; color: #fff; background: #1f2937;
+}
+.sm-pl-note.is-great { background: #10b981; } .sm-pl-note.is-good { background: #84cc16; color: #0a0e17; }
+.sm-pl-note.is-ok { background: #f59e0b; color: #0a0e17; } .sm-pl-note.is-bad { background: #ef4444; }
+/* le bandeau du direct et le bouton de fin remontent au-dessus de la barre */
+html.land.in-match .sm-ticker { bottom: 58px; }
+html.land.in-match.sm-strip-min .sm-ticker { bottom: 36px; }
+html.land.in-match #view-match > .panel-glass:last-of-type { bottom: 58px; }
+html.land.in-match #match-body > .panel-glass { bottom: 100px; }
+
+/* Carte du buteur */
+.sm-goal {
+    position: fixed; left: 12px; bottom: 104px; z-index: 78; display: flex; align-items: center; gap: 12px;
+    padding: 8px 14px 8px 8px; border-radius: 999px 14px 14px 999px; min-width: 260px; max-width: 70vw;
+    background: linear-gradient(90deg, #111827, #0a0e17); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lift);
+    opacity: 0; transform: translateX(-24px); pointer-events: none; transition: opacity .3s, transform .3s;
+}
+.sm-goal.is-on { opacity: 1; transform: none; }
+html:not(.land) .sm-goal { bottom: auto; top: 120px; }
+.sm-goal-face {
+    width: 54px; height: 54px; flex: 0 0 54px; border-radius: 999px; overflow: hidden;
+    border: 3px solid #f97316; background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.02));
+}
+.sm-goal-face svg { width: 100%; height: 100%; }
+.sm-goal-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.1; }
+.sm-goal-txt b { color: #fff; font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sm-goal-txt em { font-style: normal; font-family: 'Teko', sans-serif; font-size: 26px; line-height: 1; color: #f97316; letter-spacing: .03em; }
+.sm-goal-txt small { color: var(--text-muted); font-size: 11px; font-weight: 700; }
+.sm-goal-crest { width: 34px; height: 34px; flex: 0 0 34px; margin-inline-start: auto; }
+.sm-goal-crest svg { width: 100%; height: 100%; }
+
+/* =====================================================================
+ * NOUVELLE CARRIÈRE en paysage : formulaire à gauche, le manager en grand à droite
+ * ===================================================================== */
+html.land #setup-modal {
+    padding: 10px !important;
+    background:
+        radial-gradient(ellipse 60% 45% at 78% 18%, rgba(249, 115, 22, .22), transparent 70%),
+        radial-gradient(circle at 8% 6%, rgba(255, 255, 255, .10) 0 2px, transparent 3px),
+        radial-gradient(circle at 16% 4%, rgba(255, 255, 255, .10) 0 2px, transparent 3px),
+        radial-gradient(circle at 88% 5%, rgba(255, 255, 255, .10) 0 2px, transparent 3px),
+        linear-gradient(180deg, #0a0e17 0%, #111827 62%, #0a0e17 100%) !important;
+}
+html.land #setup-modal::after {          /* pelouse en perspective, en bas de l'écran */
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 30%; pointer-events: none; z-index: 0;
+    background: repeating-linear-gradient(90deg, rgba(47, 143, 67, .30) 0 60px, rgba(42, 131, 64, .30) 60px 120px);
+    transform: perspective(300px) rotateX(55deg); transform-origin: bottom; opacity: .8;
+    -webkit-mask-image: linear-gradient(0deg, #000, transparent); mask-image: linear-gradient(0deg, #000, transparent);
+}
+html.land #setup-modal > .panel-glass {
+    position: relative; z-index: 1;
+    max-width: min(900px, 96vw) !important; max-height: 96dvh; overflow-y: auto; padding: 16px 18px !important;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 18px; row-gap: 10px; align-content: start;
+}
+html.land #setup-modal > .panel-glass > .space-y-4 { display: contents; }
+html.land #setup-modal > .panel-glass > .text-center { grid-column: 1; grid-row: 1; text-align: start; margin: 0 !important; padding: 0 !important; }
+html.land #setup-modal > .panel-glass > .text-center > svg { display: none; }
+html.land #setup-modal > .panel-glass > .text-center h2 { font-size: 30px; }
+html.land #setup-modal #setup-lang { grid-column: 2; grid-row: 1; justify-content: flex-end !important; align-self: start; padding: 0 !important; }
+html.land #setup-modal .space-y-4 > div:nth-child(1) { grid-column: 1; grid-row: 2; }
+html.land #setup-modal .space-y-4 > div:nth-child(2) { grid-column: 2; grid-row: 2 / span 4; margin: 0 !important; }
+html.land #setup-modal .space-y-4 > div:nth-child(3) { grid-column: 1; grid-row: 3; margin: 0 !important; }
+html.land #setup-modal .space-y-4 > div:nth-child(4) { grid-column: 1; grid-row: 4; margin: 0 !important; }
+html.land #setup-modal > .panel-glass > button.btn-primary { grid-column: 1; grid-row: 5; align-self: end; }
+/* bloc « allure » : le manager en pied, comme sur l'écran d'accueil des jeux de gestion */
+html.land #setup-modal .space-y-4 > div:nth-child(2) > div {
+    flex-direction: column !important; align-items: stretch !important; height: calc(100% - 22px);
+    background: radial-gradient(ellipse at 50% 30%, rgba(249, 115, 22, .14), transparent 70%), #111827 !important;
+}
+html.land #setup-modal #setup-portrait {
+    width: auto !important; height: auto !important; flex: 1 1 auto; min-height: 150px; max-height: 230px; aspect-ratio: 5 / 6;
+    align-self: center; border-radius: var(--r-card, 14px) !important;
+}
+html.land #setup-modal #setup-portrait svg { width: 100%; height: 100%; }
+html.land #setup-modal #setup-club-preview { margin-top: 6px !important; }
+html.land #setup-modal > .panel-glass > .text-center p { display: none; }
+html.land #setup-modal input, html.land #setup-modal select { padding-top: 8px !important; padding-bottom: 8px !important; }
+html.land #setup-modal > .panel-glass > button.btn-primary { padding-top: 11px !important; padding-bottom: 11px !important; }
+html.land #setup-modal label { margin-bottom: 3px !important; }
+html.land #player-card-modal > .relative { grid-template-columns: 270px minmax(0, 1fr); }
+html.land #player-card-modal > .relative > div:nth-child(1) { justify-content: space-between; }
+html.land #player-card-modal > .relative > div:nth-child(1) > .min-w-0 { order: 3; flex: 1 0 100%; }
+html.land #player-card-modal > .relative > div:nth-child(1) > :first-child { width: 64px; height: 64px; }
+
+/* =====================================================================
+ * TIROIRS (« sp-sheet ») en paysage : centrés, toute la hauteur
+ * Avant-match : adversaire + causerie à gauche, détails à droite (défilent),
+ * boutons en bas — avant, l'en-tête de 400 px ne laissait que 28 px aux détails.
+ * ===================================================================== */
+html.land .sp-sheet-wrap { align-items: center !important; justify-content: center !important; }
+html.land .sp-sheet-wrap .sp-sheet { max-height: 94dvh !important; border-radius: var(--r-card, 14px) !important; }
+html.land .sp-sheet-wrap .sp-grip { display: none; }
+html.land #pm-report .sp-sheet {
+    width: min(920px, 96vw) !important; max-width: none !important; height: 94dvh;
+    display: grid !important; grid-template-columns: minmax(250px, 34%) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+}
+html.land #pm-report .pm-head {
+    grid-column: 1; grid-row: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+    border-inline-end: 1px solid var(--border); padding-bottom: 10px;
+}
+html.land #pm-report .pm-body { grid-column: 2; grid-row: 1; min-height: 0; height: auto !important; max-height: none !important; overflow-y: auto; }
+html.land #pm-report .pm-foot { grid-column: 1 / 3; grid-row: 2; border-top: 1px solid var(--border); }
+
+/* Barre du haut sur écran étroit (vrai téléphone en paysage) : « Continuer » toujours entier */
+html.land #main-header { padding-inline-end: env(safe-area-inset-right, 0px) !important; min-width: 0; }
+html.land #main-header .sm-continue { flex: 0 0 auto; }
+@media (max-width: 900px) {
+    :root { --sm-side-w: 164px; }
+    html.land #main-header .sm-pill .sm-plus { display: none; }
+    html.land #main-header .sm-pill { padding-inline-end: 9px; }
+    html.land #main-header #header-club-name { max-width: 92px; }
+    html.land #main-header #header-league-name { display: none; }
+}
+@media (max-width: 780px) {
+    :root { --sm-side-w: 150px; }
+    html.land #main-header .sm-pill:nth-child(2) { display: none !important; }   /* gemmes : restent dans la Boutique */
+    html.land #main-header > div:first-child .min-w-0 { display: none; }       /* écusson seul */
+    html.land #main-header .sm-continue { padding-inline-start: 20px; padding-inline-end: 10px; }
+    html.land #main-header .sm-continue small { font-size: 9.5px; }
+    aside.sm-side .sm-item { font-size: 12px; padding-inline-start: 10px; }
+}
+
+/* Accueil en paysage : pastilles du pouls du club (vestiaire, conseil, alchimie, finances) sur 2 colonnes,
+   sinon les quatre s'écrasaient dans la colonne de droite et leur texte était masqué */
+html.land #pulse-strip { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+html.land #pulse-strip .pulse { min-width: 0; }
+html.land #pulse-strip .pulse-txt { min-width: 0; display: flex !important; flex-direction: column; }
+html.land #pulse-strip .pulse-phrase { white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
+
+/* Recherche en paysage : champ et filtres à gauche, résultats à droite (défilent).
+   Avant : l'en-tête de 300 px ne laissait que 33 px aux résultats. */
+html.land #global-search-modal { align-items: center !important; padding: 8px !important; }
+html.land #global-search-modal > .relative {
+    max-width: min(940px, 96vw) !important; height: 96dvh; max-height: 96dvh !important;
+    display: grid !important; grid-template-columns: minmax(240px, 32%) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+}
+html.land #global-search-modal > .relative > div:first-child {
+    grid-column: 1; grid-row: 1; min-height: 0; overflow-y: auto; border-bottom: 0 !important; border-inline-end: 1px solid var(--border);
+}
+html.land #global-search-modal > .relative > div:last-child { grid-column: 2; grid-row: 1; min-height: 0; height: auto; overflow-y: auto; }
+
+/* les autres fenêtres « max 85 % de hauteur » profitent de toute la hauteur en paysage */
+html.land .fixed.inset-0 > .relative[class*="max-h-[85vh]"],
+html.land .fixed.inset-0 > [class*="max-h-[85vh]"] { max-height: 96dvh !important; }

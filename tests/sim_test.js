@@ -19,9 +19,12 @@ M.init({ homeForm: F442, awayForm: F442, homeTac: tac, awayTac: tac, homeForce: 
 let maxJump = 0, jumpAt = '', lastB = null, label = 'init';
 const worstPlayers = { v: 0, w: '' };
 let lastPl = null;
+let lastEv = 0, cuts = 0;
 function sample() {
   const f = M.frame();
   const bb = f.ball;
+  // coupure « télé » d'un coup de pied arrêté : le saut a lieu sous un fondu au noir, on ne le compte pas
+  (f.ev || []).forEach(e => { if (e.id > lastEv) { lastEv = e.id; if (e.type === 'snap') { cuts++; lastB = null; lastPl = null; } } });
   if (lastB) {
     const d = Math.hypot((bb.x - lastB.x) * 1.05, (bb.y - lastB.y) * 0.68);
     // 16 ms per frame: anything > 0.9 m (= 56 m/s) in one frame is a teleport
@@ -105,4 +108,5 @@ scenario('set piece without shot (free kick)', () => { const ms = M.setPiece('fr
   console.log('penalty geometry: ball', M.ball.x.toFixed(1), M.ball.y.toFixed(1), '| taker', taker.x.toFixed(1), taker.y.toFixed(1), '| GK', gk.x.toFixed(1), gk.y.toFixed(1));
   const inBox = ['H', 'A'].flatMap(k => f[k].map((p, i) => ({ k, i, p }))).filter(o => !(o.k === 'H' && o.i === 9) && !(o.k === 'A' && o.i === 0) && o.p.x > 84 && Math.abs(o.p.y - 50) < 30);
   console.log('players inside the box at the kick:', inBox.length);
+  console.log('coupures télé (fondu) pendant le test :', cuts);
 }

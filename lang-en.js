@@ -5,7 +5,6 @@
 // Any key missing here falls back to French (see lang-fr.js / t() in app.js).
 // ═══════════════════════════════════════════════════════════════════════════
 window.I18N_EN = {
-    'app.subtitle': 'Manager',
     'nav.dashboard': 'Dashboard',
     'nav.squad': 'Squad',
     'nav.tactics': 'Tactics',

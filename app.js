@@ -5321,6 +5321,22 @@ const MATCHSIM = {
 
     dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); },
     clamp(v, a, b) { return v < a ? a : v > b ? b : v; },
+    // Un joueur expulsé reste dans le tableau (les index suivent le onze de départ)
+    // mais ne participe plus à rien : ni passe, ni pressing, ni coup de pied arrêté.
+    live(p) { return !!p && !p.off; },
+
+    // Carton rouge : le joueur quitte la pelouse par la ligne de touche la plus proche.
+    sendOff(key, idx) {
+        const T = this.team(key), p = T && T.p[idx];
+        if (!p || p.off || idx === 0) return;      // le gardien n'est pas retiré du rendu (un remplaçant le suppléerait)
+        p.off = true;
+        p.offY = p.y < 50 ? -4 : 104;
+        if (this.ball.side === key && this.ball.idx === idx) {
+            const mate = this.nearestTo(T, p, q => q !== p && q.role !== 'GK');
+            this.ball.idx = mate.i;
+            this.rebind(key, mate.i);
+        }
+    },
 
     // ---------------------------------------------------------------
     // 1. PLACEMENT : le bloc coulisse vers le ballon
@@ -5357,7 +5373,7 @@ const MATCHSIM = {
                     if (me === 'defensive') pressCount = Math.max(1, pressCount - 1);
                 }
                 if (pressCount > 0) {
-                    pressers = T.p.filter(p => p.role !== 'GK')
+                    pressers = T.p.filter(p => p.role !== 'GK' && !p.off)
                         .map(p => ({ p, d: this.dist(p, ball) }))
                         .sort((a, b) => a.d - b.d).slice(0, pressCount).map(o => o.p);
                 }
@@ -5370,7 +5386,7 @@ const MATCHSIM = {
             let firstDef = null;
             if (!hasBall) {
                 let best = null, bd = 1e9;
-                T.p.forEach(q => { if (q.role === 'GK') return; const d = this.dist(q, ball); if (d < bd) { bd = d; best = q; } });
+                T.p.forEach(q => { if (q.role === 'GK' || q.off) return; const d = this.dist(q, ball); if (d < bd) { bd = d; best = q; } });
                 if (best && bd < 24) { firstDef = best; if (pressers.indexOf(best) < 0) pressers.push(best); }
             }
 
@@ -5536,7 +5552,7 @@ const MATCHSIM = {
                 const T = this.team(key), O = this.team(this.other(key));
                 let line = null;
                 O.p.forEach(q => {
-                    if (q.role === 'GK') return;
+                    if (q.role === 'GK' || q.off) return;
                     if (line === null || (q.tx - line) * T.dir > 0) line = q.tx;
                 });
                 if (line === null) return;
@@ -5549,6 +5565,11 @@ const MATCHSIM = {
                     if ((p.tx - allowed) * T.dir > 0) p.tx = allowed;
                 });
             });
+        }
+        // Passe en cours d'interception : le défenseur va au point de coupe.
+        if (this._cut) {
+            const p = this.team(this._cut.key).p[this._cut.i];
+            if (p && !p.off) { p.tx = this._cut.x; p.ty = this._cut.y; }
         }
     },
 
@@ -5606,6 +5627,8 @@ const MATCHSIM = {
         });
         ['H', 'A'].forEach(k => this.team(k).p.forEach(p => {
             p.px = p.cx; p.py = p.cy;
+            // Expulsé : quelle que soit la consigne, il sort par la touche et n'en revient pas.
+            if (p.off) { p.tx = this.clamp(p.cx, 30, 70); p.ty = p.offY; }
             const maxStep = (p.role === 'GK' ? this.GK_SPEED : this.TOP_SPEED) * sec * mul;
             let dx = p.tx - p.cx, dy = p.ty - p.cy;
             let d = Math.hypot(dx, dy);
@@ -5655,7 +5678,16 @@ const MATCHSIM = {
         // conclut (frappe contrée, sortie de but, dégagement) et l'adversaire
         // relance de sa surface. Sans ça le ballon reste collé au poteau.
         if (Math.abs(carrier.x - T.atkX) < 11 && Math.random() < 0.45) {
-            this.goalKick(this.other(key));
+            // Le dernier geste (centre ou frappe contrée) file derrière la ligne, PUIS sortie de but.
+            // (Avant : le ballon volait directement de l'attaquant au gardien, comme une passe.)
+            const ox = T.atkX + T.dir * 2.5, oy = this.clamp(carrier.y + (50 - carrier.y) * 0.5 + (Math.random() * 24 - 12), 20, 80);
+            this.note('pass', key, carrier.i, { to: -1, action: 'cross' });
+            const slow = this.TICK / 1100, d = Math.hypot(ox - cpos.x, oy - cpos.y);
+            this.ball.fixed = false;
+            this.ball.fly = { fromX: this.ball.x, fromY: this.ball.y, toX: ox, toY: oy, side: key, idx: carrier.i,
+                t0: this.now(), dur: this.clamp(d * 30 * slow, 500, 1600), peak: 1.6, rest: true, hard: true,
+                then: function () { this.pendingGoalKick = this.other(key); } };
+            this.applyTargets(); this.commit();
             return;
         }
 
@@ -5665,6 +5697,7 @@ const MATCHSIM = {
         // là où un seul le laisse ressortir.
         let nearest = null, nd = 999, swarm = 0;
         O.p.forEach(q => {
+            if (q.off) return;
             const d = this.dist(q, cpos);
             if (d < nd) { nd = d; nearest = q; }
             if (d < 10 && q.role !== 'GK') swarm++;
@@ -5677,25 +5710,14 @@ const MATCHSIM = {
         const condLoss = (this.cond && this.cond.loss) || 1;
         const lossBase = (T.style === 'possession' ? 0.10 : T.style === 'direct' ? 0.17 : 0.13) * condLoss;
         const crowd = 1 + Math.max(0, swarm - 1) * 0.30;
-        const loss = nd < 9
-            ? lossBase * forceRatio * (1.5 - nd / 14) * crowd
-            : lossBase * 0.25;
-        if (Math.random() < loss) {
-            const winner = this.other(key);
-            this.note('tackle', winner, nearest ? nearest.i : 5, { loserSide: key, loser: this.ball.idx });
-            this.ball.side = winner;
-            this.ball.idx = nearest ? nearest.i : 5;
-            this.phase = 'transition';
-            // Une équipe en contre part plus longtemps et plus loin ; une
-            // équipe de possession se contente de sortir du pressing.
-            const wTac = (this.team(winner) || {}).tac || {};
-            this.brk[winner] = wTac.style === 'counter' ? 6 : wTac.style === 'direct' ? 4 : 2;
-            // Celle qui vient de perdre a quelques secondes pour récupérer
-            // avant que son bloc ne soit installé : c'est le contre-pressing.
-            this.cpress[key] = wTac.style === 'counter' ? 5 : 4;
-            this.trans[winner] = (this.trans[winner] || 0) + 1;
-            this.applyTargets(); this.commit();
-            this.glue(true);
+        // FIX #DUEL-1 : le ballon changeait de camp quel que soit l'écart (jusqu'à 9 unités, et
+        // même au-delà avec une perte « gratuite ») puis VOLAIT jusqu'au défenseur : à l'écran,
+        // un tacle à 15 m ou une passe offerte à l'adversaire. Le duel n'a lieu qu'au contact ;
+        // de plus loin, on ne perd le ballon que sur une passe interceptée (voir pass()).
+        const TACKLE_R = 4.5;
+        const loss = nd < TACKLE_R ? lossBase * 1.35 * forceRatio * (1.5 - nd / 14) * crowd : 0;
+        if (nearest && Math.random() < loss) {
+            this.tackle(key, nearest);
             return;
         }
 
@@ -5766,7 +5788,7 @@ const MATCHSIM = {
 
         const rec = this.pickReceiver(T, O, carrier, action, nd);
         if (!rec) { this.applyTargets(); this.commit(); return; }
-        this.pass(key, rec.i, action);
+        this.pass(key, rec.i, action, true);
         this.applyTargets(); this.commit();
     },
 
@@ -5776,7 +5798,7 @@ const MATCHSIM = {
         const pressed = (pressure || 99) < 6.5;
         const ownHalf = (carrier.x - 50) * T.dir < 0;
         T.p.forEach(q => {
-            if (q === carrier) return;
+            if (q === carrier || q.off) return;
             // Passe en retrait au gardien : seulement sous pression, dans son
             // camp, et pour une équipe qui sait ressortir proprement.
             if (q.role === 'GK') {
@@ -5787,7 +5809,7 @@ const MATCHSIM = {
             const progress = (q.x - carrier.x) * T.dir;      // gain de terrain
             const width = Math.abs(q.y - carrier.y);
             let marked = 999;
-            O.p.forEach(o => { const dd = this.dist(o, q); if (dd < marked) marked = dd; });
+            O.p.forEach(o => { if (o.off) return; const dd = this.dist(o, q); if (dd < marked) marked = dd; });
 
             let s = 0;
             if (action === 'long') s = progress * 2.4 + Math.min(d, 45) * 0.5 + marked * 1.6 - (d > 55 ? 40 : 0);
@@ -5826,13 +5848,159 @@ const MATCHSIM = {
         return best;
     },
 
-    pass(key, toIdx, action) {
+    // Récupération : l'équipe `winner` prend le ballon par le joueur p. Ouvre les fenêtres de
+    // contre-attaque et de contre-pressing (voir TRANSITIONS dans init()).
+    winBall(winner, p) {
+        const loser = this.other(winner), W = this.team(winner);
+        this.ball.side = winner; this.ball.idx = p.i;
+        this.phase = 'transition';
+        // (lisait W.tac.style, qui n'existe pas : toutes les équipes partaient 2 tours)
+        this.brk[winner] = W.style === 'counter' ? 6 : W.style === 'direct' ? 4 : 2;
+        this.cpress[loser] = W.style === 'counter' ? 5 : 4;
+        this.trans[winner] = (this.trans[winner] || 0) + 1;
+    },
+
+    // L'équipe k doit reprendre le ballon à l'adversaire, là où il se trouve.
+    //   • un de ses joueurs est à moins de 7 unités du ballon : duel au contact (tackle) ;
+    //   • sinon le porteur joue sa passe et le défenseur le plus proche du receveur la dispute
+    //     à la retombée — on choisit le receveur que k peut réellement contester.
+    // Renvoie la durée (ms) avant que k ait le ballon.
+    regain(k) {
+        const oldKey = this.other(k), Old = this.team(oldKey), T = this.team(k);
+        this.ballNow();
+        const b = { x: this.ball.x, y: this.ball.y };
+        let w0 = null, d0 = 1e9;
+        T.p.forEach(p => { if (p.off || p.role === 'GK') return; const d = this.dist(this.playerNow(k, p.i), b); if (d < d0) { d0 = d; w0 = p; } });
+        if (!w0) return 0;
+        if (d0 < 7) { this.tackle(oldKey, w0); return 950; }
+        const holder = Old.p[this.ball.idx];
+        let best = null, bs = 1e9;
+        Old.p.forEach(r => {
+            if (r.off || r === holder || r.role === 'GK') return;
+            const rn = this.playerNow(oldKey, r.i), dr = this.dist(rn, b);
+            if (dr < 8 || dr > 42) return;
+            T.p.forEach(w => {
+                if (w.off || w.role === 'GK') return;
+                const dw = this.dist(this.playerNow(k, w.i), rn);
+                const s = dw + dr * 0.12;
+                if (s < bs) { bs = s; best = { r, w, rn, dr, dw }; }
+            });
+        });
+        if (!best) { this.tackle(oldKey, w0); return 950; }   // aucun receveur : le plus proche vient au duel
+        const { r, w, rn, dr } = best;
+        const slow = this.TICK / 1100, long = dr > 22;
+        const dur = this.clamp(dr * (long ? 26 : 32) * slow, 450, 2200);
+        this.note('pass', oldKey, holder ? holder.i : this.ball.idx, { to: r.i, action: long ? 'long' : 'short' });
+        this.ball.fixed = false; this.ball.hard = false;
+        this._cut = { key: k, i: w.i, x: rn.x + (b.x - rn.x) * 0.06, y: rn.y + (b.y - rn.y) * 0.06 };
+        this.ball.fly = {
+            fromX: b.x, fromY: b.y, toX: rn.x, toY: rn.y, side: oldKey, idx: r.i, t0: this.now(), dur,
+            peak: long ? 2.6 : 0.3,
+            then: function () {
+                this._cut = null;
+                this.note('tackle', k, w.i, { loserSide: oldKey, loser: r.i, intercept: true });
+                this.winBall(k, w);
+                this.rebind(k, w.i, 0.15);
+            }
+        };
+        this.ball.side = oldKey; this.ball.idx = r.i;
+        this.applyTargets();
+        r.tx = rn.x; r.ty = rn.y;                 // le receveur attend son ballon
+        // le défenseur arrive au point de chute avec le ballon
+        this.commit(dur, this.clamp(best.dw / (this.TOP_SPEED * dur / 1000), 1, 1.6));
+        if (dur > this.TICK) this.curDur = dur;
+        this.hold(dur + 250);
+        this.regainUntil = this.now() + dur + 350;
+        return dur + 350;
+    },
+
+    // Progression vers la profondeur `wantX` : le porteur sert le partenaire le mieux placé.
+    forwardPass(k, wantX, cur) {
+        const T = this.team(k);
+        const nx = this.clamp(cur.x + this.clamp(wantX - cur.x, -24, 24), 5, 95);
+        const ny = this.clamp(cur.y + (Math.random() * 30 - 15), 15, 85);
+        const holder = T.p[this.ball.idx];
+        this.ball.x = nx; this.ball.y = ny;
+        this.applyTargets();
+        const carr = this.nearestTo(T, { x: nx, y: ny }, p => p.role !== 'GK' && p !== holder);
+        this.ball.x = cur.x; this.ball.y = cur.y;
+        if (!carr || !holder) { this.applyTargets(); this.commit(); return; }
+        carr.tx = this.clamp(nx - T.dir * 0.9, 5, 95); carr.ty = this.clamp(ny, 4, 96);
+        this.commit();
+        const d = this.dist(this.playerNow(k, holder.i), carr);
+        this.pass(k, carr.i, d > 24 ? 'long' : d > 14 ? 'through' : 'short');
+    },
+
+    // Tacle au contact : le défenseur va SUR le ballon, le porteur est déséquilibré, le ballon
+    // reste là où le duel a lieu et le vainqueur le ramasse (plus de ballon qui vole vers lui).
+    tackle(key, tackler) {
+        const winner = this.other(key), loserIdx = this.ball.idx, L = this.team(key);
+        const b = this.ballNow();
+        const bx = b.x, by = b.y;
+        this.note('tackle', winner, tackler.i, { loserSide: key, loser: loserIdx });
+        this._cut = null;
+        this.winBall(winner, tackler);
+        this.applyTargets();
+        tackler.tx = bx; tackler.ty = by;
+        const lp = L.p[loserIdx];
+        if (lp) { const n = this.playerNow(key, loserIdx); lp.tx = n.x - L.dir * 0.6; lp.ty = n.y; }
+        this.ball.fly = null;
+        this.placeBall(bx, by);                 // ballon libre au pied du duel
+        this.commit(Math.min(this.TICK, 900), 1.3);
+        this.hold(950);
+        this.regainUntil = this.now() + 950;
+    },
+
+    pass(key, toIdx, action, canCut) {
         this.note('pass', key, this.ball.idx, { to: toIdx, action });
         this.ball.fixed = false;
+        this._cut = null;
         const T = this.team(key);
         const from = { x: this.ball.x, y: this.ball.y };
         const to = T.p[toIdx];
         const d = Math.hypot(to.tx - from.x, to.ty - from.y);
+        // FIX #DUEL-2 : interception. Un adversaire placé sur la trajectoire coupe la passe : le
+        // ballon s'arrête SUR LUI (il a dû y aller), pas une remise offerte de 30 m.
+        if (canCut) {
+            const O = this.team(this.other(key));
+            const forceRatio = O.force / Math.max(40, T.force);
+            const condLoss = (this.cond && this.cond.loss) || 1;
+            const base = (T.style === 'possession' ? 0.10 : T.style === 'direct' ? 0.17 : 0.13) * condLoss;
+            const risk = action === 'through' ? 1.5 : action === 'cross' ? 1.3 : (action === 'long' || action === 'switch') ? 1.2 : 0.75;
+            const vx = to.tx - from.x, vy = to.ty - from.y, L2 = vx * vx + vy * vy || 1;
+            let cut = null, bestP = 0;
+            O.p.forEach(o => {
+                if (o.off || o.role === 'GK') return;
+                const q = this.playerNow(this.other(key), o.i);
+                const u = this.clamp(((q.x - from.x) * vx + (q.y - from.y) * vy) / L2, 0, 1);
+                if (u < 0.15 || u > 0.9) return;
+                const ix = from.x + vx * u, iy = from.y + vy * u, dl = Math.hypot(q.x - ix, q.y - iy);
+                if (dl > 3.2) return;
+                const pr = base * 1.4 * forceRatio * risk * (1 - dl / 3.2);
+                if (pr > bestP) { bestP = pr; cut = { o, u, ix, iy }; }
+            });
+            if (cut && Math.random() < bestP) {
+                const slow = this.TICK / 1100;
+                const rate = action === 'long' ? 26 : action === 'through' ? 24 : action === 'cross' ? 30 : 34;
+                const dur = this.clamp(d * cut.u * rate * slow, 260, 1800);
+                const winner = this.other(key), o = cut.o;
+                this._cut = { key: winner, i: o.i, x: cut.ix, y: cut.iy };
+                this.ball.fly = {
+                    fromX: from.x, fromY: from.y, toX: cut.ix, toY: cut.iy, side: key, idx: toIdx,
+                    t0: this.now(), dur, peak: action === 'long' ? 2.0 : action === 'cross' ? 1.8 : 0.25,
+                    then: function () {
+                        this._cut = null;
+                        this.note('tackle', winner, o.i, { loserSide: key, loser: toIdx, intercept: true });
+                        this.winBall(winner, o);
+                        this.rebind(winner, o.i, 0.1);
+                    }
+                };
+                this.ball.idx = toIdx; this.ball.side = key;
+                this.lastAction = action;
+                this.phase = 'attack';
+                return;
+            }
+        }
         // ~30 m/s sur une passe appuyée, un peu plus vite sur un long ballon.
         // Un ballon de 50 m a le droit de voler plus longtemps qu'un tour de
         // simulation : la passe reste lisible au lieu d'être expédiée.
@@ -6011,10 +6179,12 @@ const MATCHSIM = {
         const restore = () => {
             this.ball.fly = keep.fly; this.shotFly = keep.shot; this.pendingGoalKick = keep.pgk; this._later = keep.later;
             this.ball.fixed = keep.fixed; this.ball.hard = keep.hard; this.outcome = keep.outcome; this.spot = keep.spot;
+            this._cut = keepCut;
         };
         this.pendingGoalKick = null;
         this.outcome = null; this._later = [];
         if (state !== 'home_shot' && state !== 'away_shot') this.spot = null;
+        const keepCut = this._cut; this._cut = null;
         this.ball.fly = null;
         this.shotFly = null;
         this.ball.fixed = false; this.ball.hard = false;
@@ -6044,8 +6214,8 @@ const MATCHSIM = {
                 }
             });
             const T = this.team(this.ball.side);
-            const att = T.p.filter(p => p.role === 'ATT');
-            this.ball.idx = (att[0] || T.p[9]).i;
+            const att = T.p.filter(p => p.role === 'ATT' && !p.off);
+            this.ball.idx = (att[0] || this.nearestTo(T, { x: 50, y: 50 }, p => p.role !== 'GK')).i;
             const c = T.p[this.ball.idx];
             c.tx = 50 - T.dir * 1.5; c.ty = 50;
             this.phase = 'kickoff'; this.locked = 1;
@@ -6065,20 +6235,16 @@ const MATCHSIM = {
             const Tk = this.team(k);
             // Cette équipe attaque déjà dans le bon camp : on ne coupe rien.
             if (this.ball.side === k && (this.ball.x - 50) * Tk.dir > 6) { restore(); return; }
-            setSide(k);
-            const T = this.team(k);
-            // 1. on annonce d'abord OÙ se passe l'action, 2. les deux blocs se
-            // recomposent autour, 3. on désigne le porteur le plus proche.
-            // Le ballon PROGRESSE par étapes depuis où il est : jamais de saut.
-            const wantX = 50 + T.dir * (16 + Math.random() * 14);
-            const nx = this.clamp(cur.x + this.clamp(wantX - cur.x, -24, 24), 5, 95);
-            const ny = this.clamp(cur.y + (Math.random() * 30 - 15), 15, 85);
-            this.ball.x = nx; this.ball.y = ny;
-            this.applyTargets();
-            const carr = this.nearestTo(T, { x: nx, y: ny }, p => p.role !== 'GK');
-            this.ball.x = cur.x; this.ball.y = cur.y;
-            this.ball.idx = carr.i;
-            this.stickCarrier(T, { x: nx, y: ny });
+            // FIX #DUEL-3 : l'ordre « k attaque » donnait le ballon à k d'un coup, et le ballon volait
+            // depuis le porteur adverse jusqu'au nouveau porteur — une passe à l'adversaire. k doit
+            // désormais le GAGNER : duel au contact, ou ballon disputé à la retombée d'une passe.
+            if (this.ball.side !== k) {
+                if (keep.fly) this.placeBall(cur.x, cur.y);   // passe en vol : ballon libre là où il est
+                this.regain(k);
+                return;
+            }
+            // Même équipe, mais encore dans son camp : on PROGRESSE par une vraie passe vers l'avant.
+            this.forwardPass(k, 50 + Tk.dir * (16 + Math.random() * 14), cur);
             this.phase = 'attack';
             return;
         }
@@ -6086,28 +6252,23 @@ const MATCHSIM = {
         if (state === 'midfield') {
             // Le jeu est déjà dans l'entrejeu : rien à imposer.
             if (this.ball.x > 32 && this.ball.x < 68) { restore(); this.phase = 'buildup'; return; }
-            const k = Math.random() < 0.5 ? 'H' : 'A';
-            setSide(k);
+            // (tirait au sort l'équipe qui recevait le ballon : une possession sur deux changeait de
+            // camp toutes les deux minutes, ballon volant vers l'adversaire.) L'équipe qui l'a le garde.
+            const k = this.ball.side;
             const T = this.team(k);
-            const mx = this.clamp(cur.x + this.clamp(42 + Math.random() * 16 - cur.x, -24, 24), 5, 95);
-            const my = this.clamp(cur.y + (Math.random() * 30 - 15), 15, 85);
-            this.ball.x = mx; this.ball.y = my;
-            this.applyTargets();
-            const carr = this.nearestTo(T, { x: mx, y: my }, p => p.role === 'MIL');
-            this.ball.x = cur.x; this.ball.y = cur.y;
-            this.ball.idx = carr.i;
-            this.stickCarrier(T, { x: mx, y: my });
+            this.forwardPass(k, 50 + T.dir * (Math.random() * 16 - 8), cur);
             this.phase = 'buildup';
             return;
         }
 
         if (state === 'home_shot' || state === 'away_shot') {
             const k = state === 'home_shot' ? 'H' : 'A';
+            const prevSide = this.ball.side, prevIdx = this.ball.idx;
             setSide(k);
             const T = this.team(k), O = this.team(this.other(k));
             const kind = opts.setPiece || null;
-            const atts = T.p.filter(p => p.role !== 'GK').sort((a, b) => (b.x - a.x) * T.dir);
-            const shooter = (opts.shooterIdx != null && T.p[opts.shooterIdx] && T.p[opts.shooterIdx].role !== 'GK')
+            const atts = T.p.filter(p => p.role !== 'GK' && !p.off).sort((a, b) => (b.x - a.x) * T.dir);
+            const shooter = (opts.shooterIdx != null && this.live(T.p[opts.shooterIdx]) && T.p[opts.shooterIdx].role !== 'GK')
                 ? T.p[opts.shooterIdx] : atts[0];
             this.lastShooter = shooter.i;
             const sp = this.spot;   // point où le coup de pied arrêté a été installé
@@ -6136,7 +6297,11 @@ const MATCHSIM = {
                 this.ball.fixed = true; this.ball.hard = true;
                 const delay = 650, crossDur = 1300;
                 const t0 = this.now() + delay;
-                this.note('pass', k, taker.i, { to: shooter.i, action: 'cross', at: t0 });
+                // Course d'élan du tireur jusqu'au ballon, puis le geste au moment où le ballon part
+                // (le geste était joué 650 ms trop tôt, tireur encore à l'arrêt).
+                taker.tx = sp.x - T.dir * 0.5; taker.ty = sp.y + (sp.y < 50 ? 0.6 : -0.6);
+                this.commit(delay, 1.2);
+                this.later(Math.max(0, delay - 140), () => this.note('pass', k, taker.i, { to: shooter.i, action: 'cross' }));
                 this.later(Math.max(0, delay - 200), () => { this.ball.hard = false; });
                 this.lastShot = this.shotQuality(T, shooter.x, shooter.y);
                 this.ball.fixed = false; this.ball.hard = false;
@@ -6144,7 +6309,7 @@ const MATCHSIM = {
                     fromX: sp.x, fromY: sp.y, side: k, idx: shooter.i, t0, dur: crossDur, peak: 3.4,
                     then: function () {
                         this.ball.idx = shooter.i; this.ball.side = k;
-                        this.shoot(k, shooter, { lead: 160, peak: 1.2 + Math.random() * 1.0 });
+                        this.shoot(k, shooter, { lead: 160, peak: 1.2 + Math.random() * 1.0, head: true });
                     }
                 };
                 this.phase = 'setpiece';
@@ -6153,33 +6318,92 @@ const MATCHSIM = {
                 return;
             }
 
-            // ── Tir dans le jeu. Le ballon rejoint le tireur en voyageant, le tireur
-            // finit sa course, puis frappe : plus de ballon qui apparaît dans la surface.
-            const boxX = T.dir > 0 ? 89 : 11;
-            const mix = 0.5 + Math.random() * 0.45;
-            const anchorX = (shooter.x + cur.x) / 2, anchorY = (shooter.y + cur.y) / 2;
-            const aimX = anchorX + (boxX - anchorX) * mix;
-            const aimY = 50 + (anchorY - 50) * (0.45 + Math.random() * 0.45);
-            shooter.tx = this.clamp(aimX, 6, 94);
-            shooter.ty = this.clamp(aimY, 14, 86);
-            // La défense adverse se jette, le gardien plonge sur son angle
-            O.p.forEach(p => {
-                if (p.role === 'GK') { p.tx = O.goalX + O.dir * 2; p.ty = 44 + Math.random() * 12; }
-                else if (p.role === 'DEF') { p.tx = O.goalX + O.dir * (8 + Math.random() * 8); p.ty = 34 + Math.random() * 32; }
-            });
-            const sx = shooter.tx, sy = shooter.ty;
+            // ── Tir dans le jeu. FIX #SHOT-1 : le tireur frappait de là où sa course s'arrêtait,
+            // c'est-à-dire là où la limite de vitesse le bloquait (médiane 30 m, jusqu'à 66 m ;
+            // 44 m de médiane au tempo Rapide, où un tour ne dure que 1,7 s). On choisit
+            // maintenant d'abord un VRAI point de frappe (distribution réaliste : la moitié dans
+            // la surface, un cinquième de frappes lointaines jusqu'à 30 m), on laisse au tireur le
+            // temps d'y courir, et un partenaire le sert pour qu'il y arrive en même temps que le ballon.
+            const m2u = 1 / 1.05, atkX = T.atkX, dir = T.dir;
+            const sNow = this.playerNow(k, shooter.i);
+            const roll = Math.random();
+            const dm = roll < 0.5 ? 7 + Math.random() * 9 : roll < 0.8 ? 16 + Math.random() * 6 : 22 + Math.random() * 8;   // mètres
+            const latMax = Math.min(dm * 0.6, 15);
+            const lat = this.clamp((sNow.y - 50) * 0.68 * 0.55 + (Math.random() * 2 - 1) * latMax * 0.5, -latMax, latMax);
+            let spot = { x: atkX - dir * Math.sqrt(Math.max(1, dm * dm - lat * lat)) * m2u, y: 50 + lat / 0.68 };
+            const SPR = this.TOP_SPEED * 1.35;                     // sprint, unités/s
+            const goalDist = q => Math.hypot((q.x - atkX) * 1.05, (q.y - 50) * 0.68);
+            let need = this.dist(sNow, spot);
+            const reach = s => SPR * s;
+            if (need > reach(4.5)) {
+                // Trop loin pour y être en 4,5 s : on raccourcit le trajet le long de sa course, sans
+                // jamais accepter une frappe au-delà de 30 m (quitte à prolonger l'action jusqu'à 6,5 s).
+                const along = L => ({ x: sNow.x + (spot.x - sNow.x) * L / need, y: sNow.y + (spot.y - sNow.y) * L / need });
+                let s2 = along(reach(4.5));
+                if (goalDist(s2) > 30) s2 = along(Math.min(need, reach(6.5)));
+                if (goalDist(s2) > 30) s2 = along(Math.min(need, reach(8.5)));   // rare : tout le bloc était resté très bas
+                spot = s2; need = this.dist(sNow, spot);
+            }
+            spot.x = this.clamp(spot.x, 6, 94); spot.y = this.clamp(spot.y, 12, 88);
+            const runMs = this.clamp(need / SPR * 1000, 700, 8500);
+
+            // Les deux blocs se recomposent autour du point de frappe : l'équipe qui attaque monte,
+            // la défense recule dans sa surface et le plus proche sort au contact du tireur.
+            const keepBall = { x: this.ball.x, y: this.ball.y, idx: prevSide === k ? prevIdx : null };
+            this.ball.x = spot.x; this.ball.y = spot.y; this.ball.idx = shooter.i;
             this.applyTargets();
-            shooter.tx = sx; shooter.ty = sy;
-            this.commit(this.TICK * 1.7);
-            // ⚠ Le xG se calcule sur la position ATTEINTE (shooter.x/y après
-            // bridage), jamais sur la position visée.
+            this.ball.x = keepBall.x; this.ball.y = keepBall.y;
+            shooter.tx = spot.x; shooter.ty = spot.y;
+            const toGoal = (f) => ({ x: spot.x + (O.goalX - spot.x) * f, y: spot.y + (50 - spot.y) * f });
+            const defs = O.p.filter(p => p.role !== 'GK' && !p.off)
+                .sort((a, b) => this.dist(this.playerNow(this.other(k), a.i), spot) - this.dist(this.playerNow(this.other(k), b.i), spot));
+            defs.forEach((p, n) => {
+                if (n === 0) { const c = toGoal(0.10); p.tx = c.x; p.ty = c.y + (Math.random() * 2 - 1); }
+                else if (n <= 3) { const c = toGoal(0.38 + n * 0.12); p.tx = c.x; p.ty = this.clamp(c.y + (n - 2) * 5.5, 30, 70); }
+            });
+            const gk = O.p[0];
+            gk.tx = O.goalX + O.dir * 1.6; gk.ty = this.clamp(50 + (spot.y - 50) * 0.18, 45, 55);
+
+            // Le passeur : le porteur actuel s'il est de cette équipe, sinon le plus proche du ballon.
+            let passer = (keepBall.idx != null && this.live(T.p[keepBall.idx])) ? T.p[keepBall.idx] : null;
+            if (!passer || passer === shooter) passer = this.nearestTo(T, cur, p => p !== shooter && p.role !== 'GK');
+            const solo = this.dist(this.playerNow(k, passer.i), spot) < 4 || this.dist(sNow, cur) < 6;
+            if (!solo) {
+                // le passeur avance balle au pied pendant que le tireur prend la profondeur
+                const pn = this.playerNow(k, passer.i);
+                passer.tx = this.clamp(pn.x + dir * 5, 6, 94); passer.ty = pn.y + (spot.y - pn.y) * 0.15;
+            }
+            const sec = runMs / 1000;
+            this.commit(runMs, Math.max(1, need / (this.TOP_SPEED * sec) + 0.02));
+            this.curDur = runMs;
+            // ⚠ Le xG se calcule sur la position ATTEINTE, jamais sur la position visée.
             this.lastShot = this.shotQuality(T, shooter.x, shooter.y);
-            this.ball.idx = shooter.i;
-            this.rebind(k, shooter.i);
-            const flyMs = this.ball.fly ? this.ball.fly.dur : 0;
-            const runMs = this.TICK * this.clamp(Math.hypot(shooter.x - shooter.px, shooter.y - shooter.py) / 8, 0.12, 1);
-            this.shoot(k, shooter, { lead: Math.max(450, runMs, flyMs + 250) });
-            this.locked = 1;
+
+            const slow = this.TICK / 1100;
+            let lead;
+            if (solo) {
+                this.ball.idx = shooter.i;
+                this.rebind(k, shooter.i);
+                lead = Math.max(runMs, this.ball.fly ? this.ball.fly.dur : 0) + 150;
+            } else {
+                this.ball.idx = passer.i;
+                this.rebind(k, passer.i);
+                const pEnd = { x: passer.x, y: passer.y };
+                const passDur = this.clamp(this.dist(pEnd, spot) * 22 * slow, 380, 1800);
+                const tPass = Math.max((this.ball.fly ? this.ball.fly.dur : 0) + 150, runMs - passDur);
+                this.later(tPass, () => {
+                    this.ballNow();
+                    this.note('pass', k, passer.i, { to: shooter.i, action: 'through' });
+                    this.ball.fly = { fromX: this.ball.x, fromY: this.ball.y, toX: spot.x + dir * 0.9, toY: spot.y + 0.4,
+                        side: k, idx: shooter.i, t0: this.now(), dur: passDur, peak: Math.random() < 0.3 ? 1.4 : 0.2,
+                        then: function () { this.ball.idx = shooter.i; this.ball.side = k; } };
+                    this.ball.idx = shooter.i;
+                });
+                lead = tPass + passDur + 140;
+            }
+            this.shoot(k, shooter, { lead });
+            this.holdUntil = Math.max(this.holdUntil || 0, this.eta + 200);
+            this.locked = 0;
             return;
         }
     },
@@ -6201,13 +6425,18 @@ const MATCHSIM = {
         let bx, by;
         if (kind === 'penalty') { bx = gx - dir * 10.5; by = 50; }
         else if (kind === 'freekick') {
+            // Le commentaire annonce un coup franc « bien placé » : il reste aux abords de la
+            // surface, mais du côté du terrain où se trouvait le ballon.
             bx = gx - dir * (19 + Math.random() * 11);
-            by = 50 + (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 20);
-        } else { bx = gx - dir * 0.8; by = Math.random() < 0.5 ? 2 : 98; }
-        const taker = T.p[takerIdx] && T.p[takerIdx].role !== 'GK' ? T.p[takerIdx]
-            : T.p.filter(p => p.role !== 'GK').sort((a, b) => (b.x - a.x) * dir)[0];
-        const outT = T.p.filter(p => p.role !== 'GK' && p !== taker);
-        const outO = O.p.filter(p => p.role !== 'GK');
+            by = 50 + (cur.y < 50 ? -1 : 1) * (6 + Math.random() * 20);
+        } else {
+            // Corner du côté où le ballon est sorti
+            bx = gx - dir * 0.8; by = cur.y < 50 ? 2 : 98;
+        }
+        const taker = this.live(T.p[takerIdx]) && T.p[takerIdx].role !== 'GK' ? T.p[takerIdx]
+            : this.nearestTo(T, { x: bx, y: by }, p => p.role !== 'GK');
+        const outT = T.p.filter(p => p.role !== 'GK' && p !== taker && !p.off);
+        const outO = O.p.filter(p => p.role !== 'GK' && !p.off);
         // 1. les blocs se placent autour du point (ballon provisoirement dessus)
         this.ball.x = bx; this.ball.y = by; this.ball.side = key; this.ball.idx = taker.i;
         this._noOffside = (kind === 'corner');     // pas de hors-jeu sur corner
@@ -6277,8 +6506,8 @@ const MATCHSIM = {
             const lib = match(okey, left, [{ x: gx - dir * 15, y: 50 }]);
             lib.forEach(o => place(okey, o.p, o.s.x, o.s.y));
         } else { // corner
-            place(key, taker, bx - dir * 1.6, by < 50 ? 4 : 96, true);
-            const striker = (strikerIdx != null && T.p[strikerIdx] && T.p[strikerIdx] !== taker && T.p[strikerIdx].role !== 'GK')
+            place(key, taker, bx - dir * 2.2, by < 50 ? 4.5 : 95.5, true);
+            const striker = (strikerIdx != null && this.live(T.p[strikerIdx]) && T.p[strikerIdx] !== taker && T.p[strikerIdx].role !== 'GK')
                 ? T.p[strikerIdx] : outT.slice().sort((a, b) => (b.x - a.x) * dir)[0];
             const sSpot = { x: gx - dir * 8, y: 50 + (Math.random() * 6 - 3) };
             place(key, striker, sSpot.x, sSpot.y, true);
@@ -6303,23 +6532,57 @@ const MATCHSIM = {
         // 3. on lance la course au point, un peu plus vite qu'un placement ordinaire
         // FIX #SETPIECE-3 : durée fixe de 2,6 s quelle que soit la distance à parcourir. Elle s'adapte
         // maintenant à ce que doivent parcourir le tireur, le buteur et la majorité des joueurs placés.
-        const SPD = this.TOP_SPEED * 2.4;     // unités/s : même vitesse que le commit ci-dessous
+        // FIX #SETPIECE-4 : la vitesse d'installation était de 11 m/s (une course de sprinter pour
+        // aller tirer un corner) et la durée plafonnée à 5 s : un tireur parti de l'autre moitié
+        // n'arrivait jamais, et le ballon partait sans lui (tireur à 10-50 m du point). On court
+        // désormais à allure réaliste ; si l'installation demanderait plus de 4,5 s, on fait comme
+        // la télévision : fondu, coupure, et la scène reprend joueurs en place.
+        const SPD = this.TOP_SPEED * 1.5;     // unités/s : même vitesse que le commit ci-dessous
         const needOf = r => { const q = this.playerNow(r.k, r.p.i); return Math.hypot(r.p.tx - q.x, r.p.ty - q.y) / SPD * 1000; };
         const mustMs = roleList.filter(r => r.must).map(needOf);
         const restMs = roleList.filter(r => !r.must).map(needOf).sort((u, v) => u - v);
         const q70 = restMs.length ? restMs[Math.min(restMs.length - 1, Math.floor(restMs.length * 0.7))] : 0;
-        const needMs = Math.max(0, ...mustMs, q70);
-        // penalty : seul le tireur doit être arrivé (les autres attendent à l'arc)
-        const setupMs = kind === 'penalty'
-            ? this.clamp(Math.max(this.TICK * 0.5, mustMs[0] * 1.06 + 300), 2600, 4500)
-            : this.clamp(needMs * 1.06 + 300, 2600, 5000);
-        this.commit(setupMs, 2.4);
-        this.curDur = setupMs;     // tout le monde arrive en même temps, à la fin de l'installation
-        // 4. le ballon rejoint son point en roulant, puis y reste
-        const d = Math.hypot(bx - cur.x, by - cur.y);
-        this.ball.fixed = false; this.ball.hard = false;
-        this.ball.fly = { fromX: cur.x, fromY: cur.y, toX: bx, toY: by, t0: this.now(),
-            dur: this.clamp(d * 30, 900, 2400), peak: 0.5, rest: true, hard: true };
+        const needMs = kind === 'penalty' ? Math.max(0, ...mustMs) : Math.max(0, ...mustMs, q70);
+        const LIVE_MAX = 4500, CUT_OUT = 380, CUT_IN = 520;
+        const cut = needMs * 1.06 > LIVE_MAX;
+        let setupMs;
+        if (cut) {
+            // tout le monde s'arrête pendant le fondu, puis est posé sur sa place
+            setupMs = CUT_OUT + CUT_IN + 1300;
+            const goal = [];
+            ['H', 'A'].forEach(k => this.team(k).p.forEach(p => {
+                goal.push({ p, x: p.tx, y: p.ty });
+                const n = this.playerNow(k, p.i); p.tx = n.x; p.ty = n.y;
+            }));
+            this.placeBall(cur.x, cur.y); this.ball.hard = true;   // le ballon ne suit pas le tireur pendant le fondu
+            this.commit(CUT_OUT, 1);
+            this.note('cut', key, taker.i, { out: CUT_OUT, inn: CUT_IN });
+            if (this.onCut) { try { this.onCut('out', CUT_OUT, CUT_IN); } catch (e) {} }
+            this.later(CUT_OUT, () => {
+                goal.forEach(g => {
+                    const p = g.p;
+                    if (p.off) { p.x = p.px = p.tx = p.cx = this.clamp(p.x, 30, 70); p.y = p.py = p.ty = p.cy = p.offY; return; }
+                    p.x = p.px = p.tx = p.cx = g.x; p.y = p.py = p.ty = p.cy = g.y; p.run = 0;
+                });
+                this.tickAt = this.now(); this.curDur = 1;
+                ['H', 'A'].forEach(k => { const Tk = this.team(k); Tk.refX = bx; Tk.refY = by; });
+                this.ball.fly = null; this.placeBall(bx, by); this.ball.hard = true;
+                this.ball.side = key; this.ball.idx = taker.i;
+                this.note('snap', key, taker.i);
+                if (this.onCut) { try { this.onCut('snap', CUT_OUT, CUT_IN); } catch (e) {} }
+            });
+        } else {
+            setupMs = kind === 'penalty'
+                ? this.clamp(Math.max(this.TICK * 0.5, needMs * 1.06 + 300), 2400, 4800)
+                : this.clamp(needMs * 1.06 + 400, 2200, LIVE_MAX + 400);
+            this.commit(setupMs, 1.5);
+            this.curDur = setupMs;     // tout le monde arrive en même temps, à la fin de l'installation
+            // 4. le ballon rejoint son point en roulant, puis y reste
+            const d = Math.hypot(bx - cur.x, by - cur.y);
+            this.ball.fixed = false; this.ball.hard = false;
+            this.ball.fly = { fromX: cur.x, fromY: cur.y, toX: bx, toY: by, t0: this.now(),
+                dur: this.clamp(d * 30, 900, Math.min(2400, setupMs - 300)), peak: 0.5, rest: true, hard: true };
+        }
         this.spot = { kind, key, x: bx, y: by, takerIdx: taker.i };
         this.phase = 'setpiece';
         this.locked = 0;
@@ -6335,20 +6598,26 @@ const MATCHSIM = {
         const sp = this.spot;
         if (!sp || sp.key !== key) return;
         const T = this.team(key), taker = T.p[sp.takerIdx];
-        this.ball.hard = false; this.ball.fixed = false;
         this.ball.side = key; this.ball.idx = sp.takerIdx;
         this.ball.x = sp.x; this.ball.y = sp.y;
-        const mates = T.p.filter(p => p !== taker && p.role !== 'GK');
+        const mates = T.p.filter(p => p !== taker && p.role !== 'GK' && !p.off);
         const from = { x: sp.x, y: sp.y };
         let to;
         if (kind === 'corner') to = mates.slice().sort((a, b) => (b.x - a.x) * T.dir)[Math.floor(Math.random() * 3)] || mates[0];
         else to = mates.slice().sort((a, b) => this.dist(a, from) - this.dist(b, from))[1] || mates[0];
         if (!to) return;
-        this.note('pass', key, taker ? taker.i : sp.takerIdx, { to: to.i, action: kind === 'corner' ? 'cross' : 'short' });
-        this.pass(key, to.i, kind === 'corner' ? 'cross' : 'short');
-        this.spot = null;
-        this.holdUntil = 0;
-        this.phase = 'attack';
+        // Course d'élan : le tireur vient au ballon, PUIS le ballon part.
+        const runUp = 520;
+        if (taker) { taker.tx = sp.x - T.dir * 0.6; taker.ty = sp.y; this.commit(runUp, 1.2); }
+        this.ball.fixed = true; this.ball.hard = true;
+        this.holdUntil = this.now() + runUp + 60;
+        this.later(runUp, () => {
+            this.ball.hard = false; this.ball.fixed = false;
+            this.ball.x = sp.x; this.ball.y = sp.y; this.ball.side = key; this.ball.idx = sp.takerIdx;
+            this.pass(key, to.i, kind === 'corner' ? 'cross' : 'short');
+            this.spot = null;
+            this.phase = 'attack';
+        });
     },
 
     // Célébration de but : le buteur reste sur place, ses coéquipiers viennent à lui.
@@ -6357,7 +6626,7 @@ const MATCHSIM = {
         const T = this.team(key), s = T.p[idx];
         if (!s) return;
         const sx = s.x, sy = s.y;
-        const mates = T.p.filter(p => p !== s && p.role !== 'GK')
+        const mates = T.p.filter(p => p !== s && p.role !== 'GK' && !p.off)
             .sort((a, b) => this.dist(a, s) - this.dist(b, s)).slice(0, 5);
         mates.forEach((p, n) => {
             const ang = n * 1.25 + 0.5;
@@ -6377,7 +6646,7 @@ const MATCHSIM = {
     nearestTo(T, pos, filter) {
         let best = null, bd = 1e9;
         T.p.forEach(p => {
-            if (filter && !filter(p)) return;
+            if (p.off || (filter && !filter(p))) return;
             const d = this.dist(p, pos);
             if (d < bd) { bd = d; best = p; }
         });
@@ -6432,7 +6701,7 @@ const MATCHSIM = {
         this.phase = 'shot';
         this.lastShooter = shooter.i;
         // le geste de frappe est joué juste avant que le ballon ne parte
-        this.later(Math.max(0, lead - 220), () => this.note('shot', key, shooter.i));
+        this.later(Math.max(0, lead - 220), () => this.note('shot', key, shooter.i, o.head ? { head: true } : null));
         this.applyOutcome();
     },
 
@@ -6464,7 +6733,7 @@ const MATCHSIM = {
         const pack = key => this.team(key).p.map((p, i) => {
             const n = this.playerNow(key, i);
             return {
-                x: n.x, y: n.y, tx: p.x, ty: p.y, role: p.role, slot: p.slot, face: p.face, run: p.run,
+                x: n.x, y: n.y, tx: p.x, ty: p.y, role: p.role, slot: p.slot, face: p.face, run: p.run, off: !!p.off,
                 carrier: this.ball.side === key && this.ball.idx === i,
                 name: (this.team(key).names[i] || '')
             };
@@ -7453,6 +7722,21 @@ function emptyState(iconName, text, pad = 'py-8') {
 function statGrid(p, known = true) {
     if (isKeeper(p)) ensureKeeperStats(p);
     return statKeysFor(p).map(([lbl, key]) => statBar(lbl, p.stats?.[key], known)).join('');
+}
+
+// Attributs en pastilles rondes (fiche joueur en paysage) : nom complet, valeur
+// cerclée de la couleur de son niveau, jauge dessous — la lecture des jeux de gestion.
+function statRings(p, known = true) {
+    if (isKeeper(p)) ensureKeeperStats(p);
+    return statKeysFor(p).map(([lbl, key, full]) => {
+        const v = Math.max(0, Math.min(99, p.stats?.[key] || 0));
+        const col = !known ? '#334155' : v >= 80 ? '#10b981' : v >= 70 ? '#84cc16' : v >= 60 ? '#f59e0b' : '#ef4444';
+        return `<div class="sm-attr">
+            <span class="sm-attr-l">${t(full || lbl)}</span>
+            <span class="sm-attr-v" style="border-color:${col}">${known ? v : '?'}</span>
+            <span class="sm-attr-bar"><b style="width:${known ? v : 0}%;background:${col}"></b></span>
+        </div>`;
+    }).join('');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -10213,9 +10497,48 @@ if (badge) {
     playmakerIndex(side) {
         if (!this.liveMatch || !this.setPieces || !this.setPieces.playmaker) return -1;
         const lm = this.liveMatch;
-        const list = side === 'H' ? lm.homeStarters : lm.awayStarters;
+        const list = (lm.simSlots && lm.simSlots[side]) || (side === 'H' ? lm.homeStarters : lm.awayStarters);
         if (!list) return -1;
-        return list.findIndex(p => p.id === this.setPieces.playmaker);
+        return list.findIndex(p => p && p.id === this.setPieces.playmaker);
+    }
+
+    // Index de la silhouette d'un joueur dans le moteur de placement (voir lm.simSlots).
+    simIdx(isHome, p) {
+        const lm = this.liveMatch;
+        const slots = lm && lm.simSlots && lm.simSlots[isHome ? 'H' : 'A'];
+        if (slots) { const i = slots.indexOf(p); if (i > -1) return i; }
+        const list = lm ? (isHome ? lm.homeStarters : lm.awayStarters) : null;
+        return Math.max(0, list ? list.indexOf(p) : 0);
+    }
+    // Remplacement : l'entrant reprend la silhouette (et le poste) du sortant.
+    simReplace(isHome, pOut, pIn) {
+        const slots = this.liveMatch && this.liveMatch.simSlots && this.liveMatch.simSlots[isHome ? 'H' : 'A'];
+        if (!slots) return;
+        const i = slots.indexOf(pOut);
+        if (i > -1) slots[i] = pIn;
+    }
+    // Expulsion (ou sortie sans remplaçant) : la silhouette quitte la pelouse.
+    simSendOff(isHome, p) {
+        const slots = this.liveMatch && this.liveMatch.simSlots && this.liveMatch.simSlots[isHome ? 'H' : 'A'];
+        if (!slots) return;
+        const i = slots.indexOf(p);
+        if (i < 0) return;
+        if (i > 0) slots[i] = null;
+        try { if (MATCHSIM.active) MATCHSIM.sendOff(isHome ? 'H' : 'A', i); } catch (e) {}
+    }
+
+    // Fondu de la vue 2D pendant la coupure d'un coup de pied arrêté (la 3D gère le sien).
+    pitchCut(phase, outMs, inMs) {
+        const layer = document.getElementById('match-tokens-layer');
+        if (!layer) return;
+        if (phase === 'out') {
+            layer.style.transition = `opacity ${outMs}ms ease-in`;
+            layer.style.opacity = '0';
+        } else {
+            this._pitch2DFresh = true;          // pions posés sans glisser
+            this.renderPitchFrame(0);
+            requestAnimationFrame(() => { layer.style.transition = `opacity ${inMs}ms ease-out`; layer.style.opacity = '1'; });
+        }
     }
 
     // Changement d'une consigne collective. Si un match est en cours, elle
@@ -15361,7 +15684,24 @@ if (badge) {
             }
             // Alert if player is injured or suspended in the starting 11
             let alertClass = (player && (player.injuryDays > 0 || player.suspensionDays > 0)) ? 'bg-red-600 animate-pulse' : 'bg-ui-900/80';
-            
+
+            // Paysage (coquille de gestion) : mini-carte joueur — visage, note, poste, nom, forme —
+            // comme sur le terrain tactique des jeux de gestion. Le portrait garde les maillots.
+            if (document.documentElement.classList.contains('land') && player) {
+                const en = Math.max(0, Math.min(100, player.energy ?? 100));
+                const eCol = en > 80 ? '#10b981' : en > 60 ? '#f59e0b' : '#ef4444';
+                const bad = player.injuryDays > 0 || player.suspensionDays > 0;
+                layer.innerHTML += `
+                <div class="sm-tok${bad ? ' is-bad' : ''}" style="left:${pos[0] * 2}%;top:${pos[1]}%">
+                    <span class="sm-tok-face">${playerFaceSVG(player)}</span>
+                    <span class="sm-tok-ovr">${player.ovr || '—'}</span>
+                    <span class="sm-tok-pos">${pRole}</span>
+                    <span class="sm-tok-name">${pName}${pMarks ? `<i>${pMarks}</i>` : ''}</span>
+                    <span class="sm-tok-bar"><b style="width:${en}%;background:${eCol}"></b></span>
+                </div>`;
+                return;
+            }
+
             layer.innerHTML += `
                 <div class="absolute z-20 flex flex-col items-center justify-center transition-all duration-700 -translate-x-1/2 -translate-y-1/2" style="left: ${pos[0]*2}%; top: ${pos[1]}%;">
                     <div class="text-brand-500 w-5 h-5 sm:w-7 sm:h-7">${JERSEY_SVG}</div>
@@ -18899,8 +19239,16 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                  Boutique, puisque changer d'apparence est un achat cosmétique
                  direct, pas une construction progressive). -->
             <div class="panel-glass rounded-2xl p-4 border border-white/5 mb-4">
-                <div class="w-full aspect-[2/1] rounded-xl overflow-hidden mb-3 ring-1 ring-white/10">
-                    ${stadiumSVG(activeDesign)}
+                <!-- Votre stade en 3D (Babylon.js) : mêmes tribunes, toit et projecteurs
+                     que le jour de match, et il grandit avec les Tribunes agrandies.
+                     Le dessin reste en dessous si la 3D n'est pas disponible. -->
+                <div id="campus-stadium" class="relative w-full aspect-[2/1] rounded-xl overflow-hidden mb-3 ring-1 ring-white/10">
+                    <div class="absolute inset-0">${stadiumSVG(activeDesign)}</div>
+                    <div class="absolute top-2 start-2 z-10 flex gap-1" id="campus-stadium-tod">
+                        <button type="button" onclick="app.mountCampusStadium('clear')" data-w="clear" class="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-black/55 text-white border border-white/15">${t('Jour')}</button>
+                        <button type="button" onclick="app.mountCampusStadium('night')" data-w="night" class="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-black/55 text-white border border-white/15">${t('Nuit')}</button>
+                    </div>
+                    <div class="absolute bottom-2 start-2 z-10 px-2.5 py-1 rounded-lg bg-black/55 border border-white/15 text-[10px] font-bold text-white pointer-events-none" id="campus-stadium-cap"></div>
                 </div>
                 <div class="flex items-center justify-between gap-2">
                     <p class="text-[10px] text-slate-500">${t('Design actif :')} <span class="text-white font-bold">${activeDesign.label}</span></p>
@@ -18985,6 +19333,28 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                 <p class="text-[10px] text-slate-600 mt-3 leading-snug">${t("Purement financier — aucune installation n'apporte le moindre avantage sportif.")}</p>
             </div>`;
         this.renderAcademyRegion();
+        this.mountCampusStadium(this._campusTod || 'clear');
+    }
+
+    // Stade du club en 3D dans le Campus (voir Match3D.stadiumPreview).
+    mountCampusStadium(weather) {
+        this._campusTod = weather || 'clear';
+        const box = document.getElementById('campus-stadium');
+        if (!box || !window.Match3D || !Match3D.stadiumPreview) return;
+        const st = this.stadiumOf(this.userClubName);
+        const cap = document.getElementById('campus-stadium-cap');
+        if (cap) cap.textContent = `${st.name} · ${st.capacity.toLocaleString('fr-FR')} ${t('places')}`;
+        box.querySelectorAll('#campus-stadium-tod button').forEach(b => {
+            const on = b.dataset.w === this._campusTod;
+            b.style.background = on ? '#f97316' : ''; b.style.borderColor = on ? 'transparent' : '';
+        });
+        Match3D.stadiumPreview(box, {
+            club: this.userClubName, capacity: st.capacity, name: st.name, weather: this._campusTod, fill: 0.9
+        }).then(ok => {
+            // la 3D a pris : le dessin de secours peut disparaître
+            const svg = box.firstElementChild;
+            if (ok && svg && svg.querySelector('svg')) svg.style.display = 'none';
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -20033,6 +20403,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                     </div>
                 </div>
                 <div class="overflow-y-auto px-4 py-3 flex-1">
+                    ${document.documentElement.classList.contains('land') ? `<p class="sm-attr-title">${t('Attributs')}<span>${p.ovr || ''}</span></p><div class="sm-attrs">${statRings(p, true)}</div>` : ''}
                     ${(() => {
                         const c = p.contract && p.contract.clauses;
                         if (!c || (!c.release && !c.matchBonus)) return '';
@@ -20062,8 +20433,8 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                         <div class="p-2 rounded-lg bg-ui-800/60 text-center"><p class="font-teko text-xl text-white">${p.goals || 0}</p><p class="text-[9px] text-slate-500 uppercase tracking-widest">${t('Buts')}</p></div>
                         <div class="p-2 rounded-lg bg-ui-800/60 text-center"><p class="font-teko text-xl text-white">${p.assists || 0}</p><p class="text-[9px] text-slate-500 uppercase tracking-widest">${t('Passes')}</p></div>
                     </div>
-                    <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">${t('Statistiques')}</p>
-                    <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mb-3">${statGrid(p, true)}</div>
+                    ${document.documentElement.classList.contains('land') ? '' : `<p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">${t('Statistiques')}</p>
+                    <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mb-3">${statGrid(p, true)}</div>`}
                     <div class="p-3 rounded-xl bg-ui-800/40 border border-white/5 mb-3">
                         <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">${t('Total carrière')}</p>
                         <p class="text-xs text-slate-300">${car[0]} ${t('matchs')} &bull; ${car[1]} buts &bull; ${car[2]} passes${car[3] ? ` &bull; ${car[3]} ${t('saison')}${car[3] > 1 ? 's' : ''}` : ''}</p>
@@ -20943,11 +21314,29 @@ simulateAIBypassMatchday(otherMatches) {
             homeRoles: lm.home.isUser ? this.userRoleIds(hForm) : null,
             awayRoles: lm.away.isUser ? this.userRoleIds(aForm) : null
         });
+        // Correspondance joueur ↔ silhouette du moteur. Les listes de titulaires perdent un
+        // élément à chaque expulsion (splice) : leurs index ne désignaient alors plus la bonne
+        // silhouette (le mauvais joueur frappait à l'écran, l'expulsé restait sur la pelouse).
+        lm.simSlots = { H: (lm.homeStarters || []).slice(0, 11), A: (lm.awayStarters || []).slice(0, 11) };
+        // Coupure « télé » d'un coup de pied arrêté : fondu de la vue 2D (la 3D lit l'événement).
+        MATCHSIM.onCut = (phase, outMs, inMs) => this.pitchCut(phase, outMs, inMs);
         // Les noms ne sont connus qu'ici (initPitchTokens tourne avant que
         // liveMatch existe) : on redessine les pastilles avec leurs étiquettes.
         this.initPitchTokens2D();
         this._pitch2DFresh = true;
-        if (window.Match3D) Match3D.setTeams(lm.home.name, lm.away.name);
+        if (window.Match3D) {
+            // Décor 3D : le stade du club qui reçoit (capacité, nom) et les conditions du jour.
+            const hostLeague = this.clubLeagueId(lm.home.name);
+            const stInfo = this.stadiumOf(lm.home.name);   // tient compte des Tribunes agrandies du Campus
+            const cap = stInfo.capacity;
+            const fill = Math.max(0.3, Math.min(0.97, 0.42 + ((lm.home.force || 65) - 60) / 55 + (lm.type === 'caf' ? 0.18 : 0)));
+            if (Match3D.setConditions) Match3D.setConditions({
+                weather: lm.cond && lm.cond.weather ? lm.cond.weather.id : 'clear',
+                pitch: lm.cond && lm.cond.pitch ? lm.cond.pitch.id : 'correct',
+                capacity: cap, name: stInfo.name, fill, cond: lm.cond
+            });
+            Match3D.setTeams(lm.home.name, lm.away.name);
+        }
     }
 
     // Changement de formation, de mentalité ou d'effectif en cours de match :
@@ -20966,7 +21355,7 @@ simulateAIBypassMatchday(otherMatches) {
         T.press = this.userTactics.pressing   || 'half';
         T.line  = this.userTactics.line       || 'normal';
         T.pmIdx = this.playmakerIndex(side);
-        T.names = (side === 'H' ? lm.homeStarters : lm.awayStarters || []).map(shortName);
+        T.names = ((lm.simSlots && lm.simSlots[side]) || (side === 'H' ? lm.homeStarters : lm.awayStarters) || []).map(shortName);
         T.p.forEach(p => { p.role = MATCHSIM.roleOf(p.i, T.form); p.slot = MATCHSIM.slotOf(p.i, T.form); });
         MATCHSIM.applyTargets();
         MATCHSIM.commit();
@@ -21040,6 +21429,9 @@ simulateAIBypassMatchday(otherMatches) {
             el.style.transition = `left ${dur}ms linear, top ${dur}ms linear`;
             el.style.left = `${d.tx}%`;
             el.style.top = `${d.ty}%`;
+            // l'expulsé disparaît une fois la ligne de touche franchie
+            const gone = d.off && (d.y < 1 || d.y > 99) ? 'none' : '';
+            if (el.style.display !== gone) el.style.display = gone;
             const want = isCarrier ? 'drop-shadow(0 0 4px #fde047)' : '';
             if (el._fx !== want) { el.style.filter = want; el._fx = want; }
             const lb = document.getElementById(id + '-lb');
@@ -21402,6 +21794,7 @@ simulateAIBypassMatchday(otherMatches) {
                     player.redCards++;
                     player.redThisMatch = true;
                     this.bumpStat(cardHome, 'yellow', 1); this.bumpStat(cardHome, 'red', 1);
+                    this.simSendOff(cardHome, player);
                     team.splice(team.indexOf(player), 1); // Pour un rouge, on sort définitivement le joueur
                     this.logCommentary(`${icon('redCard')} ${t('EXPULSION !')} ${player.name} ${t("voit son 2e carton jaune !")}`, "text-red-500 font-bold");
                 } else {
@@ -21422,6 +21815,7 @@ simulateAIBypassMatchday(otherMatches) {
                 player.redCards++;
                 player.redThisMatch = true;
                 this.bumpStat(redHome, 'red', 1);
+                this.simSendOff(redHome, player);
                 team.splice(team.indexOf(player), 1); // L'équipe finit à 10
                 SFX.card(true); this.logCommentary(`${icon('redCard')} ${t('CARTON ROUGE DIRECT !')} ${t('Faute grossière de')} ${player.name} !`, "text-red-500 font-bold");
             }
@@ -21454,6 +21848,7 @@ simulateAIBypassMatchday(otherMatches) {
                     let sub = bench.length > 0 ? (bench.find(p => p.position === player.position) || bench[0]) : null;
                     
                     if (sub) {
+                        this.simReplace(isHomeTeam, player, sub);
                         team.splice(team.indexOf(player), 1);
                         bench.splice(bench.indexOf(sub), 1);
                         team.push(sub);
@@ -21464,6 +21859,7 @@ simulateAIBypassMatchday(otherMatches) {
                         this.logCommentary(`${icon('substitution')} ${t('Changement :')} ${sub.name} ${t('remplace')} ${player.name} ${t('sorti sur blessure.')}`, "text-blue-400 italic");
                     } else {
                         // S'il n'y a plus personne sur le banc de l'IA, le joueur sort définitivement
+                        this.simSendOff(isHomeTeam, player);
                         team.splice(team.indexOf(player), 1);
                         this.logCommentary(`${icon('injury')} ${t("Coup dur pour l'adversaire :")} ${player.name} ${t("sort sur civière et l'équipe n'a plus de remplaçant !")}`, "text-red-500 font-bold");
                     }
@@ -21513,14 +21909,18 @@ simulateAIBypassMatchday(otherMatches) {
 
             if (Math.random() < shotChance) {
                 this.showHighlightAlert();
-                this.holdClock(1200);
+                // Si l'équipe a d'abord dû reprendre le ballon (duel, ballon disputé), la frappe
+                // attend que la récupération soit jouée à l'écran.
+                const regainMs = MATCHSIM.active ? Math.max(0, (MATCHSIM.regainUntil || 0) - MATCHSIM.now()) : 0;
+                const shotDelay = Math.max(800, regainMs + 250);
+                this.holdClock(shotDelay + 400);
                 this.logCommentary(`${icon('fire')} ${matchLine('attack', { equipe: attackerTeam.name })}`, "text-yellow-400");
-                
+
                 setTimeout(() => {
                     if (this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) {
-                        this.executeShot(isHomeAttack); 
+                        this.executeShot(isHomeAttack);
                     }
-                }, 800);
+                }, shotDelay);
             } else {
                 this.logCommentary(`${icon('shield')} ${matchLine('defense', { equipe: isHomeAttack ? this.liveMatch.away.name : this.liveMatch.home.name })}`, "text-slate-500 text-[10px]");
             }
@@ -21652,6 +22052,27 @@ simulateAIBypassMatchday(otherMatches) {
         
         let striker = shooterPool[Math.floor(Math.random() * shooterPool.length)] || attStarters[0];
 
+        // FIX #SHOT-2 : dans le jeu, le tireur était tiré au sort sans regarder le terrain — un
+        // défenseur central planté dans son camp (2 tickets sur ~23) devait alors traverser 60 m
+        // pour frapper. Les tickets sont désormais pondérés par la distance RÉELLE de chacun au
+        // but adverse : on frappe quand on est en position de frapper, comme sur le vrai terrain.
+        // Les coups de pied arrêtés gardent la répartition d'origine (têtes des défenseurs).
+        if (!isPenalty && !setPiece && !pre && MATCHSIM.active) {
+            const Tm = MATCHSIM.team(isHome ? 'H' : 'A');
+            const tickets = p => p.position === 'ATT' ? 5 : (p.position === 'MIL' || p.position === 'DEF') ? 2 : 0;
+            const weighted = attStarters.map(p => {
+                const q = Tm.p[this.simIdx(isHome, p)];
+                if (!q || q.off) return { p, w: 0 };
+                const d = Math.hypot((q.x - Tm.atkX) * 1.05, (q.y - 50) * 0.68);
+                return { p, w: tickets(p) * Math.exp(-Math.max(0, d - 14) / 13) };
+            });
+            const tot = weighted.reduce((s, o) => s + o.w, 0);
+            if (tot > 0) {
+                let r = Math.random() * tot;
+                for (const o of weighted) { r -= o.w; if (r <= 0) { striker = o.p; break; } }
+            }
+        }
+
         // --- COUPS DE PIED ARRÊTÉS : le spécialiste prend le ballon --------
         // Pour le club de l'utilisateur, c'est le tireur désigné dans l'onglet
         // Tactique. Pour l'IA, c'est le meilleur homme du onze sur ce geste :
@@ -21695,8 +22116,8 @@ simulateAIBypassMatchday(otherMatches) {
         if ((isPenalty || setPiece) && !pre && MATCHSIM.active && !this._matchOver) {
             const kindSP = isPenalty ? 'penalty' : setPiece;
             const takerP = kindSP === 'corner' ? (cornerTaker || striker) : striker;
-            const takerIdxSP = Math.max(0, attStarters.indexOf(takerP));
-            const strikerIdxSP = Math.max(0, attStarters.indexOf(striker));
+            const takerIdxSP = this.simIdx(isHome, takerP);
+            const strikerIdxSP = this.simIdx(isHome, striker);
             const msSP = MATCHSIM.setPiece(kindSP, isHome ? 'H' : 'A', takerIdxSP, strikerIdxSP);
             this.holdClock(msSP + 9000);
             const lmSP = this.liveMatch;
@@ -21709,7 +22130,7 @@ simulateAIBypassMatchday(otherMatches) {
         // LOT 15 : on anime la frappe APRÈS avoir désigné le tireur, pour que
         // la silhouette qui frappe à l'écran soit bien celle qui marque, et que
         // le xG soit calculé sur sa position réelle sur la pelouse.
-        const shooterIdx = attStarters.indexOf(striker);
+        const shooterIdx = this.simIdx(isHome, striker);
         this.animatePitch(isHome ? 'home_shot' : 'away_shot', { shooterIdx, setPiece: isPenalty ? 'penalty' : setPiece });
         const shot = (!isPenalty && setPiece !== 'freekick' && MATCHSIM.active) ? MATCHSIM.lastShot : null;
 
@@ -21897,7 +22318,7 @@ simulateAIBypassMatchday(otherMatches) {
         const taker = attIsUser ? this.getSetPieceTaker(kind, att)
             : (pool.slice().sort((a, b) => this.setPieceScore(b, kind) - this.setPieceScore(a, kind))[0] || null);
         const key = isHome ? 'H' : 'A';
-        const ms = MATCHSIM.setPiece(kind, key, taker ? Math.max(0, att.indexOf(taker)) : 9, -1);
+        const ms = MATCHSIM.setPiece(kind, key, taker ? this.simIdx(isHome, taker) : -1, -1);
         this.holdClock(ms + 2200);
         const lmS = this.liveMatch;
         setTimeout(() => { if (this.liveMatch === lmS && !this._matchOver) MATCHSIM.release(key, kind); }, ms + 250);
@@ -21919,6 +22340,7 @@ simulateAIBypassMatchday(otherMatches) {
             if (tired && tired.energy < 65) {
                 let pIn = aiBench.find(p => p.position === tired.position) || aiBench[0];
                 let idx = aiStarters.findIndex(p => p.id === tired.id);
+                this.simReplace(!isHomeUser, tired, pIn);
                 aiStarters.splice(idx, 1, pIn);
                 aiBench.splice(aiBench.indexOf(pIn), 1);
                 if (isHomeUser) this.liveMatch.subsMade.away++; else this.liveMatch.subsMade.home++;
@@ -22059,6 +22481,7 @@ simulateAIBypassMatchday(otherMatches) {
             let pIn = bench[inIdx];
 
             // Échange des joueurs
+            this.simReplace(isHome, pOut, pIn);
             starters.splice(outIdx, 1, pIn);
             bench.splice(inIdx, 1); // Le joueur quitte le banc, il ne peut plus rentrer
             pIn.matchEntryMinute = this.liveMatch.minute; // Minute d'entrée du remplaçant
@@ -25320,6 +25743,28 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
         // AVANT la boucle, pour ne jamais avoir à appeler t() une fois dedans.
         const lblJ = t('j'), lblV = t('V'), lblN = t('N'), lblD = t('D');
 
+        // Paysage (coquille de gestion) : vrai tableau, toutes les colonnes, comme
+        // dans les jeux de gestion. Le portrait garde ses lignes-cartes.
+        if (document.documentElement.classList.contains('land')) {
+            const H = [t('Club'), 'J', 'V', 'N', 'D', 'BP', 'BC', '+/-', 'Pts', t('Forme')];
+            const n = leagueData.standings.length;
+            const rows = leagueData.standings.map((s, i) => {
+                const diff = s.gf - s.ga;
+                const zone = i === 0 ? 'z-champ' : i < 3 ? 'z-cont' : i >= n - 3 ? 'z-rel' : '';
+                const form = (s.form || []).slice(0, 5).reverse().map(r =>
+                    `<i class="f-${r === 'W' ? 'w' : r === 'D' ? 'd' : 'l'}">${r === 'W' ? lblV : r === 'D' ? lblN : lblD}</i>`).join('');
+                return `<tr class="${s.isUser ? 'is-me ' : ''}${zone}" onclick="app.showTeamSquad('${s.name.replace(/'/g, "\\'")}', '${viewLeagueId}')">
+                    <td class="c-rk"><span>${i + 1}</span></td>
+                    <td class="c-club"><span class="c-crest">${clubCrestSVG(s.name)}</span><b>${s.name}</b></td>
+                    <td>${s.played}</td><td>${s.won}</td><td>${s.drawn}</td><td>${s.lost}</td>
+                    <td>${s.gf}</td><td>${s.ga}</td>
+                    <td class="${diff > 0 ? 'pos' : diff < 0 ? 'neg' : ''}">${diff > 0 ? '+' : ''}${diff}</td>
+                    <td class="c-pts">${s.points}</td>
+                    <td class="c-form">${form}</td>
+                </tr>`;
+            }).join('');
+            tbody.innerHTML = `<table class="sm-table"><thead><tr><th>#</th>${H.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+        } else
         leagueData.standings.forEach((t, i) => {
             const diff = t.gf - t.ga;
             // Bande de couleur à gauche : qualification continentale, maintien,

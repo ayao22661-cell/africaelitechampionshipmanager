@@ -5,7 +5,6 @@
 // assemble ensuite les trois fichiers de langue dans le registre I18N.
 // ═══════════════════════════════════════════════════════════════════════════
 window.I18N_FR = {
-    'app.subtitle': 'Manager',
     'nav.dashboard': 'Tableau de Bord',
     'nav.squad': 'Effectif',
     'nav.tactics': 'Tactique',

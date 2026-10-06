@@ -1,3 +1,73 @@
+# Interface en paysage, façon jeu de gestion de football (06/10/2026)
+
+L'application passe en **paysage** (`AndroidManifest.xml` : `screenOrientation="sensorLandscape"`). Deux nouveaux fichiers chargés après le jeu, `sm-shell.css` et `sm-shell.js`. Aucune logique de jeu n'est modifiée : tout passe par `app.switchView`, `app.startSimulationSequence`, `app.openGlobalSearch`, `app.openOffice`. **Couleurs : uniquement la charte existante** (brand-500 / brand-600, ui-900 / 800 / 700, jetons `--surface-grad`, `--text`, `--border`…). La mise en page s'active quand l'écran est plus large que haut (`html.land`) ; le portrait reste tel qu'avant.
+| Écran | Changement |
+|---|---|
+| Coquille | Menu latéral avec toutes les sections, en trois groupes séparés par un filet de la marque ; élément actif en aplat dégradé ; badge des messages ; Réglages / Bureau / Recherche en pied de menu ; barre de progression de carrière rangée sous le logo |
+| Barre du haut | Bouton retour (historique de navigation), écusson et nom, recherche, pastilles Crédits / Gemmes / Budget, grand bouton **Continuer** daté (joue la journée depuis l'accueil) |
+| Onglets | Tous les sélecteurs à onglets (`.seg`, `#subnav`) deviennent des onglets soulignés |
+| Accueil | Deux colonnes (prochain match à gauche, décisions et actualités à droite) |
+| Effectif | Grille de 4 à 5 cartes par ligne |
+| Tactique | Terrain à gauche, effectif en colonne à droite, à la hauteur de l'écran ; joueurs sur le terrain en **mini-cartes** (visage, note cerclée, poste, nom, jauge de forme) |
+| Fiche joueur | Grande fenêtre en deux colonnes : identité et actions à gauche, détail à droite (statistiques sur 3 colonnes) |
+| Nouvelle carrière | Deux colonnes : formulaire (nom, ligue, club, signature) à gauche, le manager en grand à droite (tenue, visage, âge), fond de stade éclairé |
+| Classement | Vrai tableau : #, club, J, V, N, D, BP, BC, +/-, Pts, forme (pastilles V/N/D) ; bandes titre / continental / relégation ; votre club en dégradé de la marque |
+| Fiche joueur | Attributs en pastilles rondes avec nom complet, cerclées de la couleur du niveau, jauge dessous (`statRings`) ; note globale en tête |
+| Match — barre des joueurs | En bas : poste, nom, cœur d'énergie coloré, note en direct (même calcul que l'onglet Notes), cartons ; compteur de changements ; repliable |
+| Match — carte du buteur | À chaque but (événement `goal` du moteur) : visage, nom, « BUT ! », minute et score, écusson, 4 s en bas à gauche |
+| Match | 3D plein écran ; pastille de score centrée (chrono · domicile · score · extérieur) ; rail à droite (Tactique, Changer, Direct, Stats, Notes, Zones) qui ouvre les panneaux par-dessus la 3D ; bandeau du dernier commentaire en bas ; bouton de fin de match en bas à droite |
+
+# Match 3D : duels au contact, décor par stade et par météo, caméra « retransmission » (06/10/2026)
+
+**Jeu** : le ballon changeait de camp quel que soit l'écart, puis volait jusqu'au défenseur. À l'écran, ça donnait des tacles à 15 m et des « passes » à l'adversaire. En plus, l'ordre `midfield` tirait au sort l'équipe en possession toutes les deux minutes.
+| Changement | Détail |
+|---|---|
+| `MATCHSIM.tackle` | Duel uniquement au contact (< 4,5 unités) : le défenseur va sur le ballon, le porteur est déséquilibré, le ballon reste au pied du duel |
+| Interception (`pass(…, canCut)`) | Un adversaire sur la trajectoire coupe la passe : le ballon s'arrête sur lui, il y court |
+| `MATCHSIM.regain` | L'ordre « k attaque » ne donne plus le ballon d'office : duel si un joueur de k est à moins de 7 unités, sinon ballon disputé à la retombée d'une passe. La frappe qui suit attend la fin de la récupération (`regainUntil`) |
+| `midfield` / `forwardPass` | L'équipe qui a le ballon le garde et progresse par une vraie passe |
+| Fin d'offensive | Le dernier geste sort derrière la ligne, puis sortie de but (le ballon ne vole plus de l'attaquant au gardien) |
+| `winBall` | Fenêtres de contre-attaque par style : lisait `team.tac.style`, qui n'existe pas (toutes les équipes partaient 2 tours) |
+Mesuré (`tests/match_flow_test.js` + sonde) : ballons « offerts » à l'adversaire (vol > 6 m) 24 → 3 par match, changements de possession 31 → 21 par match, tacle à 2,7 m en médiane.
+
+**Décor 3D** (`match3d.js`, reconstruit à chaque match via `Match3D.setConditions`) :
+| | |
+|---|---|
+| Ambiances | `MATCH_WEATHER` → nocturne (projecteurs, halos, étoiles), plein soleil, chaleur, harmattan (brume ocre), pluie (voile animé + brume + pelouse brillante), chaleur humide. Brouillard, contraste, exposition, tonalité ACES, vignette |
+| Pelouse | Texture peinte : grain, taches, tonte en bandes (damier si « impeccable »), usure selon `PITCH_STATES` (surfaces, point de penalty, rond central, couloirs des arbitres assistants) |
+| Stade | Selon `stadiumCapacityFor` : < 9 000 une tribune couverte à poteaux + gradins ; < 30 000 quatre tribunes, toit sur la principale ; sinon cuvette à deux anneaux, loges, toit tout autour. Sièges aux couleurs du club, remplissage variable. « Omnisports / Municipal / Régional » : vraie piste de 400 m |
+| Autour | Panneaux LED qui défilent, mâts ou rampes de projecteurs, bancs, zone technique, horizon (immeubles, palmiers, baobabs) |
+| Ombres | Instanciées (1 appel de dessin) : une ombre allongée selon le soleil ; en nocturne, une par mât (étoile d'ombres) |
+| Joueurs | Matériaux PBR plus lumineux (pas de carte d'environnement dans le bundle) |
+| Caméra | Vue suivie plus basse (23° en paysage) et plus large : jeu au premier plan, tribune d'en face visible |
+| Correctifs | Le dôme de ciel en `infiniteDistance` passait devant la scène ; un dôme d'étoiles transparent s'affichait noir |
+Essai : `Match3D.preview({ weather: 'night', capacity: 6000, name: 'Stade Omnisports — X' })`.
+
+# Match 3D : tirs réalistes, vrais tireurs de corner, coupures télé, gestes des joueurs (06/10/2026)
+
+**Symptômes** : tirs de 40 à 66 m, corners centrés alors que le tireur était encore au milieu du terrain, joueurs qui font demi-tour pour reculer, gardien qui plonge au hasard, expulsé toujours visible.
+
+Mesuré avec le nouveau `tests/match_flow_test.js` (pilotage minute par minute identique au jeu, avant → après, tempo Normal) :
+| | avant | après |
+|---|---|---|
+| Tirs dans le jeu : distance médiane | 30 m (44 m en Rapide) | 18 m |
+| Tirs de plus de 40 m | 23 % (70 % en Rapide) | 0 % (≤ 4 % en Rapide) |
+| Tireur de corner ↔ ballon quand il part | 3 à 50 m (p90 : 41 m) | 0,7 m |
+| Tireur de coup franc ↔ ballon | jusqu'à 18 m | < 1 m |
+
+| Changement | Détail |
+|------------|--------|
+| Point de frappe (`MATCHSIM.director`, tir dans le jeu) | Le tireur frappait là où la limite de vitesse l'arrêtait. On choisit d'abord un vrai point de frappe (½ dans la surface, ⅕ de frappes lointaines jusqu'à 30 m), il y court, un partenaire le sert en profondeur pour que ballon et tireur arrivent ensemble, la défense recule et le plus proche sort au contact |
+| Choix du tireur (`executeShot`) | Les tickets ATT/MIL/DEF sont pondérés par la distance réelle au but adverse : un défenseur resté dans son camp ne frappe plus de 60 m. Les coups de pied arrêtés gardent la répartition d'origine (têtes des défenseurs) |
+| Installation des coups de pied arrêtés (`MATCHSIM.setPiece`) | Vitesse ramenée de 11 m/s à ~7 m/s. Si l'installation demande plus de 4,5 s : **coupure télé** (fondu au noir, joueurs posés à leur place, image qui revient — `note('cut')` / `note('snap')`, `app.pitchCut` pour la 2D) |
+| Corner | Côté où le ballon est sorti, course d'élan du tireur, geste joué quand le ballon part (il l'était 650 ms trop tôt), reprise **de la tête** (`header_soccerball`) |
+| Corner / coup franc joués (`MATCHSIM.release`) | Course d'élan du tireur avant la remise en jeu ; double événement « passe » supprimé |
+| Coup franc | Toujours aux abords de la surface (le commentaire l'annonce « bien placé »), mais du côté du terrain où était le ballon |
+| Expulsions (`MATCHSIM.sendOff`, `app.simSlots`) | Les listes de titulaires perdent un élément à chaque carton rouge : les index ne désignaient plus la bonne silhouette (le mauvais joueur frappait à l'écran). Correspondance joueur ↔ silhouette tenue à jour (remplacements, blessures, rouges) ; l'expulsé sort par la touche puis disparaît (2D et 3D) |
+| Gardien 3D | Se tourne vers le tireur ; plonge du côté où arrive le ballon (`gk_diving_save` = sa gauche, `_2` = sa droite, mesuré sur les clips), capte dans l'axe (`gk_catch_2`) |
+| Allures 3D | Course arrière (`jog_backward`) et pas chassés (`jog_strafe_left/right`) quand un joueur recule ou glisse en surveillant le ballon, au lieu de lui tourner le dos |
+| Tests | `tests/sim_test.js` ignore les coupures volontaires (le saut a lieu sous le noir) et les compte |
+
 # Écran de match sur mobile : terrain agrandi, plein écran, caméra rapprochée (06/10/2026)
 
 **Symptôme** : sur téléphone en portrait, le terrain ne faisait que 192 px de haut (`h-48`) sous un bandeau de score de 96 px : les joueurs en 3D tenaient en ~22 px et on ne distinguait presque rien.

@@ -26,6 +26,7 @@
     const PITCH_W = 105, PITCH_H = 68, MARGIN = 7.5;
     const FIELD_W = PITCH_W + MARGIN * 2, FIELD_H = PITCH_H + MARGIN * 2;
     const JOG_SPEED = 2.48;                      // m/s du clip jog_forward
+    const BACK_SPEED = 2.0, STRAFE_SPEED = 2.1;  // m/s estimés des clips jog_backward / jog_strafe_*
     const CELEBRATIONS = ['cel_bboy_hip_hop_move', 'cel_chapa-giratoria', 'cel_swing_dancing',
         'cel_stepping_backward', 'cel_shuffling', 'cel_capoeira'];   // volontairement sans les 3 clips violents
     const OUTFIELD_MODELS = ['perso_03', 'perso_05', 'perso_07'];
@@ -187,55 +188,19 @@
             });
         });
         await Promise.all(jobs);
+        tunePlayerMats();
     }
 
-    // ---- Décor : terrain, buts, ballon ---------------------------------
-    function buildPitch() {
-        const B = S.B, scene = S.scene;
-        const PXM = S.lowEnd ? 9 : 12.8;
-        const cw = Math.round(FIELD_W * PXM), ch = Math.round(FIELD_H * PXM);
-        const tex = new B.DynamicTexture('pitchTex', { width: cw, height: ch }, scene, true);
-        const c = tex.getContext();
-        const X = (m) => (m + FIELD_W / 2) * PXM, Y = (m) => (m + FIELD_H / 2) * PXM;
-        c.fillStyle = '#1b5e2f'; c.fillRect(0, 0, cw, ch);                 // pourtour
-        const nb = 14, sw = PITCH_W / nb;                                   // bandes de tonte
-        for (let i = 0; i < nb; i++) {
-            c.fillStyle = i % 2 ? '#2f8f43' : '#2a8340';
-            c.fillRect(X(-PITCH_W / 2 + i * sw), Y(-PITCH_H / 2), sw * PXM + 1, PITCH_H * PXM);
-        }
-        c.strokeStyle = 'rgba(255,255,255,.92)'; c.fillStyle = '#fff';
-        c.lineWidth = Math.max(2, 0.22 * PXM);
-        const line = (x1, y1, x2, y2) => { c.beginPath(); c.moveTo(X(x1), Y(y1)); c.lineTo(X(x2), Y(y2)); c.stroke(); };
-        const rect = (x, y, w, h) => c.strokeRect(X(x), Y(y), w * PXM, h * PXM);
-        const circ = (x, y, r, a0, a1) => { c.beginPath(); c.arc(X(x), Y(y), r * PXM, a0 || 0, a1 == null ? Math.PI * 2 : a1); c.stroke(); };
-        const dot = (x, y) => { c.beginPath(); c.arc(X(x), Y(y), 0.3 * PXM, 0, Math.PI * 2); c.fill(); };
-        rect(-PITCH_W / 2, -PITCH_H / 2, PITCH_W, PITCH_H);
-        line(0, -PITCH_H / 2, 0, PITCH_H / 2);
-        circ(0, 0, 9.15); dot(0, 0);
-        [-1, 1].forEach(s => {
-            const gx = s * PITCH_W / 2;
-            rect(s > 0 ? gx - 16.5 : gx, -20.16, 16.5, 40.32);              // grande surface
-            rect(s > 0 ? gx - 5.5 : gx, -9.16, 5.5, 18.32);                 // petite surface
-            dot(gx - s * 11, 0);
-            // arc de surface : portion du cercle de 9,15 m hors de la surface
-            const a = Math.acos(5.5 / 9.15);
-            if (s > 0) circ(gx - 11, 0, 9.15, Math.PI - a, Math.PI + a);
-            else circ(gx + 11, 0, 9.15, -a, a);
-            [-1, 1].forEach(t => {                                           // corners
-                c.beginPath();
-                const cx = gx, cy = t * PITCH_H / 2;
-                const a0 = s > 0 ? (t > 0 ? Math.PI : Math.PI / 2) : (t > 0 ? Math.PI * 1.5 : 0);
-                c.arc(X(cx), Y(cy), 1 * PXM, a0, a0 + Math.PI / 2); c.stroke();
-            });
-        });
-        tex.update();
-        const gmat = new B.StandardMaterial('pitchMat', scene);
-        gmat.diffuseTexture = tex; gmat.specularColor = new B.Color3(0, 0, 0);
-        gmat.emissiveColor = new B.Color3(0.18, 0.18, 0.18);
-        const ground = B.CreateGround('pitch', { width: FIELD_W, height: FIELD_H }, scene);
-        ground.material = gmat; ground.isPickable = false;
-        ground.freezeWorldMatrix();
-        // (buts, filets et décor : voir buildGoals() / buildStadium())
+    // Matériaux PBR des joueurs : sans carte d'environnement, ils ne reçoivent que l'hémisphère et
+    // le soleil et paraissent ternes. On renforce la lumière directe et on ajoute un léger fond
+    // émissif, réglé par l'ambiance (plus fort en nocturne, sous les projecteurs).
+    function tunePlayerMats() {
+        const th = S.theme || {}, seen = new Set();
+        S.players.H.concat(S.players.A).concat(S.ref ? [S.ref] : []).forEach(P => P.meshes.forEach(m => {
+            const mat = m.material; if (!mat || seen.has(mat) || mat.getClassName() !== 'PBRMaterial') return; seen.add(mat);
+            mat.directIntensity = th.flood ? 1.7 : 1.35;
+            const e = th.flood ? 0.1 : 0.05; mat.emissiveColor = new S.B.Color3(e, e, e);
+        }));
     }
 
     // ---- Décor : kit de géométrie --------------------------------------
@@ -307,50 +272,6 @@
             t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     }
 
-    // ---- Décor : textures peintes (une seule fois, au démarrage) --------
-    function crowdTexture(seed, W, H) {
-        const tex = new S.B.DynamicTexture('crowd' + seed, { width: W, height: H }, S.scene, true);
-        const c = tex.getContext(), R = rng(seed), rows = 16, rh = H / rows, seats = 40, sw = W / seats;
-        c.fillStyle = '#1a1f2b'; c.fillRect(0, 0, W, H);
-        const KIT = ['#16a34a', '#facc15', '#dc2626', '#f8fafc', '#2563eb', '#f97316', '#0f172a', '#ec4899', '#14b8a6'];
-        const SKIN = ['#3b2416', '#4a2d1c', '#5a3825', '#6d4530', '#8d5a3c', '#b57d56'];
-        const SEAT = ['#233a6b', '#1f5e3b', '#6b2530', '#3a3f4d'];
-        for (let r = 0; r < rows; r++) {
-            const y0 = H - (r + 1) * rh;                        // rangée 0 = devant (bas du motif)
-            c.fillStyle = '#2a3142'; c.fillRect(0, y0 + rh * 0.86, W, rh * 0.14);   // marche
-            let block = null;
-            for (let s = 0; s < seats; s++) {
-                if (s % 8 === 0) block = R() < 0.6 ? KIT[(R() * 5) | 0] : null;      // blocs de supporters en couleurs de club
-                const x0 = s * sw;
-                if (s % 20 === 10) { c.fillStyle = '#10141c'; c.fillRect(x0, y0, sw, rh); continue; }   // allée
-                c.fillStyle = SEAT[((s / 10) | 0) % SEAT.length]; c.fillRect(x0 + 1, y0 + rh * 0.42, sw - 2, rh * 0.46);
-                if (R() < 0.9) {
-                    c.fillStyle = (block && R() < 0.8) ? block : KIT[(R() * KIT.length) | 0];
-                    c.fillRect(x0 + sw * 0.16, y0 + rh * 0.36, sw * 0.68, rh * 0.5);                      // buste
-                    c.fillStyle = SKIN[(R() * SKIN.length) | 0];
-                    c.beginPath(); c.arc(x0 + sw * 0.5, y0 + rh * 0.26, sw * 0.2, 0, Math.PI * 2); c.fill();   // tête
-                }
-            }
-        }
-        tex.wrapU = tex.wrapV = S.B.Texture.WRAP_ADDRESSMODE;      // DynamicTexture est en CLAMP par défaut : on veut des tuiles qui se répètent
-        tex.anisotropicFilteringLevel = 4; tex.update();
-        return tex;
-    }
-    function boardTexture() {                                   // panneaux publicitaires (marques fictives)
-        const W = 2048, H = 64, tex = new S.B.DynamicTexture('boards', { width: W, height: H }, S.scene, true);
-        const c = tex.getContext();
-        [['AECM  ELITE', '#0b0f19', '#f5c518', '#f5c518'], ['KILI AIR', '#0d47a1', '#ffffff', '#ffd54f'],
-         ['SAHEL BANK', '#0b6b3a', '#ffffff', '#ffe082'], ['NIL TELECOM', '#b71c1c', '#ffffff', '#ffffff']].forEach((a, k) => {
-            const x = k * 512; c.fillStyle = a[1]; c.fillRect(x, 0, 512, H);
-            c.fillStyle = a[3]; c.fillRect(x, 0, 512, 5); c.fillRect(x, H - 5, 512, 5);
-            c.fillStyle = a[2]; c.font = 'bold 34px Arial, Helvetica, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-            c.fillText(a[0], x + 256, H / 2 + 1);
-        });
-        tex.wrapU = tex.wrapV = S.B.Texture.WRAP_ADDRESSMODE;
-        tex.anisotropicFilteringLevel = 4; tex.update();
-        return tex;
-    }
-
     // ---- Buts : poteaux ronds, barre, armature, filet à mailles ----------
     const GOAL_H = 2.44, GOAL_HW = 3.66, NET_TOP_D = 1.0, NET_TOP_H = 2.0, NET_BACK_D = 2.1, NET_CELL = 0.3;
     function buildGoals() {
@@ -395,77 +316,666 @@
         toMesh('goalFrame', gF, white);
     }
 
-    // ---- Stade : tribunes, public, panneaux, mâts, bancs, piquets -------
-    function buildStadium() {
-        const B = S.B, scene = S.scene, lo = S.lowEnd, D = S.decor;
-        scene.clearColor = new B.Color4(0.025, 0.04, 0.07, 1);
-        // dalle autour du terrain : plus de grand vide noir
-        const apron = B.CreateGround('apron', { width: 260, height: 220 }, scene);
-        apron.material = flatMat('apronMat', 0.11, 0.13, 0.16); apron.position.y = -0.04; apron.isPickable = false; apron.freezeWorldMatrix();
+    // =====================================================================
+    // DÉCOR DU MATCH — reconstruit à chaque rencontre (setConditions)
+    // La météo du moteur (MATCH_WEATHER), l'état de la pelouse (PITCH_STATES) et le stade du
+    // club qui reçoit (capacité, nom) décident de l'ambiance : nocturne sous les projecteurs,
+    // plein soleil, brume d'harmattan, pluie ; petit stade municipal à une tribune couverte,
+    // stade omnisports avec piste d'athlétisme, ou grande cuvette à deux anneaux et toit.
+    // Le bundle Babylon embarqué n'a ni ombres ni effets : tout est fait avec la géométrie
+    // maison, des textures peintes une fois, et le traitement d'image de la scène.
+    // =====================================================================
+    const THEMES = {
+        night:     { sky: ['#01030a', '#071330', '#12244a'], clear: [0.01, 0.02, 0.05], hemi: 0.62, hemiCol: [0.78, 0.85, 1.0], ground: [0.22, 0.27, 0.25],
+                     sun: 0.55, sunDir: [0.15, -1, 0.25], flood: true, fog: null, exposure: 1.08, contrast: 1.28, vignette: 2.2, shadows: 'flood', shA: 0.2,
+                     crowdK: 0.8, grassK: 0.95, skyline: 'night' },
+        clear:     { sky: ['#1f5fa8', '#69a6dc', '#cfe3f2'], clear: [0.45, 0.62, 0.8], hemi: 0.92, hemiCol: [1, 0.98, 0.93], ground: [0.38, 0.42, 0.32],
+                     sun: 1.25, sunDir: [-0.5, -1, 0.42], flood: false, fog: null, exposure: 1.0, contrast: 1.18, vignette: 1.4, shadows: 'sun', shA: 0.42,
+                     crowdK: 1.08, grassK: 1.0, skyline: 'day' },
+        heat:      { sky: ['#2c6db8', '#8cbde6', '#f1ecdc'], clear: [0.55, 0.7, 0.82], hemi: 1.0, hemiCol: [1, 0.95, 0.84], ground: [0.45, 0.42, 0.3],
+                     sun: 1.5, sunDir: [-0.3, -1, 0.2], flood: false, fog: { col: '#e9dfc6', d: 0.0022 }, exposure: 1.1, contrast: 1.22, vignette: 1.3, shadows: 'sun', shA: 0.5,
+                     crowdK: 1.12, grassK: 1.03, skyline: 'day' },
+        harmattan: { sky: ['#a77f52', '#cfa77a', '#e6cba6'], clear: [0.8, 0.66, 0.5], hemi: 0.88, hemiCol: [1, 0.88, 0.72], ground: [0.45, 0.38, 0.28],
+                     sun: 0.7, sunDir: [-0.55, -0.8, 0.5], flood: false, fog: { col: '#cfac82', d: 0.0072 }, exposure: 1.02, contrast: 1.02, vignette: 1.6, shadows: 'sun', shA: 0.22,
+                     crowdK: 0.98, grassK: 0.92, skyline: 'dust' },
+        rain:      { sky: ['#30363e', '#4c545e', '#6e7781'], clear: [0.3, 0.33, 0.37], hemi: 0.78, hemiCol: [0.85, 0.9, 0.96], ground: [0.28, 0.32, 0.32],
+                     sun: 0.3, sunDir: [0.2, -1, 0.3], flood: true, fog: { col: '#636b74', d: 0.0062 }, exposure: 0.98, contrast: 1.08, vignette: 1.9, shadows: 'flood', shA: 0.14,
+                     crowdK: 0.84, grassK: 0.86, wet: true, rain: true, skyline: 'grey' },
+        humid:     { sky: ['#5a82a8', '#a1bbd0', '#dde5e8'], clear: [0.62, 0.72, 0.8], hemi: 0.92, hemiCol: [1, 0.97, 0.92], ground: [0.38, 0.42, 0.34],
+                     sun: 0.95, sunDir: [-0.4, -1, 0.35], flood: false, fog: { col: '#bccad0', d: 0.0042 }, exposure: 1.02, contrast: 1.1, vignette: 1.5, shadows: 'sun', shA: 0.32,
+                     crowdK: 1.02, grassK: 0.97, skyline: 'day' }
+    };
+    const hex3 = (h) => { const c = hexToRgb(h); return new S.B.Color3(c[0] / 255, c[1] / 255, c[2] / 255); };
 
-        const HX = PITCH_W / 2, HZ = PITCH_H / 2, BZ = HZ + 6, BX = HX + 6, SZ = BZ + 3.5, SX = BX + 4;
-        const DEP = 22, H0 = 1.8, H1 = 15, OX = SX + DEP, OZ = SZ + DEP;
-        const texA = crowdTexture(7, lo ? 512 : 1024, lo ? 256 : 512), texB = crowdTexture(23, lo ? 512 : 1024, lo ? 256 : 512);
-        const mA = texMat('crowdA', texA, 0.78), mB = texMat('crowdB', texB, 0.78);
-        D.crowd = [texA, texB]; D.crowdMats = [mA, mB];
-        const gA = geo(), gB = geo(), gC = geo(), gK = geo();
-        const slope = Math.hypot(DEP, H1 - H0), UC = 20, VC = 12.8;
-        const ramp = (g, x0, z0, x1, z1, nx, nz) => {
-            const len = Math.hypot(x1 - x0, z1 - z0), u1 = len / UC, v1 = slope / VC;
-            gQuad(g, [x0, H0, z0], [x1, H0, z1], [x1 + nx * DEP, H1, z1 + nz * DEP], [x0 + nx * DEP, H1, z0 + nz * DEP], [0, 0], [u1, 0], [u1, v1], [0, v1]);
-            gQuad(gC, [x0, 0, z0], [x1, 0, z1], [x1, H0, z1], [x0, H0, z0]);                                                   // façade
-            gQuad(gK, [x0 + nx * DEP, 0, z0 + nz * DEP], [x1 + nx * DEP, 0, z1 + nz * DEP], [x1 + nx * DEP, H1, z1 + nz * DEP], [x0 + nx * DEP, H1, z0 + nz * DEP]);   // mur arrière
+    // Spécification du stade à partir de sa capacité et de son nom (voir stadiumCapacityFor / stadiumNameFor).
+    function stadiumSpec(info) {
+        const cap = (info && info.capacity) || 15000;
+        const name = String((info && info.name) || '');
+        const tier = cap < 9000 ? 'small' : cap < 30000 ? 'medium' : 'large';
+        const track = /Omnisports|Municipal|Régional/i.test(name);
+        let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+        const fill = clamp((info && info.fill) || (0.55 + (h % 40) / 100), 0.25, 0.98);
+        return { cap, tier, track, fill, seed: h || 7 };
+    }
+
+    // ---- Collecte des objets du décor (supprimés au match suivant) ---------
+    function track(o) { (S.decorObjs || (S.decorObjs = [])).push(o); return o; }
+    function clearDecor() {
+        (S.decorObjs || []).forEach(o => { try { o.dispose(false, true); } catch (e) { try { o.dispose(); } catch (e2) {} } });
+        S.decorObjs = [];
+        S.decor = { nets: S.decor && S.decor.nets };
+    }
+    function dmesh(name, g, mat, live) { const m = toMesh(name, g, mat, live); if (m) track(m); return m; }
+    function dflat(name, r, g, b, a) { return track(flatMat(name, r, g, b, a)); }
+    function dtex(name, w, h, mip) { return track(new S.B.DynamicTexture(name, { width: w, height: h }, S.scene, mip !== false)); }
+    // Matériau éclairé (reçoit hémisphère + soleil) : sols, toits, façades — le relief se lit.
+    function litMat(name, tex, col, spec) {
+        const B = S.B, m = track(new B.StandardMaterial(name, S.scene));
+        if (tex) m.diffuseTexture = tex;
+        m.diffuseColor = col ? new B.Color3(col[0], col[1], col[2]) : new B.Color3(1, 1, 1);
+        m.specularColor = new B.Color3(spec || 0, spec || 0, spec || 0);
+        m.backFaceCulling = false;
+        return m;
+    }
+
+    // ---- Pelouse --------------------------------------------------------
+    function paintPitch(spec, cond) {
+        const B = S.B, th = S.theme, PXM = S.lowEnd ? 8 : 11;
+        const cw = Math.round(FIELD_W * PXM), ch = Math.round(FIELD_H * PXM);
+        const tex = dtex('pitchTex', cw, ch, true);
+        const c = tex.getContext(), R = rng(spec.seed + 11);
+        const X = (m) => (m + FIELD_W / 2) * PXM, Y = (m) => (m + FIELD_H / 2) * PXM;
+        const st = (cond && cond.pitch && cond.pitch.id) || 'correct';
+        const wear = { perfect: 0, correct: 0.18, worn: 0.5, heavy: 0.72, bumpy: 0.55 }[st] || 0.18;
+        const base = st === 'heavy' ? [46, 112, 50] : st === 'bumpy' ? [62, 128, 58] : st === 'worn' ? [58, 132, 60] : [50, 140, 62];
+        const rgb = (k, a) => `rgba(${Math.round(base[0] * k)},${Math.round(base[1] * k)},${Math.round(base[2] * k)},${a == null ? 1 : a})`;
+        c.fillStyle = rgb(0.86); c.fillRect(0, 0, cw, ch);                                   // pourtour
+        c.fillStyle = rgb(1); c.fillRect(X(-PITCH_W / 2 - 1.5), Y(-PITCH_H / 2 - 1.5), (PITCH_W + 3) * PXM, (PITCH_H + 3) * PXM);
+        // tonte : bandes dans la longueur ; sur une pelouse impeccable, damier croisé (comme en Europe)
+        const nb = 18, sw = (PITCH_W + 3) / nb;
+        for (let i = 0; i < nb; i++) {
+            c.fillStyle = i % 2 ? rgb(1.1) : rgb(0.95);
+            c.fillRect(X(-PITCH_W / 2 - 1.5 + i * sw), Y(-PITCH_H / 2 - 1.5), sw * PXM + 1, (PITCH_H + 3) * PXM);
+        }
+        if (st === 'perfect') {
+            const nc = 10, sh = (PITCH_H + 3) / nc;
+            for (let j = 0; j < nc; j++) if (j % 2) { c.fillStyle = 'rgba(255,255,255,0.045)'; c.fillRect(X(-PITCH_W / 2 - 1.5), Y(-PITCH_H / 2 - 1.5 + j * sh), (PITCH_W + 3) * PXM, sh * PXM); }
+        }
+        // grandes taches de couleur (l'herbe n'est jamais uniforme)
+        const blot = document.createElement('canvas'); blot.width = 48; blot.height = 32;
+        const bc = blot.getContext('2d'), bi = bc.createImageData(48, 32);
+        for (let i = 0; i < bi.data.length; i += 4) { const v = 110 + R() * 70; bi.data[i] = v * 0.8; bi.data[i + 1] = v; bi.data[i + 2] = v * 0.6; bi.data[i + 3] = 255; }
+        bc.putImageData(bi, 0, 0);
+        c.save(); c.globalAlpha = 0.22; c.globalCompositeOperation = 'overlay'; c.imageSmoothingEnabled = true; c.drawImage(blot, 0, 0, cw, ch); c.restore();
+        // usure : surfaces de but, point de penalty, rond central, couloirs des arbitres assistants
+        const dirt = st === 'heavy' ? [86, 66, 42] : [128, 104, 70];
+        const patch = (mx, my, rx, ry, a) => {
+            if (a <= 0.01) return;
+            c.save(); c.translate(X(mx), Y(my)); c.scale(1, ry / rx);
+            const gr = c.createRadialGradient(0, 0, 0, 0, 0, rx * PXM);
+            gr.addColorStop(0, `rgba(${dirt[0]},${dirt[1]},${dirt[2]},${a})`); gr.addColorStop(0.55, `rgba(${dirt[0]},${dirt[1]},${dirt[2]},${a * 0.55})`);
+            gr.addColorStop(1, `rgba(${dirt[0]},${dirt[1]},${dirt[2]},0)`);
+            c.fillStyle = gr; c.beginPath(); c.arc(0, 0, rx * PXM, 0, Math.PI * 2); c.fill(); c.restore();
         };
-        ramp(gA, -OX, SZ, OX, SZ, 0, 1);          // tribune lointaine
-        ramp(gA, OX, -SZ, -OX, -SZ, 0, -1);       // tribune proche
-        ramp(gB, SX, -SZ, SX, SZ, 1, 0);          // virage droit
-        ramp(gB, -SX, SZ, -SX, -SZ, -1, 0);       // virage gauche
-        [-1, 1].forEach(s => [-1, 1].forEach(t => {
-            // bouchons latéraux des grandes tribunes et joues des virages : pas de trou dans le bol
-            gQuad(gK, [s * OX, 0, t * SZ], [s * OX, 0, t * OZ], [s * OX, H1, t * OZ], [s * OX, H0, t * SZ]);
-            gTri(gK, [s * SX, H0, t * SZ], [s * OX, H0, t * SZ], [s * OX, H1, t * SZ], Z2, Z2, Z2);
-        }));
-        toMesh('standsA', gA, mA); toMesh('standsB', gB, mB);
-        toMesh('standFacade', gC, flatMat('facade', 0.17, 0.19, 0.23)); toMesh('standBack', gK, flatMat('standBack', 0.10, 0.11, 0.14));
+        [-1, 1].forEach(s => {
+            const gx = s * PITCH_W / 2;
+            patch(gx - s * 3, 0, 5.5, 4.2, wear * 0.95);            // petite surface
+            patch(gx - s * 0.9, 0, 2.2, 3.6, wear * 0.9);           // ligne de but, devant le gardien
+            patch(gx - s * 11, 0, 1.6, 1.6, wear * 0.7);            // point de penalty
+            patch(gx - s * 17, 0, 8, 10, wear * 0.25);
+            patch(s * PITCH_W / 4, s * (PITCH_H / 2 - 0.8), 24, 1.6, wear * 0.45);   // couloir de l'arbitre assistant
+        });
+        patch(0, 0, 6, 6, wear * 0.55);
+        if (wear > 0.4) for (let k = 0; k < 26; k++) patch((R() - 0.5) * PITCH_W, (R() - 0.5) * PITCH_H, 1 + R() * 3.5, 1 + R() * 2.5, wear * (0.2 + R() * 0.35));
+        // grain fin
+        const im = c.getImageData(0, 0, cw, ch), d = im.data;
+        for (let i = 0; i < d.length; i += 4) { const n = (R() - 0.5) * 16; d[i] += n * 0.8; d[i + 1] += n; d[i + 2] += n * 0.6; }
+        c.putImageData(im, 0, 0);
+        // lignes (un rien adoucies)
+        c.strokeStyle = 'rgba(255,255,255,0.9)'; c.fillStyle = 'rgba(255,255,255,0.92)';
+        c.lineWidth = Math.max(2, 0.14 * PXM); c.shadowColor = 'rgba(255,255,255,0.35)'; c.shadowBlur = 1.5;
+        const line = (x1, y1, x2, y2) => { c.beginPath(); c.moveTo(X(x1), Y(y1)); c.lineTo(X(x2), Y(y2)); c.stroke(); };
+        const rect = (x, y, w, h) => c.strokeRect(X(x), Y(y), w * PXM, h * PXM);
+        const circ = (x, y, r, a0, a1) => { c.beginPath(); c.arc(X(x), Y(y), r * PXM, a0 || 0, a1 == null ? Math.PI * 2 : a1); c.stroke(); };
+        const dot = (x, y) => { c.beginPath(); c.arc(X(x), Y(y), 0.3 * PXM, 0, Math.PI * 2); c.fill(); };
+        rect(-PITCH_W / 2, -PITCH_H / 2, PITCH_W, PITCH_H);
+        line(0, -PITCH_H / 2, 0, PITCH_H / 2);
+        circ(0, 0, 9.15); dot(0, 0);
+        [-1, 1].forEach(s => {
+            const gx = s * PITCH_W / 2;
+            rect(s > 0 ? gx - 16.5 : gx, -20.16, 16.5, 40.32);
+            rect(s > 0 ? gx - 5.5 : gx, -9.16, 5.5, 18.32);
+            dot(gx - s * 11, 0);
+            const a = Math.acos(5.5 / 9.15);
+            if (s > 0) circ(gx - 11, 0, 9.15, Math.PI - a, Math.PI + a); else circ(gx + 11, 0, 9.15, -a, a);
+            [-1, 1].forEach(t => {
+                c.beginPath();
+                const a0 = s > 0 ? (t > 0 ? Math.PI : Math.PI / 2) : (t > 0 ? Math.PI * 1.5 : 0);
+                c.arc(X(gx), Y(t * PITCH_H / 2), 1 * PXM, a0, a0 + Math.PI / 2); c.stroke();
+            });
+        });
+        c.shadowBlur = 0;
+        tex.anisotropicFilteringLevel = 8; tex.update();
+        const m = litMat('pitchMat', tex, [th.grassK, th.grassK, th.grassK], th.wet ? 0.22 : 0.03);
+        if (th.wet) m.specularPower = 24;
+        m.emissiveColor = new B.Color3(0.1, 0.1, 0.1);
+        const ground = track(B.CreateGround('pitch', { width: FIELD_W, height: FIELD_H }, S.scene));
+        ground.material = m; ground.isPickable = false; ground.freezeWorldMatrix();
+    }
 
-        // panneaux publicitaires LED : le texte se lit depuis le centre du terrain
-        const gBd = geo(), bd = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0) / 48;
-            gQuad(gBd, [x0, 0, z0], [x1, 0, z1], [x1, 1.05, z1], [x0, 1.05, z0], [0, 0], [L, 0], [L, 1], [0, 1]); };
-        bd(-BX, BZ, BX, BZ); bd(BX, -BZ, -BX, -BZ); bd(BX, BZ, BX, -BZ); bd(-BX, -BZ, -BX, BZ);
-        toMesh('boards', gBd, texMat('boardsMat', boardTexture(), 1.0));
+    // ---- Piste d'athlétisme (stades omnisports) ---------------------------
+    // Géométrie d'une vraie piste de 400 m : lignes droites de 84,39 m, virages de 36,5 m de rayon,
+    // 8 couloirs de 1,22 m. Le terrain (105 x 68) tient dans l'anneau intérieur.
+    const TRK = { half: 42.195, r0: 36.5, w: 9.76 };
+    function ovalPt(u, r) {                                   // u ∈ [0,1) le long de la piste
+        const L1 = TRK.half * 2, A = Math.PI * r, P = 2 * L1 + 2 * A;
+        let s = u * P;
+        if (s < L1) return [-TRK.half + s, r];
+        s -= L1; if (s < A) { const a = Math.PI / 2 - s / r; return [TRK.half + Math.cos(a) * r, Math.sin(a) * r]; }
+        s -= A; if (s < L1) return [TRK.half - s, -r];
+        s -= L1; { const a = -Math.PI / 2 - s / r; return [-TRK.half + Math.cos(a) * r, Math.sin(a) * r]; }
+    }
+    function buildTrack() {
+        const B = S.B, N = 120;
+        const tex = dtex('trackTex', 256, 64, true), c = tex.getContext();
+        c.fillStyle = '#a8432e'; c.fillRect(0, 0, 256, 64);
+        for (let i = 0; i < 1400; i++) { c.fillStyle = `rgba(${60 + Math.random() * 40},20,10,0.18)`; c.fillRect(Math.random() * 256, Math.random() * 64, 1.5, 1.5); }
+        c.fillStyle = 'rgba(255,255,255,0.85)';
+        for (let k = 0; k <= 8; k++) c.fillRect(0, Math.round(k * 63 / 8), 256, 1.4);
+        tex.wrapU = B.Texture.WRAP_ADDRESSMODE; tex.update();
+        const g = geo();
+        for (let i = 0; i < N; i++) {
+            const u0 = i / N, u1 = (i + 1) / N;
+            const a0 = ovalPt(u0, TRK.r0), a1 = ovalPt(u1, TRK.r0), b0 = ovalPt(u0, TRK.r0 + TRK.w), b1 = ovalPt(u1, TRK.r0 + TRK.w);
+            gQuad(g, [a0[0], 0.012, a0[1]], [a1[0], 0.012, a1[1]], [b1[0], 0.012, b1[1]], [b0[0], 0.012, b0[1]],
+                [u0 * 40, 0], [u1 * 40, 0], [u1 * 40, 1], [u0 * 40, 1]);
+        }
+        dmesh('track', g, litMat('trackMat', tex, [0.95, 0.95, 0.95], S.theme.wet ? 0.18 : 0.02));
+        // pelouse de l'anneau intérieur (les « D » derrière les buts)
+        const gi = geo();
+        for (let i = 0; i < N; i++) {
+            const a0 = ovalPt(i / N, TRK.r0 + 0.05), a1 = ovalPt((i + 1) / N, TRK.r0 + 0.05);
+            gTri(gi, [0, -0.012, 0], [a0[0], -0.012, a0[1]], [a1[0], -0.012, a1[1]], Z2, Z2, Z2);
+        }
+        dmesh('infield', gi, litMat('infieldMat', null, [0.17 * S.theme.grassK, 0.42 * S.theme.grassK, 0.19 * S.theme.grassK]));
+    }
 
-        // piquets de corner (1,50 m, fanion jaune)
+    // ---- Tribunes ---------------------------------------------------------
+    // Texture de public : rangées de sièges aux couleurs du club, supporters, places vides
+    // selon le remplissage. Deux variantes, répétées en tuiles.
+    function crowdTexture(seed, W, H, homeHex, fill) {
+        const tex = dtex('crowd' + seed, W, H, true);
+        const c = tex.getContext(), R = rng(seed), rows = 16, rh = H / rows, seats = 40, sw = W / seats;
+        const home = homeHex || '#1e3a8a';
+        const KIT = [home, home, home, home, '#f8fafc', '#f8fafc', '#facc15', '#16a34a', '#dc2626', '#38bdf8', '#a3a3a3'];
+        const SKIN = ['#3b2416', '#4a2d1c', '#5a3825', '#6d4530', '#8d5a3c', '#b57d56'];
+        const seatC = hexToRgb(home);
+        const seat = (k) => `rgb(${Math.round(seatC[0] * k)},${Math.round(seatC[1] * k)},${Math.round(seatC[2] * k)})`;
+        c.fillStyle = '#3a414d'; c.fillRect(0, 0, W, H);
+        for (let r = 0; r < rows; r++) {
+            const y0 = H - (r + 1) * rh;
+            c.fillStyle = '#4a515c'; c.fillRect(0, y0 + rh * 0.84, W, rh * 0.16);                       // marche
+            c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(0, y0 + rh * 0.78, W, rh * 0.06);              // ombre de la marche
+            for (let s = 0; s < seats; s++) {
+                const x0 = s * sw;
+                if (s % 20 === 10) { c.fillStyle = '#12161d'; c.fillRect(x0, y0, sw, rh); continue; }   // allée
+                c.fillStyle = seat(0.8 + 0.15 * ((r + s) % 2)); c.fillRect(x0 + 1, y0 + rh * 0.44, sw - 2, rh * 0.42);
+                if (R() < fill) {
+                    const shirt = KIT[(R() * KIT.length) | 0];
+                    const lift = R() < 0.12 ? -rh * 0.12 : 0;                                              // quelques-uns debout
+                    c.fillStyle = shirt; c.fillRect(x0 + sw * 0.12, y0 + rh * 0.34 + lift, sw * 0.76, rh * 0.5);
+                    c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(x0 + sw * 0.18, y0 + rh * 0.62 + lift, sw * 0.64, rh * 0.22);
+                    c.fillStyle = SKIN[(R() * SKIN.length) | 0];
+                    c.beginPath(); c.arc(x0 + sw * 0.5, y0 + rh * 0.24 + lift, sw * 0.23, 0, Math.PI * 2); c.fill();
+                    if (R() < 0.05) { c.fillStyle = home; c.fillRect(x0 + sw * 0.1, y0 - rh * 0.2, sw * 0.8, rh * 0.25); }   // écharpe levée
+                }
+            }
+        }
+        tex.wrapU = tex.wrapV = S.B.Texture.WRAP_ADDRESSMODE;
+        tex.anisotropicFilteringLevel = 4; tex.update();
+        return tex;
+    }
+
+    // Une tribune le long d'un côté. Le bord avant va de a à b (au sol, sens horaire vu du
+    // dessus), n = normale sortante. Les extrémités sont coupées à 45° (mitre) pour que deux
+    // tribunes voisines se rejoignent en cuvette.
+    function standSide(G, a, b, n, opt) {
+        const { h0, h1, dep, miterA, miterB } = opt;
+        const tA = [b[0] - a[0], b[1] - a[1]], L = Math.hypot(tA[0], tA[1]), t = [tA[0] / L, tA[1] / L];
+        const ex = (p, along, out, y) => [p[0] + t[0] * along + n[0] * out, y, p[1] + t[1] * along + n[1] * out];
+        const fa = ex(a, 0, 0, h0), fb = ex(b, 0, 0, h0);
+        const ba = ex(a, miterA ? -dep : 0, dep, h1), bb = ex(b, miterB ? dep : 0, dep, h1);
+        const slope = Math.hypot(dep, h1 - h0), UC = 20, VC = 12.8;
+        const u0 = miterA ? -dep / UC : 0, u1 = L / UC + (miterB ? dep / UC : 0);
+        gQuad(G.crowd, fa, fb, bb, ba, [0, 0], [L / UC, 0], [u1, slope / VC], [u0, slope / VC]);
+        gQuad(G.facade, ex(a, 0, 0, 0), ex(b, 0, 0, 0), fb, fa);                                   // muret avant
+        { const BL = Math.hypot(bb[0] - ba[0], bb[2] - ba[2]) / 6, BH = h1 / 6;
+          gQuad(G.back, ex(a, miterA ? -dep : 0, dep, 0), ex(b, miterB ? dep : 0, dep, 0), bb, ba, [0, 0], [BL, 0], [BL, BH], [0, BH]); } // mur arrière (façade)
+        return { ba, bb, fa, fb, t, L };
+    }
+    function roofOver(G, s, opt) {
+        // toit : du haut du mur arrière, en porte-à-faux jusqu'au-dessus du premier rang
+        const { h1, dep, over } = opt, n = opt.n;
+        const up = 3.2, fr = -dep * over;          // < 0 : le toit avance au-dessus des gradins, vers le terrain
+        const ra = [s.ba[0], h1 + up, s.ba[2]], rb = [s.bb[0], h1 + up, s.bb[2]];
+        const fa = [s.fa[0] + n[0] * fr, h1 + up - 1.2, s.fa[2] + n[1] * fr], fb = [s.fb[0] + n[0] * fr, h1 + up - 1.2, s.fb[2] + n[1] * fr];
+        { const RL = Math.hypot(rb[0] - ra[0], rb[2] - ra[2]) / 12, RD = Math.hypot(fa[0] - ra[0], fa[2] - ra[2]) / 12;
+          gQuad(G.roof, ra, rb, fb, fa, [0, 0], [RL, 0], [RL, RD], [0, RD]); }
+        gQuad(G.fascia, fa, fb, [fb[0], fb[1] - 1.1, fb[2]], [fa[0], fa[1] - 1.1, fa[2]]);       // bandeau avant du toit
+        gQuad(G.back, [s.ba[0], h1, s.ba[2]], [s.bb[0], h1, s.bb[2]], rb, ra);                     // fermeture arrière
+        // poteaux de soutien du porte-à-faux (tous les ~18 m) pour les petites tribunes
+        if (opt.posts) {
+            const k = Math.max(1, Math.round(s.L / 18));
+            for (let i = 0; i <= k; i++) {
+                const f = i / k, px = s.fa[0] + (s.fb[0] - s.fa[0]) * f + n[0] * fr, pz = s.fa[2] + (s.fb[2] - s.fa[2]) * f + n[1] * fr;
+                gTube(G.posts, [px, 0, pz], [px, h1 + up - 1.4, pz], 0.12, 6);
+            }
+        }
+        return { fa, fb };
+    }
+
+    // Halo additif (projecteurs), toujours tourné vers la caméra.
+    let haloMatCache = null;
+    function halo(x, y, z, size, k) {
+        if (!haloMatCache || haloMatCache.isDisposed) {
+            const B = S.B, t = dtex('haloTex', 128, 128, true), c = t.getContext();
+            const gr = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+            gr.addColorStop(0, 'rgba(255,250,235,1)'); gr.addColorStop(0.18, 'rgba(255,240,210,0.55)'); gr.addColorStop(0.5, 'rgba(255,230,190,0.12)'); gr.addColorStop(1, 'rgba(255,230,190,0)');
+            c.fillStyle = gr; c.fillRect(0, 0, 128, 128); t.hasAlpha = true; t.update();
+            const m = texMat('haloMat', t, 1, true); track(m);
+            m.alphaMode = 1; m.disableDepthWrite = true; m.fogEnabled = false;
+            haloMatCache = m;
+        }
+        const g = geo(), s = size / 2;
+        gQuad(g, [-s, -s, 0], [s, -s, 0], [s, s, 0], [-s, s, 0], [0, 1], [1, 1], [1, 0], [0, 0]);
+        const m = dmesh('halo', g, haloMatCache, true);
+        if (m) { m.position.set(x, y, z); m.billboardMode = 7; m.alphaIndex = 20; m.visibility = k == null ? 1 : k; }
+        return m;
+    }
+
+    // Ciel : dôme dégradé + silhouette de ville (immeubles, palmiers, baobabs) à l'horizon.
+    function buildSky() {
+        const B = S.B, th = S.theme;
+        const starry = th.flood && !th.rain;
+        const SW = starry ? 512 : 8, t = dtex('skyTex', SW, 256, false), c = t.getContext();
+        const gr = c.createLinearGradient(0, 0, 0, 256);
+        gr.addColorStop(0, th.sky[0]); gr.addColorStop(0.42, th.sky[1]); gr.addColorStop(0.5, th.sky[2]); gr.addColorStop(1, th.sky[2]);
+        c.fillStyle = gr; c.fillRect(0, 0, SW, 256);
+        // étoiles peintes dans le ciel (un dôme transparent à part s'affichait noir et masquait tout)
+        if (starry) { const R = rng(99); for (let i = 0; i < 260; i++) { c.fillStyle = 'rgba(255,255,255,' + (0.25 + R() * 0.6).toFixed(2) + ')'; c.fillRect(R() * SW, R() * 100, 1.2, 1.2); } }
+        t.update();
+        const dome = track(B.CreateSphere('sky', { diameter: 760, segments: 16, sideOrientation: 1 }, S.scene));
+        const m = texMat('skyMat', t, 1); track(m); m.fogEnabled = false;
+        dome.material = m; dome.isPickable = false;          // (pas d'infiniteDistance : le dôme passait DEVANT la scène)
+        // horizon
+        const W = 2048, H = 160, sk = dtex('skylineTex', W, H, true), k = sk.getContext(), R = rng(S.spec.seed + 3);
+        k.clearRect(0, 0, W, H);
+        const mode = th.skyline;
+        const body = mode === 'night' ? '#05070c' : mode === 'dust' ? 'rgba(120,92,62,0.85)' : mode === 'grey' ? 'rgba(62,68,76,0.9)' : 'rgba(70,92,96,0.85)';
+        let x = 0;
+        while (x < W) {
+            const r = R();
+            if (r < 0.55) {                                    // immeuble
+                const w = 18 + R() * 60, hh = 30 + R() * 95;
+                k.fillStyle = body; k.fillRect(x, H - hh, w, hh);
+                if (mode === 'night') for (let yy = H - hh + 6; yy < H - 6; yy += 9) for (let xx = x + 4; xx < x + w - 4; xx += 7) if (R() < 0.35) { k.fillStyle = R() < 0.8 ? 'rgba(255,214,140,0.9)' : 'rgba(170,210,255,0.8)'; k.fillRect(xx, yy, 3, 4); }
+                x += w + R() * 10;
+            } else if (r < 0.85) {                             // palmier
+                const hh = 40 + R() * 50, cx = x + 10;
+                k.strokeStyle = body; k.lineWidth = 3; k.beginPath(); k.moveTo(cx, H); k.quadraticCurveTo(cx + 6, H - hh / 2, cx + 2, H - hh); k.stroke();
+                k.fillStyle = body;
+                for (let f = 0; f < 7; f++) { const a = -Math.PI / 2 + (f - 3) * 0.48; k.beginPath(); k.ellipse(cx + 2 + Math.cos(a) * 12, H - hh + Math.sin(a) * 6 + 4, 14, 3, a, 0, Math.PI * 2); k.fill(); }
+                x += 26 + R() * 30;
+            } else {                                           // baobab
+                const hh = 34 + R() * 22, cx = x + 22;
+                k.fillStyle = body; k.fillRect(cx - 6, H - hh, 12, hh);
+                k.beginPath(); k.ellipse(cx, H - hh, 26, 11, 0, 0, Math.PI * 2); k.fill();
+                x += 50 + R() * 40;
+            }
+        }
+        sk.hasAlpha = true; sk.wrapU = B.Texture.WRAP_ADDRESSMODE; sk.update();
+        const g = geo(), RAD = 300, HT = 36, SEG = 40;
+        for (let i = 0; i < SEG; i++) {
+            const a0 = i / SEG * Math.PI * 2, a1 = (i + 1) / SEG * Math.PI * 2;
+            const p0 = [Math.cos(a0) * RAD, Math.sin(a0) * RAD], p1 = [Math.cos(a1) * RAD, Math.sin(a1) * RAD];
+            gQuad(g, [p0[0], -2, p0[1]], [p1[0], -2, p1[1]], [p1[0], HT, p1[1]], [p0[0], HT, p0[1]], [i / SEG * 4, 0], [(i + 1) / SEG * 4, 0], [(i + 1) / SEG * 4, 1], [i / SEG * 4, 1]);
+        }
+        const skm = texMat('skylineMat', sk, mode === 'night' ? 1 : 0.95, true); track(skm); skm.fogEnabled = false;
+        dmesh('skyline', g, skm);
+    }
+
+    // Panneaux LED autour du terrain (marques fictives), qui défilent.
+    function boardTexture() {
+        const W = 2048, H = 64, tex = dtex('boards', W, H, true), c = tex.getContext();
+        const ads = [['AECM  ELITE', '#0b0f19', '#f5c518'], ['KILI AIR', '#0d47a1', '#ffffff'], ['SAHEL BANK', '#0b6b3a', '#ffffff'],
+            ['NIL TELECOM', '#b71c1c', '#ffffff'], ['BAOBAB COLA', '#5b1d0e', '#ffd54f'], ['OKAPI MOBILE', '#4a148c', '#ffffff'],
+            ['ZAMBEZI ÉNERGIE', '#00695c', '#e0f2f1'], ['TERANGA ASSUR', '#e65100', '#ffffff']];
+        ads.forEach((a, k) => {
+            const x = k * 256, gr = c.createLinearGradient(0, 0, 0, H);
+            gr.addColorStop(0, a[1]); gr.addColorStop(1, '#000');
+            c.fillStyle = gr; c.fillRect(x, 0, 256, H);
+            c.fillStyle = a[2]; c.fillRect(x, 0, 256, 3);
+            c.font = 'bold 38px Arial, Helvetica, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.fillText(a[0], x + 128, H / 2 + 1, 240);
+        });
+        tex.wrapU = tex.wrapV = S.B.Texture.WRAP_ADDRESSMODE; tex.anisotropicFilteringLevel = 4; tex.update();
+        return tex;
+    }
+
+    let facadeTex = null, roofTex = null;
+    function facadeTexture() {
+        if (facadeTex && !facadeTex.isDisposed && facadeTex.getScene() === S.scene) return facadeTex;
+        const t = dtex('facadeTex', 128, 128, true), c = t.getContext();
+        c.fillStyle = '#7c8593'; c.fillRect(0, 0, 128, 128);                                     // béton
+        c.fillStyle = '#2b3442'; for (let y = 14; y < 128; y += 32) c.fillRect(0, y, 128, 12);   // bandeaux vitrés
+        c.fillStyle = 'rgba(160,190,220,.35)'; for (let y = 14; y < 128; y += 32) c.fillRect(0, y + 2, 128, 3);
+        c.fillStyle = '#9aa3b0'; for (let x = 0; x < 128; x += 32) c.fillRect(x, 0, 7, 128);      // poteaux
+        c.fillStyle = 'rgba(0,0,0,.18)'; for (let x = 7; x < 128; x += 32) c.fillRect(x, 0, 2, 128);
+        t.wrapU = t.wrapV = S.B.Texture.WRAP_ADDRESSMODE; t.anisotropicFilteringLevel = 4; t.update();
+        facadeTex = t; return t;
+    }
+    function roofTexture() {
+        if (roofTex && !roofTex.isDisposed && roofTex.getScene() === S.scene) return roofTex;
+        const t = dtex('roofTex', 128, 128, true), c = t.getContext();
+        const g = c.createLinearGradient(0, 0, 0, 128); g.addColorStop(0, '#e6e9ee'); g.addColorStop(1, '#c9ced6');
+        c.fillStyle = g; c.fillRect(0, 0, 128, 128);
+        c.strokeStyle = 'rgba(70,80,95,.35)'; c.lineWidth = 2;
+        for (let x = 0; x <= 128; x += 32) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 128); c.stroke(); }   // joints des panneaux
+        c.strokeStyle = 'rgba(70,80,95,.18)'; c.lineWidth = 1;
+        for (let y = 0; y <= 128; y += 16) { c.beginPath(); c.moveTo(0, y); c.lineTo(128, y); c.stroke(); }
+        t.wrapU = t.wrapV = S.B.Texture.WRAP_ADDRESSMODE; t.anisotropicFilteringLevel = 4; t.update();
+        roofTex = t; return t;
+    }
+
+    // Abords du stade (aperçu du Campus seulement : la caméra de match ne les voit pas) :
+    // esplanade, parking, routes, arbres, quelques bâtiments bas.
+    function buildSurroundings() {
+        const B = S.B, sp = S.spec, R = rng(sp.seed + 41);
+        const HX = PITCH_W / 2, HZ = PITCH_H / 2;
+        const BX = sp.track ? TRK.half + TRK.r0 + TRK.w + 3 : HX + 7, BZ = sp.track ? TRK.r0 + TRK.w + 2.5 : HZ + 6.5;
+        const dep = sp.tier === 'large' ? 40 : sp.tier === 'medium' ? 22 : 14;
+        const OX = BX + dep + 4, OZ = BZ + dep + 4;
+        // esplanade en dalles autour du stade
+        const pl = dtex('plazaTex', 64, 64, true), pc = pl.getContext();
+        pc.fillStyle = '#b9b3a6'; pc.fillRect(0, 0, 64, 64); pc.strokeStyle = 'rgba(0,0,0,.12)';
+        for (let i = 0; i <= 64; i += 16) { pc.beginPath(); pc.moveTo(i, 0); pc.lineTo(i, 64); pc.moveTo(0, i); pc.lineTo(64, i); pc.stroke(); }
+        pl.wrapU = pl.wrapV = B.Texture.WRAP_ADDRESSMODE; pl.update();
+        const gp = geo(), W2 = OX + 16, H2 = OZ + 16;
+        gQuad(gp, [-W2, -0.01, -H2], [W2, -0.01, -H2], [W2, -0.01, H2], [-W2, -0.01, H2], [0, 0], [W2 / 4, 0], [W2 / 4, H2 / 4], [0, H2 / 4]);
+        dmesh('plaza', gp, litMat('plazaMat', pl, [1, 1, 1]));
+        // routes
+        const gr = geo(), RW = 7, RL = 260;
+        gQuad(gr, [-RL, 0.03, H2 + 4], [RL, 0.03, H2 + 4], [RL, 0.03, H2 + 4 + RW], [-RL, 0.03, H2 + 4 + RW]);
+        gQuad(gr, [-RL, 0.03, -H2 - 4 - RW], [RL, 0.03, -H2 - 4 - RW], [RL, 0.03, -H2 - 4], [-RL, 0.03, -H2 - 4]);
+        gQuad(gr, [W2 + 4, 0.03, -RL], [W2 + 4 + RW, 0.03, -RL], [W2 + 4 + RW, 0.03, RL], [W2 + 4, 0.03, RL]);
+        dmesh('roads', gr, litMat('roadMat', null, [0.22, 0.23, 0.25]));
+        // parking : rangées de voitures
+        const gc = geo(), gc2 = geo();
+        for (let row = 0; row < 3; row++) for (let k = 0; k < 18; k++) {
+            if (R() < 0.25) continue;
+            const x = -W2 + 10 + k * 5.2, z = -H2 - 4 - RW - 8 - row * 7;
+            gBox(R() < 0.5 ? gc : gc2, x, 0.7, z, 2.2, 1.3, 4.3);
+        }
+        dmesh('carsA', gc, litMat('carA', null, [0.75, 0.76, 0.8], 0.3));
+        dmesh('carsB', gc2, litMat('carB', null, [0.55, 0.12, 0.1], 0.3));
+        // arbres : tronc + feuillage (sphères aplaties instanciées)
+        const trunk = geo(), spots = [];
+        for (let i = 0; i < 46; i++) {
+            const side = i % 4, f = R();
+            const x = side < 2 ? (f * 2 - 1) * (W2 + 30) : (side === 2 ? -1 : 1) * (W2 + 10 + R() * 30);
+            const z = side < 2 ? (side === 0 ? 1 : -1) * (H2 + 18 + R() * 30) : (f * 2 - 1) * (H2 + 20);
+            const h = 4 + R() * 4; spots.push([x, z, h]);
+            gTube(trunk, [x, 0, z], [x, h, z], 0.25, 5);
+        }
+        dmesh('trunks', trunk, litMat('trunkMat', null, [0.35, 0.25, 0.16]));
+        const crown = track(B.CreateSphere('crown', { diameter: 1, segments: 6 }, S.scene));
+        crown.material = litMat('leafMat', null, [0.16, 0.42, 0.18]);
+        const buf = new Float32Array(spots.length * 16), M = new B.Matrix(), q = new B.Quaternion();
+        spots.forEach(([x, z, h], i) => { const rr = 3 + h * 0.4; B.Matrix.ComposeToRef(new B.Vector3(rr, rr * 0.8, rr), q, new B.Vector3(x, h + rr * 0.3, z), M); M.copyToArray(buf, i * 16); });
+        crown.thinInstanceSetBuffer('matrix', buf, 16, false);
+        // quartier : bâtiments bas autour
+        const gb = geo(), gb2 = geo();
+        for (let i = 0; i < 30; i++) {
+            const a = R() * Math.PI * 2, d = Math.max(W2, H2) + 70 + R() * 70;
+            const w = 10 + R() * 18, l = 10 + R() * 18, h = 6 + R() * 22;
+            gBox(R() < 0.5 ? gb : gb2, Math.cos(a) * d * 1.2, h / 2, Math.sin(a) * d, w, h, l);
+        }
+        dmesh('blocksA', gb, litMat('blockA', null, [0.82, 0.78, 0.7]));
+        dmesh('blocksB', gb2, litMat('blockB', null, [0.66, 0.6, 0.52]));
+    }
+
+    function buildStadium() {
+        const B = S.B, th = S.theme, sp = S.spec, lo = S.lowEnd, D = S.decor;
+        const HX = PITCH_W / 2, HZ = PITCH_H / 2;
+        // dalle / abords
+        const apron = track(B.CreateGround('apron', { width: 420, height: 360 }, S.scene));
+        apron.material = litMat('apronMat', null, sp.track ? [0.26, 0.4, 0.24] : [0.24, 0.38, 0.22]);
+        apron.position.y = -0.05; apron.isPickable = false; apron.freezeWorldMatrix();
+        if (sp.track) buildTrack();
+        // emprise : avec une piste, le public est loin (comme dans les vrais stades omnisports)
+        const BX = sp.track ? TRK.half + TRK.r0 + TRK.w + 3 : HX + 7, BZ = sp.track ? TRK.r0 + TRK.w + 2.5 : HZ + 6.5;
+        const homeHex = kitHex(S.teams.home, false, false) || '#1e3a8a';
+        const awayHex = kitHex(S.teams.away, true, false) || '#e8edf5';
+        const texA = crowdTexture(sp.seed + 7, lo ? 512 : 1024, lo ? 256 : 512, homeHex, sp.fill);
+        const texB = crowdTexture(sp.seed + 23, lo ? 512 : 1024, lo ? 256 : 512, sp.tier === 'small' ? homeHex : awayHex, Math.max(0.2, sp.fill - 0.15));
+        const mA = texMat('crowdA', texA, th.crowdK), mB = texMat('crowdB', texB, th.crowdK); track(mA); track(mB);
+        D.crowd = [texA, texB]; D.crowdMats = [mA, mB]; D.crowdK = th.crowdK;
+        const mk = () => ({ crowd: geo(), facade: geo(), back: geo(), roof: geo(), fascia: geo(), posts: geo() });
+        const GA = mk(), GB = mk();
+        // côtés : far (+z, tribune principale face caméra), near (-z), ends (±x). Bord avant sens horaire.
+        const sides = {
+            far:  { a: [-BX, BZ], b: [BX, BZ], n: [0, 1] },
+            near: { a: [BX, -BZ], b: [-BX, -BZ], n: [0, -1] },
+            east: { a: [BX, BZ], b: [BX, -BZ], n: [1, 0] },
+            west: { a: [-BX, -BZ], b: [-BX, BZ], n: [-1, 0] }
+        };
+        const roofLights = [];
+        const put = (G, key, o) => { const sd = sides[key]; return standSide(G, sd.a, sd.b, sd.n, o); };
+        if (sp.tier === 'small') {
+            // une tribune principale couverte, des gradins découverts en face, rien derrière les buts
+            const s1 = put(GA, 'far', { h0: 1.2, h1: 8, dep: 11 });
+            roofOver(GA, s1, { h1: 8, dep: 11, over: 0.15, n: sides.far.n, posts: true });
+            put(GB, 'near', { h0: 0.8, h1: 4.5, dep: 7 });
+        } else if (sp.tier === 'medium') {
+            const o = { h0: 1.4, h1: 13, dep: 18 };
+            const s1 = put(GA, 'far', Object.assign({ miterA: true, miterB: true }, o));
+            const r1 = roofOver(GA, s1, { h1: 13, dep: 18, over: 0.1, n: sides.far.n });
+            roofLights.push(r1);
+            put(GA, 'near', Object.assign({ miterA: true, miterB: true }, o));
+            put(GB, 'east', Object.assign({ miterA: true, miterB: true }, o, { h1: 10, dep: 15 }));
+            put(GB, 'west', Object.assign({ miterA: true, miterB: true }, o, { h1: 10, dep: 15 }));
+        } else {
+            // cuvette à deux anneaux, loges vitrées entre les deux, toit tout autour
+            const lowO = { h0: 1.4, h1: 11, dep: 16, miterA: true, miterB: true };
+            ['far', 'near', 'east', 'west'].forEach(k => {
+                const G = (k === 'far' || k === 'near') ? GA : GB, sd = sides[k];
+                put(G, k, lowO);
+                // loges (bande vitrée) puis anneau supérieur, reculé
+                const t = [sd.b[0] - sd.a[0], sd.b[1] - sd.a[1]], L = Math.hypot(t[0], t[1]), u = [t[0] / L, t[1] / L];
+                const off = 16, a2 = [sd.a[0] + sd.n[0] * off - u[0] * off, sd.a[1] + sd.n[1] * off - u[1] * off], b2 = [sd.b[0] + sd.n[0] * off + u[0] * off, sd.b[1] + sd.n[1] * off + u[1] * off];
+                gQuad(G.fascia, [a2[0], 11, a2[1]], [b2[0], 11, b2[1]], [b2[0], 14, b2[1]], [a2[0], 14, a2[1]]);   // loges
+                const up = standSide(G, a2, b2, sd.n, { h0: 14, h1: 30, dep: 20, miterA: true, miterB: true });
+                const r = roofOver(G, up, { h1: 30, dep: 20, over: 0.55, n: sd.n });
+                roofLights.push(r);
+            });
+        }
+        [GA, GB].forEach((G, i) => {
+            dmesh('stand' + i, G.crowd, i ? mB : mA);
+            dmesh('facade' + i, G.facade, litMat('facadeMat' + i, null, [0.45, 0.47, 0.52]));
+            dmesh('standBack' + i, G.back, litMat('standBackMat' + i, facadeTexture(), [0.95, 0.95, 0.95]));
+            dmesh('roof' + i, G.roof, litMat('roofMat' + i, roofTexture(), [1, 1, 1], 0.12));
+            dmesh('fascia' + i, G.fascia, th.flood ? dflat('fasciaLit' + i, 0.9, 0.82, 0.6) : litMat('fasciaMat' + i, null, [0.75, 0.77, 0.8]));
+            dmesh('posts' + i, G.posts, litMat('postMat' + i, null, [0.8, 0.8, 0.82]));
+        });
+
+        // panneaux LED au bord du terrain
+        const BXb = HX + 4.2, BZb = HZ + 4.2;
+        const gBd = geo(), bd = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0) / 32;
+            gQuad(gBd, [x0, 0, z0], [x1, 0, z1], [x1, 1.2, z1], [x0, 1.2, z0], [0, 0], [L, 0], [L, 1], [0, 1]); };
+        bd(-BXb, BZb, BXb, BZb); bd(BXb, -BZb, -BXb, -BZb); bd(BXb, BZb, BXb, -BZb); bd(-BXb, -BZb, -BXb, BZb);
+        const boardsTex = boardTexture();
+        dmesh('boards', gBd, track(texMat('boardsMat', boardsTex, th.flood ? 1.55 : 1.35)));
+        D.boardsTex = boardsTex;
+
+        // piquets de corner
         const gPo = geo(), gFl = geo();
         [-1, 1].forEach(s => [-1, 1].forEach(t => {
             const x = s * HX, z = t * HZ;
             gTube(gPo, [x, 0, z], [x, 1.5, z], 0.025, 6);
             gTri(gFl, [x, 1.5, z], [x, 1.15, z], [x - s * 0.5, 1.32, z], Z2, Z2, Z2);
         }));
-        toMesh('cornerPoles', gPo, flatMat('poleMat', 0.95, 0.95, 0.95)); toMesh('cornerFlags', gFl, flatMat('flagMat', 0.98, 0.8, 0.05));
+        dmesh('cornerPoles', gPo, dflat('poleMat', 0.95, 0.95, 0.95)); dmesh('cornerFlags', gFl, dflat('flagMat', 0.98, 0.8, 0.05));
 
-        if (lo) return;                           // mobile faible : on s'arrête au décor essentiel
-        // bancs de touche (côté lointain) : abri vitré, banc rouge
+        // projecteurs : mâts aux quatre coins (petits et moyens stades), rampes sous le toit (grands)
+        const gMs = geo(), gHd = geo();
+        const headLit = th.flood;
+        if (sp.tier !== 'large') {
+            [-1, 1].forEach(s => [-1, 1].forEach(t => {
+                const x = s * (BX + 8), z = t * (BZ + 8), top = sp.tier === 'small' ? 30 : 38;
+                gTube(gMs, [x, 0, z], [x, top, z], 0.45, 6);
+                const dx = -x, dz = -z, L = Math.hypot(dx, dz), px = -dz / L, pz = dx / L;
+                gQuad(gHd, [x - px * 3.4, top - 1.8, z - pz * 3.4], [x + px * 3.4, top - 1.8, z + pz * 3.4], [x + px * 3.4, top + 1.8, z + pz * 3.4], [x - px * 3.4, top + 1.8, z - pz * 3.4]);
+                if (headLit) halo(x + dx / L * 0.8, top, z + dz / L * 0.8, 34, 0.9);
+                (S.lights || (S.lights = [])).push({ x, z, h: top });
+            }));
+        }
+        if (sp.tier !== 'small' && roofLights.length) {
+            roofLights.forEach(r => {
+                const n = 6;
+                for (let i = 0; i <= n; i++) {
+                    const f = i / n, x = r.fa[0] + (r.fb[0] - r.fa[0]) * f, y = r.fa[1] - 0.4, z = r.fa[2] + (r.fb[2] - r.fa[2]) * f;
+                    gBox(gHd, x, y, z, 2.2, 0.7, 2.2);
+                    if (headLit && (sp.tier === 'large' || i % 2 === 0)) halo(x, y, z, 15, 0.55);
+                    if (sp.tier === 'large' && i % 3 === 0) (S.lights || (S.lights = [])).push({ x, z, h: y });
+                }
+            });
+        }
+        dmesh('mastPoles', gMs, litMat('mastMat', null, [0.42, 0.44, 0.48]));
+        dmesh('mastHeads', gHd, headLit ? dflat('headMat', 1, 0.97, 0.88) : litMat('headOff', null, [0.62, 0.64, 0.66], 0.2));
+
+        if (lo) return;                                       // mobile faible : décor essentiel
+        // bancs de touche (côté tribune principale)
         const gGl = geo(), gBn = geo(), gFr = geo();
         [-1, 1].forEach(s => {
-            const x0 = s > 0 ? 9 : -20, x1 = x0 + 11, z0 = HZ + 1.8, z1 = HZ + 4.4, hh = 2.1;
+            const x0 = s > 0 ? 6 : -17, x1 = x0 + 11, z0 = HZ + 1.6, z1 = HZ + 3.8, hh = 2.1;
             gQuad(gGl, [x0, 0, z1], [x1, 0, z1], [x1, hh, z1], [x0, hh, z1]);
             gQuad(gGl, [x0, 0, z0], [x0, 0, z1], [x0, hh, z1], [x0, hh, z0]); gQuad(gGl, [x1, 0, z0], [x1, 0, z1], [x1, hh, z1], [x1, hh, z0]);
             gQuad(gGl, [x0, hh, z0], [x1, hh, z0], [x1, hh, z1], [x0, hh, z1]);
-            gBox(gBn, (x0 + x1) / 2, 0.3, z1 - 0.7, 10, 0.6, 0.5);
+            gBox(gBn, (x0 + x1) / 2, 0.3, z1 - 0.6, 10, 0.6, 0.5);
             [[x0, z0], [x1, z0], [x0, z1], [x1, z1]].forEach(p => gTube(gFr, [p[0], 0, p[1]], [p[0], hh, p[1]], 0.05, 5));
         });
-        toMesh('dugoutGlass', gGl, flatMat('glassMat', 0.45, 0.65, 0.8, 0.22)); toMesh('dugoutBench', gBn, flatMat('benchMat', 0.55, 0.08, 0.1)); toMesh('dugoutFrame', gFr, flatMat('frameMat', 0.8, 0.8, 0.8));
-        // pylônes d'éclairage dans les angles
-        const gMs = geo(), gHd = geo(), gGw = geo();
-        [-1, 1].forEach(s => [-1, 1].forEach(t => {
-            const x = s * (SX + 10), z = t * (SZ + 10), hb = H0 + (SZ + 10 - SZ) / DEP * (H1 - H0), top = hb + 24;
-            gTube(gMs, [x, hb, z], [x, top, z], 0.35, 6);
-            const dx = -x, dz = -z, L = Math.hypot(dx, dz), px = -dz / L, pz = dx / L;     // perpendiculaire, face au terrain
-            const quad = (g, w, h, cy) => gQuad(g, [x - px * w, cy - h, z - pz * w], [x + px * w, cy - h, z + pz * w], [x + px * w, cy + h, z + pz * w], [x - px * w, cy + h, z - pz * w]);
-            quad(gHd, 3.2, 1.7, top + 1); quad(gGw, 5.2, 3.2, top + 1);
-        }));
-        toMesh('mastPoles', gMs, flatMat('mastMat', 0.35, 0.37, 0.4)); toMesh('mastHeads', gHd, flatMat('headMat', 1, 0.97, 0.85));
-        const glow = toMesh('mastGlow', gGw, flatMat('glowMat', 1, 0.95, 0.75, 0.22)); if (glow) glow.alphaIndex = 9;
+        dmesh('dugoutGlass', gGl, dflat('glassMat', 0.45, 0.65, 0.8, 0.22));
+        dmesh('dugoutBench', gBn, litMat('benchMat', null, [0.6, 0.1, 0.12]));
+        dmesh('dugoutFrame', gFr, litMat('frameMat', null, [0.85, 0.85, 0.87]));
+        // zone technique (pointillés blancs au sol devant les bancs)
+        const gTa = geo();
+        [-1, 1].forEach(s => { const x0 = s > 0 ? 5 : -18, x1 = x0 + 13, z = HZ + 0.9;
+            for (let x = x0; x < x1; x += 0.8) gQuad(gTa, [x, 0.015, z], [x + 0.4, 0.015, z], [x + 0.4, 0.015, z + 0.1], [x, 0.015, z + 0.1]);
+            gQuad(gTa, [x0, 0.015, z], [x0 + 0.1, 0.015, z], [x0 + 0.1, 0.015, z + 1.6], [x0, 0.015, z + 1.6]);
+            gQuad(gTa, [x1, 0.015, z], [x1 + 0.1, 0.015, z], [x1 + 0.1, 0.015, z + 1.6], [x1, 0.015, z + 1.6]); });
+        dmesh('techArea', gTa, dflat('taMat', 0.92, 0.92, 0.92));
+    }
+
+    // ---- Ombres portées (une instance par joueur et par source de lumière) --
+    // De jour : une ombre allongée à l'opposé du soleil. En nocturne : une ombre légère par
+    // mât de projecteur — l'étoile d'ombres caractéristique des matchs sous les lumières.
+    function buildShadows() {
+        const B = S.B;
+        const t = new B.DynamicTexture('shTex', { width: 64, height: 64 }, S.scene, true), c = t.getContext();
+        const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = gr; c.fillRect(0, 0, 64, 64); t.hasAlpha = true; t.update();
+        const m = new B.StandardMaterial('shMat', S.scene);
+        m.diffuseTexture = t; m.useAlphaFromDiffuseTexture = true; m.disableLighting = true;
+        m.diffuseColor = new B.Color3(0, 0, 0); m.emissiveColor = new B.Color3(0, 0, 0); m.specularColor = new B.Color3(0, 0, 0);
+        m.backFaceCulling = false; m.disableDepthWrite = true;
+        const g = geo();
+        gQuad(g, [-0.5, 0, -0.5], [0.5, 0, -0.5], [0.5, 0, 0.5], [-0.5, 0, 0.5], [0, 0], [1, 0], [1, 1], [0, 1]);
+        const mesh = toMesh('shadows', g, m, true);
+        mesh.position.y = 0.035; mesh.alphaIndex = 2;
+        S.sh = { mesh, mat: m, buf: null, n: 0, tmp: new B.Matrix(), sc: new B.Vector3(1, 1, 1), q: new B.Quaternion(), p: new B.Vector3() };
+    }
+    function shadowCasts(x, z) {
+        const th = S.theme;
+        if (th.shadows === 'flood' && S.lights && S.lights.length) {
+            // les quatre sources les plus fortes (les plus proches)
+            return S.lights.map(L => { const dx = x - L.x, dz = z - L.z, d = Math.hypot(dx, dz) || 1; return { dx: dx / d, dz: dz / d, len: clamp(1.8 * d / L.h, 0.8, 3.2), d }; })
+                .sort((a, b) => a.d - b.d).slice(0, 4);
+        }
+        const sd = th.sunDir, hz = Math.hypot(sd[0], sd[2]) || 1;
+        return [{ dx: sd[0] / hz, dz: sd[2] / hz, len: clamp(1.8 * hz / Math.abs(sd[1]), 0.6, 3.6) }];
+    }
+    function updateShadows() {
+        const sh = S.sh; if (!sh) return;
+        const list = [];
+        ['H', 'A'].forEach(k => S.players[k].forEach(P => { if (!P.gone) list.push(P); }));
+        if (S.ref) list.push(S.ref);
+        const per = S.theme.shadows === 'flood' ? 4 : 1, n = 23 * per;
+        if (!sh.buf || sh.n !== n) { sh.buf = new Float32Array(n * 16); sh.n = n; sh.mesh.thinInstanceSetBuffer('matrix', sh.buf, 16, false); }
+        let i = 0;
+        list.forEach(P => {
+            shadowCasts(P.x, P.z).forEach(cst => {
+                if (i >= n) return;
+                const yaw = Math.atan2(cst.dx, cst.dz);
+                S.B.Quaternion.RotationYawPitchRollToRef(yaw, 0, 0, sh.q);
+                sh.sc.set(0.62, 1, cst.len + 0.5);
+                sh.p.set(P.x + cst.dx * cst.len * 0.42, 0, P.z + cst.dz * cst.len * 0.42);
+                S.B.Matrix.ComposeToRef(sh.sc, sh.q, sh.p, sh.tmp);
+                sh.tmp.copyToArray(sh.buf, i * 16); i++;
+            });
+        });
+        for (; i < n; i++) { sh.sc.set(0, 0, 0); sh.p.set(0, -5, 0); S.B.Matrix.ComposeToRef(sh.sc, sh.q, sh.p, sh.tmp); sh.tmp.copyToArray(sh.buf, i * 16); }
+        sh.mesh.thinInstanceBufferUpdated('matrix');
+    }
+
+    // ---- Pluie : voile animé au-dessus du canvas (aucun coût GPU) ------------
+    function setRain(on) {
+        if (!S.container) return;
+        if (!document.getElementById('aecm-rain-style')) {
+            const st = document.createElement('style'); st.id = 'aecm-rain-style';
+            st.textContent = '@keyframes aecmRain{from{background-position:0 0,0 0}to{background-position:-60px 420px,-30px 300px}}' +
+                '.aecm-rain{position:absolute;inset:0;pointer-events:none;z-index:12;opacity:.32;' +
+                'background-image:repeating-linear-gradient(105deg,rgba(255,255,255,0) 0 9px,rgba(220,230,255,.55) 9px 10px,rgba(255,255,255,0) 10px 23px),' +
+                'repeating-linear-gradient(100deg,rgba(255,255,255,0) 0 15px,rgba(200,215,240,.35) 15px 16px,rgba(255,255,255,0) 16px 37px);' +
+                'background-size:140px 140px,90px 90px;animation:aecmRain .55s linear infinite}';
+            document.head.appendChild(st);
+        }
+        if (on && !S.rainEl) { const r = document.createElement('div'); r.className = 'aecm-rain'; S.container.appendChild(r); S.rainEl = r; }
+        if (S.rainEl) S.rainEl.style.display = on && S.enabled ? '' : 'none';
+    }
+
+    // ---- Ambiance : lumières, brouillard, traitement d'image -----------------
+    function applyTheme() {
+        const B = S.B, sc = S.scene, th = S.theme;
+        sc.clearColor = new B.Color4(th.clear[0], th.clear[1], th.clear[2], 1);
+        if (S.hemi) { S.hemi.intensity = th.hemi; S.hemi.diffuse = new B.Color3(th.hemiCol[0], th.hemiCol[1], th.hemiCol[2]); S.hemi.groundColor = new B.Color3(th.ground[0], th.ground[1], th.ground[2]); }
+        if (S.sun) { S.sun.intensity = th.sun; S.sun.direction = new B.Vector3(th.sunDir[0], th.sunDir[1], th.sunDir[2]).normalize(); }
+        if (th.fog) { sc.fogMode = 2; sc.fogDensity = th.fog.d; sc.fogColor = hex3(th.fog.col); } else sc.fogMode = 0;
+        const ip = sc.imageProcessingConfiguration;
+        if (ip) {
+            ip.contrast = th.contrast; ip.exposure = th.exposure;
+            ip.toneMappingEnabled = !S.lowEnd; ip.toneMappingType = 1;      // ACES
+            ip.vignetteEnabled = true; ip.vignetteWeight = th.vignette; ip.vignetteStretch = 0.6;
+            ip.vignetteColor = new B.Color4(0, 0, 0, 0);
+        }
+        if (S.sh) S.sh.mat.alpha = th.shA;
+        setRain(!!th.rain);
+        tunePlayerMats();
+    }
+
+    function rebuildDecor() {
+        if (!S.ready && !S.scene) return;
+        const info = S.condInfo || {};
+        S.theme = THEMES[info.weather] || THEMES.clear;
+        S.spec = stadiumSpec(info);
+        S.lights = [];
+        clearDecor();
+        haloMatCache = null;
+        try { buildSky(); } catch (e) { console.warn('[3D] ciel', e); }
+        try { paintPitch(S.spec, info.cond); } catch (e) { console.warn('[3D] pelouse', e); }
+        try { buildStadium(); } catch (e) { console.warn('[3D] stade', e); }
+        applyTheme();
+        S.decorKey = JSON.stringify([info.weather, info.pitch, info.capacity, info.name, S.teams.home, S.teams.away]);
     }
 
     // ---- Décor vivant : le public saute et le filet ondule sur un but ----
@@ -488,10 +998,13 @@
             const e = (t - D.cheer) / 1000, amp = Math.max(0, 1 - e / 5.5);
             const jump = amp > 0 ? amp * 0.024 * Math.abs(Math.sin(e * 9)) : 0;
             D.crowd.forEach(x => { x.vOffset = jump; });
-            const k = 0.78 + 0.16 * amp * (0.5 + 0.5 * Math.sin(e * 14));
+            const k0 = D.crowdK || 0.78, k = k0 + 0.16 * amp * (0.5 + 0.5 * Math.sin(e * 14));
             D.crowdMats.forEach(m => { m.emissiveColor.set(k, k, k); });
             if (amp <= 0) D.cheer = null;
         }
+        // panneaux LED : les publicités défilent lentement
+        if (D.boardsTex) { const dt = Math.min(0.1, (t - (D.lastT || t)) / 1000); D.boardsTex.uOffset = (D.boardsTex.uOffset + dt * 0.035) % 1; }
+        D.lastT = t;
     }
 
     function buildBall() {
@@ -540,6 +1053,7 @@
         if (S.engine.webGLVersion >= 2) inst.skeletons.forEach(sk => { sk.useTextureToStoreBoneMatrices = true; });
         const shadow = B.CreateDisc('sh_' + tag, { radius: 0.5, tessellation: 12 }, scene);
         shadow.rotation.x = Math.PI / 2; shadow.material = S.shadowMat; shadow.position.y = 0.025; shadow.isPickable = false;
+        shadow.isVisible = false;                           // ombres : voir updateShadows()
         return {
             tag, model: modelKey, isGK, holder, root, meshes, bones, shadow, groups: new Map(),
             cur: null, prev: null, fade: 1, fadeDur: 0.25, clip: '', once: null,
@@ -607,6 +1121,18 @@
     // ---- Événements du moteur (passe, tir, tacle, but, arrêt) -----------
     function schedule(ms, fn) { S.timers.push({ at: now() + ms, fn }); }
 
+    // Voile noir au-dessus du canvas (coupures de coups de pied arrêtés).
+    function fadeTo(op, ms) {
+        if (!S.veil) {
+            const v = document.createElement('div');
+            v.style.cssText = 'position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:15';
+            (S.container || document.body).appendChild(v);
+            S.veil = v;
+        }
+        S.veil.style.transition = 'opacity ' + Math.max(0, ms | 0) + 'ms ease-' + (op ? 'in' : 'out');
+        S.veil.style.opacity = String(op);
+    }
+
     function lookAt(P, tx, tz, ms) {
         P.faceYaw = Math.atan2(tx - P.x, tz - P.z); P.faceUntil = now() + ms;
     }
@@ -620,13 +1146,39 @@
         } else if (ev.type === 'shot' && P) {
             const gx = ev.side === 'H' ? PITCH_W / 2 : -PITCH_W / 2;
             lookAt(P, gx, 0, 600);
-            playOnce(P, Math.random() < 0.5 ? 'kick_soccerball_1' : 'kick_soccerball_2', 1.1, { fade: 0.08 });
+            // Sur un centre (corner), la reprise se fait de la tête.
+            if (ev.head && S.clips.has('header_soccerball')) playOnce(P, 'header_soccerball', 1.5, { fade: 0.08, max: 1100 });
+            else playOnce(P, Math.random() < 0.5 ? 'kick_soccerball_1' : 'kick_soccerball_2', 1.1, { fade: 0.08 });
+            // le gardien se tourne vers le tireur
+            const gk = S.players[ev.side === 'H' ? 'A' : 'H'][0];
+            if (gk) lookAt(gk, P.x, P.z, 1400);
         } else if (ev.type === 'tackle' && P) {
             const L = S.players[ev.loserSide] && S.players[ev.loserSide][ev.loser];
             if (L) lookAt(P, L.x, L.z, 500);
             playOnce(P, 'soccer_tackle_2', 2.0, { fade: 0.08 });
         } else if (ev.type === 'save' && P) {
-            playOnce(P, Math.random() < 0.5 ? 'gk_diving_save' : 'gk_diving_save_2', 1.5, { fade: 0.1 });
+            // Le plongeon part du côté où arrive le ballon (mesuré sur les clips : « gk_diving_save »
+            // part vers la gauche du gardien, « _2 » vers sa droite). Dans l'axe, il capte.
+            const sh = (typeof MATCHSIM !== 'undefined') ? MATCHSIM.shotFly : null;
+            const tx = sh ? wx(sh.toX) : S.ball.position.x, tz = sh ? wz(sh.toY) : S.ball.position.z;
+            const fy = P.faceUntil > now() ? P.faceYaw : P.yaw;
+            const side = (tx - P.x) * Math.cos(fy) - (tz - P.z) * Math.sin(fy);   // > 0 : à sa droite
+            if (Math.abs(side) < 1.0 && S.clips.has('gk_catch_2')) playOnce(P, 'gk_catch_2', 1.2, { fade: 0.1, freeze: true });
+            else playOnce(P, side > 0 ? 'gk_diving_save_2' : 'gk_diving_save', 1.5, { fade: 0.1, freeze: true });
+        } else if (ev.type === 'cut') {
+            // Coupure « télé » d'un coup de pied arrêté : fondu au noir, les joueurs sont posés
+            // à leur place sous le noir, puis l'image revient.
+            fadeTo(1, ev.out || 380);
+            S.cutIn = ev.inn || 520;
+        } else if (ev.type === 'snap') {
+            const f = S.lastFrame;
+            ['H', 'A'].forEach(k => (S.players[k] || []).forEach(Q => {
+                Q.smx = null; Q.off[0] = Q.off[1] = 0; Q.once = null;
+                Q.px = Q.sx; Q.pz = Q.sz; Q.vx = Q.vz = 0; Q.spd = 0; Q.moving = false;
+            }));
+            if (f) { S.bsx = wx(f.ball.x); S.bsz = wz(f.ball.y); }
+            S.camSnap = true;
+            fadeTo(0, S.cutIn || 520);
         } else if (ev.type === 'goal') {
             // Le ballon arrive au fond des filets : tout est calé sur SON arrivée.
             const sh = (typeof MATCHSIM !== 'undefined') ? MATCHSIM.shotFly : null;
@@ -666,20 +1218,22 @@
         const wide = S.camMode === 'wide';
         const portrait = aspect < 1.15;                         // téléphone en portrait : cadre presque carré ou haut
         const cw = S.canvas.clientWidth || 360;
-        const el = (wide ? 52 : (portrait ? 44 : 36)) * Math.PI / 180;
+        // angle « retransmission » : assez bas pour voir la tribune d'en face au-dessus du jeu
+        const el = (wide ? 50 : (portrait ? 34 : 23)) * Math.PI / 180;
         // Vue d'ensemble en portrait : on tourne la caméra de 90° pour que la longueur du terrain (105 m)
         // aille dans le sens de la hauteur de l'écran — le terrain remplit le cadre au lieu d'être un fin ruban.
         const rot = wide && portrait;
         let viewW;                                              // largeur de terrain visible au sol (m)
         if (rot) viewW = Math.max(FIELD_H, FIELD_W * Math.sin(el) * aspect) - 2;
         else if (wide) viewW = FIELD_W - 2;
-        else viewW = clamp(cw / (portrait ? 13.5 : 11), portrait ? 24 : 30, 42);   // vue suivie : ~11 px/m (13,5 en portrait : joueurs plus gros)
+        else viewW = portrait ? clamp(cw / 13.5, 24, 42) : clamp(cw / 13, 36, 58);   // vue suivie : cadre « retransmission » plus large en paysage
         const th = Math.tan(cam.fov / 2);
         const dist = (viewW / 2) / (th * aspect);
         const lim = Math.max(0, FIELD_W / 2 - viewW / 2 - 2);
         const tx = wide ? 0 : clamp(ballX, -lim, lim);
-        const tz = wide ? 0 : clamp(ballZ * 0.35, -10, 10);
-        const k = 1 - Math.exp(-dt * (wide ? 6 : 3.2));
+        const tz = wide ? 0 : clamp(ballZ * 0.35 + (portrait ? 0 : 5), -10, 14);   // paysage : la tribune d en face entre dans le cadre
+        let k = 1 - Math.exp(-dt * (wide ? 6 : 3.2));
+        if (S.camSnap) { k = 1; S.camSnap = false; }            // après une coupure : plan directement cadré
         S.camX += (tx - S.camX) * k; S.camZ += (tz - S.camZ) * k;
         if (rot) cam.position.set(S.camX - Math.cos(el) * dist, Math.sin(el) * dist, S.camZ);
         else cam.position.set(S.camX, Math.sin(el) * dist, S.camZ - Math.cos(el) * dist);
@@ -697,6 +1251,7 @@
         S.lastT = t; dt = clamp(dt || 0.016, 0.001, 0.1);
 
         const f = MATCHSIM.frame();
+        S.lastFrame = f;
 
         // minuteries (célébrations différées)
         for (let i = S.timers.length - 1; i >= 0; i--) if (t >= S.timers[i].at) { const fn = S.timers[i].fn; S.timers.splice(i, 1); try { fn(); } catch (e) {} }
@@ -754,11 +1309,31 @@
             P.spd = Math.hypot(P.vx, P.vz);
             P.px = x; P.pz = z; P.x = x; P.z = z;
 
+            // Expulsé : il disparaît une fois la ligne de touche franchie.
+            const gone = !!d.off && (d.y < 0.5 || d.y > 99.5);
+            if (gone !== !!P.gone) { P.gone = gone; P.holder.setEnabled(!gone); P.shadow.setEnabled(!gone); }
+            if (gone) return;
+
+            // Allure : un joueur qui recule ou glisse latéralement en surveillant le ballon ne lui
+            // tourne pas le dos (avant : tout le monde faisait demi-tour et trottinait « en avant »).
+            // back = course arrière, left/right = pas chassés ; seulement à allure modérée et près du jeu.
+            const toBall = Math.atan2(bx - x, bz - z), velYaw = Math.atan2(P.vx, P.vz);
+            let gait = 'fwd';
+            if (P.spd > 0.6 && !d.carrier && P.spd < 3.8 && Math.hypot(bx - x, bz - z) < 38) {
+                const rel = angDiff(toBall, velYaw);                  // > 0 : il se déplace vers SA droite
+                if (Math.abs(rel) > 2.25) gait = 'back';
+                else if (Math.abs(rel) > 1.15 && P.spd < 2.8) gait = rel > 0 ? 'right' : 'left';
+            }
+            if (gait !== P.gait) {                                    // pas de clignotement : on garde une allure 0,4 s minimum
+                if (!P.gaitT || t - P.gaitT > 400) { P.gait = gait; P.gaitT = t; }
+            }
+            const g8 = P.gait || 'fwd';
+
             // orientation
             let target = P.yaw;
             if (P.faceUntil > t) target = P.faceYaw;
-            else if (P.spd > 0.6) target = Math.atan2(P.vx, P.vz);
-            else target = Math.atan2(bx - x, bz - z);
+            else if (P.spd > 0.6) target = g8 === 'fwd' ? velYaw : toBall;
+            else target = toBall;
             if (P.once && P.once.freeze && t < P.once.until) target = P.yaw;
             P.yaw += angDiff(P.yaw, target) * Math.min(1, dt * (P.spd > 0.6 ? 9 : 6));
             P.holder.position.set(x, 0, z);
@@ -770,7 +1345,11 @@
             if (P.once && t >= P.once.until) P.once = null;
             if (!P.once) {
                 P.moving = P.moving ? P.spd > 0.30 : P.spd > 0.55;       // hystérésis : seuils différents pour partir et s'arrêter
-                if (P.moving) play(P, 'jog_forward', true, clamp(P.spd / JOG_SPEED, 0.6, 2.2), 0.25);
+                if (P.moving) {
+                    const clip = g8 === 'back' ? 'jog_backward' : g8 === 'right' ? 'jog_strafe_right' : g8 === 'left' ? 'jog_strafe_left' : 'jog_forward';
+                    const ref = g8 === 'fwd' ? JOG_SPEED : g8 === 'back' ? BACK_SPEED : STRAFE_SPEED;
+                    play(P, S.clips.has(clip) ? clip : 'jog_forward', true, clamp(P.spd / ref, 0.6, g8 === 'fwd' ? 2.2 : 1.7), 0.25);
+                }
                 else play(P, P.isGK ? 'gk_idle' : (d.carrier ? 'offensive_idle' : 'soccer_idle'), true, 1, 0.3);
             }
             stepFade(P, dt);
@@ -796,6 +1375,7 @@
         if (carrier) { S.ring.isVisible = true; S.ring.position.x = carrier.x; S.ring.position.z = carrier.z; }
         else S.ring.isVisible = false;
 
+        updateShadows();
         updateCamera(dt, bx, bz);
         S.scene.render();
         guardFps(t);
@@ -884,17 +1464,17 @@
             scene.pointerMovePredicate = () => false;
 
             const cam = S.camera = new B.FreeCamera('cam', new B.Vector3(0, 30, -40), scene);
-            cam.fov = 0.62; cam.minZ = 1; cam.maxZ = 400;
-            const hemi = new B.HemisphericLight('hemi', new B.Vector3(0.2, 1, -0.3), scene);
-            hemi.intensity = 1.05; hemi.groundColor = new B.Color3(0.45, 0.5, 0.45);
-            const sun = new B.DirectionalLight('sun', new B.Vector3(-0.4, -1, 0.5), scene);
-            sun.intensity = 0.8;
+            cam.fov = 0.62; cam.minZ = 1; cam.maxZ = 900;
+            S.hemi = new B.HemisphericLight('hemi', new B.Vector3(0.2, 1, -0.3), scene);
+            S.hemi.intensity = 1.05; S.hemi.groundColor = new B.Color3(0.45, 0.5, 0.45);
+            S.sun = new B.DirectionalLight('sun', new B.Vector3(-0.4, -1, 0.5), scene);
+            S.sun.intensity = 0.8;
 
-            buildPitch();
             buildBall();
             S.decor = {};
             try { buildGoals(); } catch (e) { console.warn('[3D] buts', e); }
-            try { buildStadium(); } catch (e) { console.warn('[3D] stade', e); }
+            buildShadows();
+            S.theme = THEMES.clear;
 
             // Modèles (un fichier par apparence) + bibliothèques d'animations
             const q = S.quality;
@@ -915,6 +1495,7 @@
             S.ref.x = 0; S.ref.z = 0;
 
             S.ready = true;
+            rebuildDecor();
             await applyKits();
             loadLib('anim_celebration').catch(() => {});       // en arrière-plan : utile seulement au premier but
             S.booting = false;
@@ -936,6 +1517,8 @@
     function setEnabled(on) {
         S.enabled = !!on;
         try { localStorage.setItem('AECM_3D', on ? '1' : '0'); } catch (e) {}
+        if (S.veil) { S.veil.style.transition = 'none'; S.veil.style.opacity = '0'; }
+        if (S.rainEl) S.rainEl.style.display = on && S.theme && S.theme.rain ? '' : 'none';
         if (on && !S.ready && !S.failed) { showLayers(false); boot(); }
         else showLayers(on && S.ready);
         if (!on) stopLoop(); else if (S.wantRun) start();
@@ -946,6 +1529,9 @@
         if (!container) return;
         if (S.canvas && !S.canvas.isConnected) {             // l'écran de match a été reconstruit
             try { S.engine && S.engine.dispose(); } catch (e) {}
+            if (S.veil) { try { S.veil.remove(); } catch (e) {} S.veil = null; }
+            if (S.rainEl) { try { S.rainEl.remove(); } catch (e) {} S.rainEl = null; }
+            S.decorObjs = []; S.decorKey = null; S.sh = null;
             Object.assign(S, { engine: null, scene: null, camera: null, ready: false, booting: false, running: false,
                 containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, matCache: new Map(), lastEvId: 0, decor: {} });
             S.canvas = null; S.btn = null;
@@ -980,6 +1566,9 @@
         S.bsx = null;                      // lissage du ballon repart de la position réelle
         ['H', 'A'].forEach(k => (S.players[k] || []).forEach(P => { P.smx = null; P.moving = false; }));
         if (S.ready) {
+            // décor du match (stade du club qui reçoit, météo) : reconstruit seulement s'il change
+            const key = JSON.stringify([S.condInfo && S.condInfo.weather, S.condInfo && S.condInfo.pitch, S.condInfo && S.condInfo.capacity, S.condInfo && S.condInfo.name, home, away]);
+            if (key !== S.decorKey) { try { rebuildDecor(); } catch (e) { console.warn('[3D] décor', e); } }
             const old = Array.from(S.matCache.values());
             S.matCache.clear();
             S.players.H.concat(S.players.A).forEach(P => { P.init = false; P.once = null; });
@@ -1001,5 +1590,109 @@
 
     function pause() { S.wantRun = false; stopLoop(); }
 
-    window.Match3D = { attach, setTeams, start, pause, setEnabled, _S: S };
+    // Conditions du match : { weather: 'night'|'clear'|..., pitch: 'perfect'|..., capacity, name, fill, cond }.
+    // À appeler AVANT setTeams (qui reconstruit le décor si besoin).
+    function setConditions(info) { S.condInfo = info || null; }
+
+    // Essai depuis la console : Match3D.preview({ weather: 'night', capacity: 5000, name: 'Stade Omnisports — X' })
+    function preview(over) { S.condInfo = Object.assign({}, S.condInfo || {}, over || {}); S.decorKey = null; if (S.ready) rebuildDecor(); }
+
+    // =====================================================================
+    // APERÇU DU STADE (Campus) — une vraie scène 3D du stade du club, construite
+    // avec EXACTEMENT les mêmes fonctions que le décor du match (tribunes, toit,
+    // piste, projecteurs, sièges aux couleurs du club). Scène et moteur séparés :
+    // l'état du match (S) est prêté le temps de la construction, puis rendu.
+    // =====================================================================
+    const PV = { engine: null, canvas: null, ro: null, info: null };
+    function stopStadiumPreview() {
+        try { PV.ro && PV.ro.disconnect(); } catch (e) {}
+        try { PV.engine && PV.engine.stopRenderLoop(); PV.engine && PV.engine.dispose(); } catch (e) {}
+        try { PV.canvas && PV.canvas.remove(); } catch (e) {}
+        PV.engine = PV.canvas = PV.ro = null;
+    }
+    async function stadiumPreview(container, info) {
+        stopStadiumPreview();
+        if (!container || !webglOK()) return false;
+        try {
+            if (!window.BABYLON_AECM) await loadScript(VENDOR + 'babylon-aecm.js');
+        } catch (e) { return false; }
+        if (!container.isConnected) return false;
+        const B = window.BABYLON_AECM;
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;outline:none;touch-action:none';
+        container.appendChild(canvas);
+        const lowEnd = detectLowEnd();
+        const engine = new B.Engine(canvas, !lowEnd, { alpha: false, preserveDrawingBuffer: false, stencil: false }, false);
+        const dpr = window.devicePixelRatio || 1;
+        engine.setHardwareScalingLevel(1 / Math.max(1, lowEnd ? Math.min(dpr, 1.25) : Math.min(dpr, 2)));
+        const scene = new B.Scene(engine);
+        scene.skipPointerMovePicking = true;
+        const cam = new B.FreeCamera('pvCam', new B.Vector3(0, 80, -160), scene);
+        cam.fov = 0.78; cam.minZ = 1; cam.maxZ = 1200;
+        const hemi = new B.HemisphericLight('pvHemi', new B.Vector3(0.2, 1, -0.3), scene);
+        const sun = new B.DirectionalLight('pvSun', new B.Vector3(-0.4, -1, 0.5), scene);
+
+        // On prête l'état du décor à cette scène le temps de la construction.
+        const keep = {}; ['B', 'scene', 'engine', 'decorObjs', 'decor', 'theme', 'spec', 'lights', 'teams', 'condInfo', 'hemi', 'sun', 'lowEnd'].forEach(k => keep[k] = S[k]);
+        const keepHalo = haloMatCache;
+        try {
+            S.B = B; S.scene = scene; S.engine = engine; S.decorObjs = []; S.decor = {}; S.lights = [];
+            S.teams = { home: info.club, away: info.club }; S.lowEnd = lowEnd;
+            S.condInfo = { weather: info.weather || 'clear', capacity: info.capacity, name: info.name, fill: info.fill || 0.85 };
+            S.theme = THEMES[S.condInfo.weather] || THEMES.clear; S.spec = stadiumSpec(S.condInfo);
+            haloMatCache = null;
+            buildSky(); paintPitch(S.spec, info.cond || null); buildStadium();
+            try { buildSurroundings(); } catch (e) { console.warn('[Stade 3D] abords', e); }
+            try { buildGoals(); } catch (e) {}
+            // ambiance (sans la pluie DOM ni les joueurs du match)
+            const th = S.theme;
+            scene.clearColor = new B.Color4(th.clear[0], th.clear[1], th.clear[2], 1);
+            hemi.intensity = th.hemi; hemi.diffuse = new B.Color3(...th.hemiCol); hemi.groundColor = new B.Color3(...th.ground);
+            sun.intensity = th.sun; sun.direction = new B.Vector3(...th.sunDir).normalize();
+            if (th.fog) { scene.fogMode = 2; scene.fogDensity = th.fog.d * 0.6; scene.fogColor = hex3(th.fog.col); }
+            const ip = scene.imageProcessingConfiguration;
+            if (ip) { ip.contrast = th.contrast; ip.exposure = th.exposure; ip.toneMappingEnabled = !lowEnd; ip.toneMappingType = 1; ip.vignetteEnabled = true; ip.vignetteWeight = 1.2; ip.vignetteColor = new B.Color4(0, 0, 0, 0); }
+        } catch (e) {
+            console.warn('[Stade 3D]', e);
+        } finally {
+            Object.keys(keep).forEach(k => S[k] = keep[k]);
+            haloMatCache = keepHalo;
+        }
+
+        // Caméra : tour lent en vue aérienne ; on fait tourner au doigt, on zoome à deux doigts / molette.
+        const sp = stadiumSpec(info);
+        let ang = -Math.PI / 2 + 0.5, elev = 0.5, dist = sp.track ? 205 : sp.tier === 'large' ? 190 : sp.tier === 'medium' ? 165 : 140;
+        const dMin = dist * 0.55, dMax = dist * 1.3;
+        let drag = null, last = performance.now(), idleUntil = 0;
+        const pts = new Map(); let pinch0 = 0;
+        canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); pts.set(e.pointerId, e); drag = { x: e.clientX, y: e.clientY }; idleUntil = performance.now() + 4000; });
+        canvas.addEventListener('pointermove', e => {
+            if (!pts.has(e.pointerId)) return;
+            pts.set(e.pointerId, e);
+            if (pts.size === 2) {
+                const [a, b] = [...pts.values()], d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                if (pinch0) dist = clamp(dist * pinch0 / d, dMin, dMax);
+                pinch0 = d; return;
+            }
+            if (!drag) return;
+            ang -= (e.clientX - drag.x) * 0.008; elev = clamp(elev + (e.clientY - drag.y) * 0.004, 0.18, 1.2);
+            drag = { x: e.clientX, y: e.clientY }; idleUntil = performance.now() + 4000;
+        });
+        const up = e => { pts.delete(e.pointerId); pinch0 = 0; if (!pts.size) drag = null; };
+        canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+        canvas.addEventListener('wheel', e => { e.preventDefault(); dist = clamp(dist * (e.deltaY > 0 ? 1.08 : 0.93), dMin, dMax); idleUntil = performance.now() + 4000; }, { passive: false });
+        const tgt = new B.Vector3(0, 4, 0);
+        engine.runRenderLoop(() => {
+            const t = performance.now(), dt = Math.min(0.05, (t - last) / 1000); last = t;
+            if (!drag && t > idleUntil) ang += dt * 0.12;
+            cam.position.set(Math.cos(ang) * Math.cos(elev) * dist, Math.sin(elev) * dist, Math.sin(ang) * Math.cos(elev) * dist);
+            cam.setTarget(tgt);
+            if (canvas.clientWidth && canvas.clientHeight) scene.render();
+        });
+        if (window.ResizeObserver) { PV.ro = new ResizeObserver(() => engine.resize()); PV.ro.observe(container); }
+        PV.engine = engine; PV.canvas = canvas; PV.info = info;
+        return true;
+    }
+
+    window.Match3D = { attach, setTeams, setConditions, preview, start, pause, setEnabled, stadiumPreview, stopStadiumPreview, _S: S };
 })();

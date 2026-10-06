@@ -23,6 +23,7 @@ for(const scen of ['realiste','extreme']) for(const kind of ['corner','freekick'
     Tm.p.concat(O.p).forEach(p=>{ if(p.role==='GK')return; p.x=p.tx=p.px=p.cx=own+(Tm.atkX>50?1:-1)*(8+Math.random()*30)*(Tm.p.includes(p)?1:1.2); p.y=p.ty=p.py=p.cy=15+Math.random()*70; });
     }
     const ms=M.setPiece(kind,key,9,-1); setup+=ms; n++;
+    T+=400; M.ballNow();   // coupure télé éventuelle : les joueurs sont posés sous le fondu (380 ms)
     const gx=Tm.atkX, dir=Tm.dir;
     const outT=Tm.p.filter(p=>p.role!=='GK'&&p.i!==M.spot.takerIdx);
     const boxA=outT.filter(p=>Math.abs(p.x-gx)<=24&&Math.abs(p.y-50)<=24);
