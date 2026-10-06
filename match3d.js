@@ -658,6 +658,8 @@
     }
 
     // ---- Caméra ---------------------------------------------------------
+    const SMOOTH_K = 9;     // raideur du lissage visuel (1/s) ; ~0,11 s de retard, imperceptible
+
     function updateCamera(dt, ballX, ballZ) {
         const cam = S.camera, B = S.B;
         const aspect = Math.max(0.5, S.engine.getAspectRatio(cam));
@@ -704,11 +706,20 @@
             const P = S.players[side][i]; if (!P) return;
             const sx = wx(d.x), sz = wz(d.y);
             // saut de la simulation (engagement, remise en jeu) : on suit sans glisser
-            if (!P.init || Math.hypot(sx - P.lsx, sz - P.lsz) > 9) { P.init = true; P.off[0] = P.off[1] = 0; P.px = sx; P.pz = sz; P.vx = P.vz = 0; }
+            if (!P.init || Math.hypot(sx - P.lsx, sz - P.lsz) > 9) { P.init = true; P.off[0] = P.off[1] = 0; P.px = sx; P.pz = sz; P.vx = P.vz = 0; P.smx = null; }
             P.lsx = P.sx = sx; P.lsz = P.sz = sz;
         }));
         // ballon
-        const bx = wx(f.ball.x), bz = wz(f.ball.y), by = 0.17 + Math.max(0, f.ball.z || 0);
+        // Lissage visuel : le moteur interpole en ligne droite entre deux actions, donc la vitesse change
+        // d'un coup à chaque nouvel ordre (arrêts/départs secs, « sauts » dans l'action). Un filtre
+        // exponentiel court (~0,1 s) arrondit ces angles ; joueurs et ballon utilisent le MÊME filtre,
+        // le ballon reste donc collé au pied du porteur.
+        const sk = 1 - Math.exp(-dt * SMOOTH_K);
+        const rbx = wx(f.ball.x), rbz = wz(f.ball.y), by = 0.17 + Math.max(0, f.ball.z || 0);
+        if (S.bsx == null || Math.hypot(rbx - S.lbx, rbz - S.lbz) > 25) { S.bsx = rbx; S.bsz = rbz; }   // vraie téléportation (remise en jeu) : on suit sans glisser
+        else { S.bsx += (rbx - S.bsx) * sk; S.bsz += (rbz - S.bsz) * sk; }
+        S.lbx = rbx; S.lbz = rbz;
+        const bx = S.bsx, bz = S.bsz;
         const pbx = S.ball.position.x, pbz = S.ball.position.z;
         S.ball.position.set(bx, by, bz);
         S.ball.rotation.x += (bz - pbz) / 0.17; S.ball.rotation.z -= (bx - pbx) / 0.17;
@@ -733,7 +744,10 @@
                     P.off[0] *= r; P.off[1] *= r;
                 } else { P.off[0] = P.off[1] = 0; }
             }
-            const x = P.sx + P.off[0], z = P.sz + P.off[1];
+            const rx = P.sx + P.off[0], rz = P.sz + P.off[1];
+            if (P.smx == null) { P.smx = rx; P.smz = rz; }
+            P.smx += (rx - P.smx) * sk; P.smz += (rz - P.smz) * sk;
+            const x = P.smx, z = P.smz;
             const ivx = (x - P.px) / dt, ivz = (z - P.pz) / dt;
             const a = 1 - Math.exp(-dt * 6);
             P.vx += (ivx - P.vx) * a; P.vz += (ivz - P.vz) * a;
@@ -755,7 +769,8 @@
             // choix du clip
             if (P.once && t >= P.once.until) P.once = null;
             if (!P.once) {
-                if (P.spd > 0.45) play(P, 'jog_forward', true, clamp(P.spd / JOG_SPEED, 0.6, 2.2), 0.25);
+                P.moving = P.moving ? P.spd > 0.30 : P.spd > 0.55;       // hystérésis : seuils différents pour partir et s'arrêter
+                if (P.moving) play(P, 'jog_forward', true, clamp(P.spd / JOG_SPEED, 0.6, 2.2), 0.25);
                 else play(P, P.isGK ? 'gk_idle' : (d.carrier ? 'offensive_idle' : 'soccer_idle'), true, 1, 0.3);
             }
             stepFade(P, dt);
@@ -962,6 +977,8 @@
     function setTeams(home, away) {
         S.teams.home = home; S.teams.away = away;
         S.lastEvId = (typeof MATCHSIM !== 'undefined' && MATCHSIM.evSeq) || 0;
+        S.bsx = null;                      // lissage du ballon repart de la position réelle
+        ['H', 'A'].forEach(k => (S.players[k] || []).forEach(P => { P.smx = null; P.moving = false; }));
         if (S.ready) {
             const old = Array.from(S.matCache.values());
             S.matCache.clear();

@@ -5363,6 +5363,17 @@ const MATCHSIM = {
                 }
             }
 
+            // FIX #PRESS-1 : le pressing par zone ne sortait personne quand le ballon était hors de la zone
+            // choisie, et même dedans le presseur lointain ne bougeait presque pas : le porteur restait
+            // seul (adversaire à moins de 5 unités seulement 29 % du temps). Le défenseur le plus proche
+            // du porteur vient maintenant TOUJOURS au contact s'il est à portée (« premier défenseur »).
+            let firstDef = null;
+            if (!hasBall) {
+                let best = null, bd = 1e9;
+                T.p.forEach(q => { if (q.role === 'GK') return; const d = this.dist(q, ball); if (d < bd) { bd = d; best = q; } });
+                if (best && bd < 24) { firstDef = best; if (pressers.indexOf(best) < 0) pressers.push(best); }
+            }
+
             // (La ligne de hors-jeu est appliquée APRÈS le calcul des deux équipes,
             // voir « HORS-JEU » en fin de fonction — FIX #POS-2.)
 
@@ -5448,7 +5459,7 @@ const MATCHSIM = {
                 // Pressing : on sort sur le porteur
                 if (pressers.indexOf(p) > -1) {
                     const far = this.dist({ x: tx, y: ty }, ball);
-                    const reach = this.clamp(1 - (far - 8) / 30, 0.25, 1);
+                    const reach = this.clamp(1 - (far - 8) / 30, p === firstDef ? 0.85 : 0.25, 1);
                     // Un pressing tout terrain sort franchement, un pressing
                     // de surface se contente d'accompagner sans se découvrir.
                     // Contre-pressing : dans les secondes qui suivent la perte,
@@ -5459,7 +5470,8 @@ const MATCHSIM = {
                     // franchement au duel, un Régista laisse faire et reste en
                     // position pour recevoir.
                     const rlDuel = (typeof roleById === 'function' && p.tacRole) ? (roleById(p.tacRole) || {}).duel || 1 : 1;
-                    const pull = (p.role === 'DEF' ? 0.28 : 0.48) * reach * bite * rlDuel;
+                    let pull = (p.role === 'DEF' ? 0.28 : 0.48) * reach * bite * rlDuel;
+                    if (p === firstDef) pull = Math.max(pull, p.role === 'DEF' ? 0.72 : 0.85);   // premier défenseur : au contact
                     tx += (ball.x - tx) * pull;
                     ty += (ball.y - ty) * pull;
                 }
@@ -5484,6 +5496,9 @@ const MATCHSIM = {
                     const push = String(slot).startsWith('BT') || String(slot).startsWith('AIL') || String(slot).startsWith('MOC') ? 18 : 9;
                     z = { dy: z.dy + 3, ahead: z.ahead + push, back: z.back };
                 }
+                // FIX #PRESS-2 : celui qui presse peut sortir un peu plus de sa zone, sinon la laisse
+                // l'empêche d'atteindre le porteur et il le regarde passer.
+                if (pressers.indexOf(p) > -1) z = { dy: z.dy + 7, ahead: z.ahead + 11, back: z.back + 4 };
                 // Ligne haute : défenseurs et latéraux ont le droit de monter d'autant
                 if (T.line === 'high' && (slot === 'DC' || slot === 'LATD' || slot === 'LATG')) z = { dy: z.dy, ahead: z.ahead + 8, back: z.back };
                 ty = this.clamp(ty, b.y - z.dy, b.y + z.dy);
@@ -6202,42 +6217,102 @@ const MATCHSIM = {
         const gk = O.p[0];
         gk.tx = gx + O.dir * (kind === 'corner' ? 1.8 : 1.0);
         gk.ty = kind === 'freekick' ? 50 - (by - 50) * 0.10 : 50;
+        // Qui doit être en place avant la frappe ? (sert à calculer la durée d'installation)
+        const roleList = [];
+        const place = (k, p, x, y, must) => { p.tx = cl(x, 3, 97); p.ty = cl(y, 3, 97); roleList.push({ k, p, must: !!must }); };
+        // FIX #SETPIECE-1 : les places (surface, mur, marquage) étaient données par RANG (« les plus avancés »),
+        // sans regarder où les joueurs se trouvaient — un corner sifflé alors que l'équipe était à l'autre bout
+        // du terrain envoyait des joueurs à 70 unités, que la limite de vitesse arrêtait en route : la frappe
+        // partait avec 1 attaquant sur 10 dans la surface. On apparie maintenant places et joueurs par
+        // PROXIMITÉ (glouton global, plus petite distance d'abord) : les voisins prennent les places utiles.
+        const match = (k, pool, spots) => {
+            const pairs = [];
+            pool.forEach(p => {
+                const q = this.playerNow(k, p.i);
+                spots.forEach((sp, n) => pairs.push({ p, n, d: Math.hypot(q.x - sp.x, (q.y - sp.y) * 0.65) }));
+            });
+            pairs.sort((u, v) => u.d - v.d);
+            const usedP = new Set(), usedS = new Set(), res = [];
+            pairs.forEach(o => {
+                if (usedP.has(o.p) || usedS.has(o.n)) return;
+                usedP.add(o.p); usedS.add(o.n); res.push({ p: o.p, s: spots[o.n] });
+            });
+            return res;
+        };
+        // FIX #SETPIECE-2 : les défenseurs ne marquaient personne (ligne de 4 à 7 joueurs, sans lien avec les
+        // attaquants : 17 à 27 % des attaquants restaient seuls). Chaque attaquant de la surface reçoit
+        // maintenant UN défenseur, côté but, qui le suit.
+        const markSpots = list => list.map(o => ({ x: o.s.x + (gx - o.s.x) * 0.12, y: o.s.y + (50 - o.s.y) * 0.10 }));
+        const okey = this.other(key);
         if (kind === 'penalty') {
-            taker.tx = bx - dir * 3.5; taker.ty = 50;
+            place(key, taker, bx - dir * 3.5, 50, true);
             outT.forEach((p, n) => { p.tx = gx - dir * (21 + (n % 2) * 2.4); p.ty = 16 + n * (68 / Math.max(1, outT.length)); });
             outO.forEach((p, n) => { p.tx = gx - dir * (23.4 + (n % 2) * 2.0); p.ty = 19 + n * (62 / Math.max(1, outO.length)); });
         } else if (kind === 'freekick') {
-            taker.tx = bx - dir * 2.6; taker.ty = by + (by < 50 ? 1.2 : -1.2);
+            place(key, taker, bx - dir * 2.6, by + (by < 50 ? 1.2 : -1.2), true);
             // mur : à 9,15 m sur la ligne ballon → centre du but (conversion m ↔ %)
             const vx = (gx - bx) * 1.05, vy = (50 - by) * 0.68, L = Math.hypot(vx, vy) || 1;
             const ux = vx / L, uy = vy / L;
-            const wall = outO.slice().sort((a, b) => this.dist(a, { x: bx, y: by }) - this.dist(b, { x: bx, y: by })).slice(0, 4);
+            const wall = outO.slice().sort((p, q) => {
+                const a1 = this.playerNow(okey, p.i), b1 = this.playerNow(okey, q.i);
+                return this.dist(a1, { x: bx, y: by }) - this.dist(b1, { x: bx, y: by });
+            }).slice(0, 4);
             wall.forEach((p, n) => {
                 const off = (n - 1.5) * 0.85;
-                p.tx = cl(bx + (ux * 9.15 - uy * off) / 1.05, 3, 97);
-                p.ty = cl(by + (uy * 9.15 + ux * off) / 0.68, 3, 97);
+                place(okey, p, bx + (ux * 9.15 - uy * off) / 1.05, by + (uy * 9.15 + ux * off) / 0.68);
             });
-            // attaquants et défenseurs dans la surface
-            outT.slice().sort((a, b) => (b.x - a.x) * dir).slice(0, 4).forEach((p, n) => {
-                p.tx = gx - dir * (7 + n * 2.6); p.ty = 50 + (n - 1.5) * 7;
-            });
-            outO.filter(p => wall.indexOf(p) < 0).slice(0, 4).forEach((p, n) => {
-                p.tx = gx - dir * (5 + n * 2.4); p.ty = 46 + n * 4.2;
-            });
+            // attaquants : les plus proches prennent les places dans la surface (+ un en retrait pour le second ballon)
+            const boxSpots = [
+                { x: gx - dir * 7,    y: 44 }, { x: gx - dir * 9.5, y: 53 },
+                { x: gx - dir * 12,   y: 47 }, { x: gx - dir * 7.5, y: 58 },
+                { x: gx - dir * 20,   y: by < 50 ? 68 : 32 }
+            ];
+            const placedA = match(key, outT, boxSpots);
+            placedA.forEach(o => place(key, o.p, o.s.x, o.s.y));
+            // défenseurs hors mur : un homme sur chaque attaquant de la surface, plus un libéro
+            const free = outO.filter(p => wall.indexOf(p) < 0);
+            const marks = match(okey, free, markSpots(placedA.filter(o => o.s.x !== boxSpots[4].x || o.s.y !== boxSpots[4].y)));
+            marks.forEach(o => place(okey, o.p, o.s.x, o.s.y));
+            const left = free.filter(p => !marks.some(m => m.p === p));
+            const lib = match(okey, left, [{ x: gx - dir * 15, y: 50 }]);
+            lib.forEach(o => place(okey, o.p, o.s.x, o.s.y));
         } else { // corner
-            taker.tx = bx - dir * 1.6; taker.ty = by < 50 ? 4 : 96;
+            place(key, taker, bx - dir * 1.6, by < 50 ? 4 : 96, true);
             const striker = (strikerIdx != null && T.p[strikerIdx] && T.p[strikerIdx] !== taker && T.p[strikerIdx].role !== 'GK')
                 ? T.p[strikerIdx] : outT.slice().sort((a, b) => (b.x - a.x) * dir)[0];
-            const box = outT.filter(p => p !== striker).slice().sort((a, b) => (b.x - a.x) * dir).slice(0, 5);
-            striker.tx = gx - dir * 8; striker.ty = 50 + (Math.random() * 6 - 3);
-            box.forEach((p, n) => { p.tx = gx - dir * (5 + (n % 3) * 3.4); p.ty = 38 + n * 5.5; });
-            outO.slice().sort((a, b) => Math.abs(a.x - gx) - Math.abs(b.x - gx)).slice(0, 7).forEach((p, n) => {
-                p.tx = gx - dir * (4 + (n % 3) * 3.2); p.ty = 35 + n * 4.3;
-            });
+            const sSpot = { x: gx - dir * 8, y: 50 + (Math.random() * 6 - 3) };
+            place(key, striker, sSpot.x, sSpot.y, true);
+            // les plus proches viennent dans la surface ; les deux derniers restent à l'entrée pour la reprise
+            const boxSpots = [
+                { x: gx - dir * 5,    y: 41 }, { x: gx - dir * 5.5, y: 59 },
+                { x: gx - dir * 11,   y: 46 }, { x: gx - dir * 11.5, y: 55 },
+                { x: gx - dir * 19,   y: 33 }, { x: gx - dir * 19,   y: 67 }
+            ];
+            const placedA = match(key, outT.filter(p => p !== striker), boxSpots);
+            placedA.forEach(o => place(key, o.p, o.s.x, o.s.y));
+            // défense : marquage individuel sur les attaquants de la surface, deux hommes aux poteaux, un à l'entrée
+            const inBox = [{ s: sSpot }].concat(placedA.filter(o => Math.abs(o.s.x - gx) < 14));
+            const marks = match(okey, outO, markSpots(inBox));
+            marks.forEach(o => place(okey, o.p, o.s.x, o.s.y));
+            let left = outO.filter(p => !marks.some(m => m.p === p));
+            const posts = match(okey, left, [{ x: gx - dir * 1.6, y: 44.5 }, { x: gx - dir * 1.6, y: 55.5 }]);
+            posts.forEach(o => place(okey, o.p, o.s.x, o.s.y));
+            left = left.filter(p => !posts.some(m => m.p === p));
+            match(okey, left, [{ x: gx - dir * 17, y: 50 }]).forEach(o => place(okey, o.p, o.s.x, o.s.y));
         }
-        this.ball.x = cur.x; this.ball.y = cur.y;
         // 3. on lance la course au point, un peu plus vite qu'un placement ordinaire
-        const setupMs = this.clamp(this.TICK * 0.5, 2600, 3400);
+        // FIX #SETPIECE-3 : durée fixe de 2,6 s quelle que soit la distance à parcourir. Elle s'adapte
+        // maintenant à ce que doivent parcourir le tireur, le buteur et la majorité des joueurs placés.
+        const SPD = this.TOP_SPEED * 2.4;     // unités/s : même vitesse que le commit ci-dessous
+        const needOf = r => { const q = this.playerNow(r.k, r.p.i); return Math.hypot(r.p.tx - q.x, r.p.ty - q.y) / SPD * 1000; };
+        const mustMs = roleList.filter(r => r.must).map(needOf);
+        const restMs = roleList.filter(r => !r.must).map(needOf).sort((u, v) => u - v);
+        const q70 = restMs.length ? restMs[Math.min(restMs.length - 1, Math.floor(restMs.length * 0.7))] : 0;
+        const needMs = Math.max(0, ...mustMs, q70);
+        // penalty : seul le tireur doit être arrivé (les autres attendent à l'arc)
+        const setupMs = kind === 'penalty'
+            ? this.clamp(Math.max(this.TICK * 0.5, mustMs[0] * 1.06 + 300), 2600, 4500)
+            : this.clamp(needMs * 1.06 + 300, 2600, 5000);
         this.commit(setupMs, 2.4);
         this.curDur = setupMs;     // tout le monde arrive en même temps, à la fin de l'installation
         // 4. le ballon rejoint son point en roulant, puis y reste

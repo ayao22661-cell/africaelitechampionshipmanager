@@ -13,6 +13,25 @@
 
 **Pixellisation des personnages (cause trouvée)** : `setHardwareScalingLevel(Math.max(1, dpr / 1.5))` produisait un niveau de **2** sur un écran dpr 3 (**3** sur mobile faible) — soit un rendu à 1/2 ou 1/3 de la définition CSS, ensuite étiré. Désormais le rendu se fait à `min(dpr, 2)` (mobile faible : `min(dpr, 1,25)`), avec repli automatique : si l'appareil rame, la résolution retombe d'abord à 1 px CSS avant que la 3D soit coupée (`guardFps`).
 
+**Sauts / à-coups dans l'action (3D)** : le moteur interpole en ligne droite entre deux actions (`MATCHSIM.playerNow`), donc la vitesse des joueurs et du ballon change brutalement à chaque nouvel ordre (arrêt sec, départ sec, direction qui change d'un coup). Ajouts dans `match3d.js` : lissage visuel exponentiel (`SMOOTH_K = 9`, ~0,1 s de retard) appliqué aux joueurs **et** au ballon avec le même filtre (le ballon reste collé au pied), la caméra suit le ballon lissé, et hystérésis course/arrêt (seuils 0,55 / 0,30) pour supprimer le clignotement entre les animations de course et d'attente. Les vraies téléportations (remise en jeu, > 9 m pour un joueur, > 25 m pour le ballon) restent instantanées.
+
+**Corners / coups francs : joueurs de l'autre côté du terrain, attaquants seuls (`app.js`, `MATCHSIM.setPiece`)**
+Causes trouvées : (1) l'installation durait 2,6 s quelle que soit la distance, alors que la vitesse est plafonnée (~29 unités sur 2,6 s) : un joueur à 70 unités de la surface s'arrêtait en route et la frappe partait quand même ; (2) les places (surface, mur, défense) étaient données par rang (« les plus avancés »), pas par proximité ; (3) les défenseurs formaient une ligne sans marquer personne.
+- Places attribuées par **proximité** (appariement glouton) : les joueurs les plus proches prennent la surface, les autres restent en retrait.
+- **Marquage individuel** : chaque attaquant de la surface reçoit un défenseur, côté but ; corner : + 2 hommes aux poteaux et un à l'entrée ; coup franc : mur de 4 + marquage + un libéro.
+- **Durée d'installation adaptative** (2,6 → 5 s max) selon la distance du tireur, du buteur et des ~70 % des autres joueurs placés ; penalty : selon le tireur (jusqu'à 4,5 s).
+- Jeu courant : « **premier défenseur** » — le défenseur le plus proche du porteur vient au contact s'il est à moins de 24 unités, même hors de la zone de pressing (laisse élargie pour lui).
+
+Mesuré (`tests/setpiece_test.js`, `tests/mark_test.js`, 200 essais, avant → après) :
+| | avant | après |
+|---|---|---|
+| Corner, jeu réaliste : attaquants dans la zone au moment de la frappe | 2,2 | 6,8 |
+| Corner, équipe à l'autre bout : tirs avec ≥ 4 attaquants dans la zone | 1 % | 100 % |
+| Attaquants de la surface sans défenseur à moins de 6 | 25–46 % | 0–2 % |
+| Porteur pressé (adversaire à moins de 5 unités) | 29 % | 46 % |
+Contrepartie : la mise en place dure plus longtemps (jusqu'à 5 s au lieu de 2,6 s) quand l'équipe est loin ; l'horloge du match reste arrêtée pendant ce temps. Les tests existants (`pos_test`, `sim_test` : téléportations, hors-jeu) passent toujours.
+Les attaquants avancés étaient déjà presque tous marqués en jeu courant (1 à 5 % seuls) : le marquage individuel n'a donc été ajouté que sur coups de pied arrêtés.
+
 **Non vérifié** : aucun rendu sur un vrai téléphone ni dans un navigateur (pas de Chromium dans mon environnement). Contrôles faits : syntaxe JS (`app.js`, `match3d.js`) et équilibre des balises de l'écran de match. À tester : portrait, paysage, plein écran, tap sur le terrain (suivie ↔ d'ensemble). Si la vue d'ensemble tournée déplaît, retirer la variable `rot` dans `updateCamera`.
 
 ---
