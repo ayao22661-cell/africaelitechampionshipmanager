@@ -25944,7 +25944,109 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
         return `<div class="pa-grid">${b.join('')}</div>`;
     }
 
+    // ═══ EFFECTIF EN PAYSAGE : vue « jeu de gestion » ════════════════════
+    // En-tête à tuiles (chiffres clés), filtres par ligne, tri, puis la liste
+    // groupée par ligne comme un tableau d'effectif : on balaie 25 joueurs d'un
+    // coup d'œil. Les cartes restent disponibles (bascule Liste / Cartes).
+    setSquadOpt(k, v) { this['_sq' + k] = v; this.renderSquad(); }
+    renderSquadHub() {
+        const grid = document.getElementById('squad-grid');
+        const sq = this.userSquad || [];
+        let head = document.getElementById('sm-squad-head');
+        if (!head) {
+            head = document.createElement('div'); head.id = 'sm-squad-head';
+            const tb = document.querySelector('#view-squad .squad-toolbar');
+            (tb ? tb.parentNode : grid.parentNode).insertBefore(head, tb || grid);
+        }
+        const line = this._sqLine || 'all', sort = this._sqSort || 'ovr', view = this._sqView || 'list';
+        const avg = (f) => sq.length ? sq.reduce((s, p) => s + (f(p) || 0), 0) / sq.length : 0;
+        const wages = sq.reduce((s, p) => s + (p.wage || 0), 0);
+        const out = sq.filter(p => p.injuryDays > 0 || p.suspensionDays > 0).length;
+        const ending = sq.filter(p => this.contractEndingSoon(p)).length;
+        const tile = (lbl, val, sub, tone) => `<div class="sm-kpi${tone ? ' is-' + tone : ''}"><span>${lbl}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+        const LINES = [['all', t('Tous')], ['GB', 'GB'], ['DEF', 'DEF'], ['MIL', 'MIL'], ['ATT', 'ATT']];
+        const SORTS = [['ovr', t('Note')], ['pos', t('Poste')], ['age', t('Âge')], ['energy', t('Forme')], ['value', t('Valeur')]];
+        head.innerHTML = `
+            <div class="sm-kpis">
+                ${tile(t('Joueurs'), sq.length, `${sq.filter(p => p.loanedIn).length} ${t('prêtés')}`)}
+                ${tile(t('Note moyenne'), avg(p => p.ovr).toFixed(1), `${t('Onze')} ${(sq.slice(0, 11).reduce((s, p) => s + (p.ovr || 0), 0) / Math.max(1, Math.min(11, sq.length))).toFixed(1)}`)}
+                ${tile(t('Âge moyen'), avg(p => p.age).toFixed(1), t('ans'))}
+                ${tile(t('Masse salariale'), formatMoney(wages), t('par mois'))}
+                ${tile(t('Indisponibles'), out, t('blessés · suspendus'), out ? 'bad' : '')}
+                ${tile(t('Contrats'), ending, t('à régler'), ending ? 'warn' : '')}
+            </div>
+            <div class="sm-filters">
+                <div class="sm-chips">${LINES.map(([k, l]) => `<button type="button" class="${line === k ? 'is-on' : ''}" onclick="app.setSquadOpt('Line','${k}')">${l}</button>`).join('')}</div>
+                <div class="sm-chips">${SORTS.map(([k, l]) => `<button type="button" class="${sort === k ? 'is-on' : ''}" onclick="app.setSquadOpt('Sort','${k}')">${l}</button>`).join('')}</div>
+                <div class="sm-chips sm-seg">
+                    <button type="button" class="${view === 'list' ? 'is-on' : ''}" onclick="app.setSquadOpt('View','list')">${t('Liste')}</button>
+                    <button type="button" class="${view === 'cards' ? 'is-on' : ''}" onclick="app.setSquadOpt('View','cards')">${t('Cartes')}</button>
+                </div>
+            </div>`;
+        grid.classList.toggle('sm-squad-list', view === 'list');
+        if (view !== 'list') return false;           // les cartes d'origine prennent le relais
+
+        const ORDER = { GB: 0, DEF: 1, MIL: 2, ATT: 3 };
+        const NAMES = { GB: t('Gardiens'), DEF: t('Défenseurs'), MIL: t('Milieux'), ATT: t('Attaquants') };
+        const value = p => p.price || (typeof Generator !== 'undefined' ? Generator.getPlayerValue(p.ovr) : 0);
+        const by = {
+            ovr: (a, b) => (b.ovr || 0) - (a.ovr || 0), age: (a, b) => (a.age || 0) - (b.age || 0),
+            energy: (a, b) => (b.energy || 0) - (a.energy || 0), value: (a, b) => value(b) - value(a),
+            pos: (a, b) => (ORDER[a.position] ?? 9) - (ORDER[b.position] ?? 9) || (b.ovr || 0) - (a.ovr || 0)
+        }[sort];
+        const starters = new Set(sq.slice(0, 11).map(p => p.id));
+        const list = sq.filter(p => line === 'all' || p.position === line).slice().sort(by);
+        const bar = (v, col) => `<span class="sm-bar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${col}"></i></span>`;
+        const row = p => {
+            const en = Math.round(p.energy ?? 100), mo = Math.round(p.morale ?? 80);
+            const eCol = en > 80 ? '#10b981' : en > 60 ? '#f59e0b' : '#ef4444';
+            const mCol = mo < 40 ? '#ef4444' : mo < 65 ? '#f59e0b' : '#38bdf8';
+            let role = ''; try { role = playerRole(p).short; } catch (e) { role = p.position; }
+            const st = [];
+            if (p.injuryDays > 0) st.push(`<i class="st bad" title="${t('Blessé')}">${icon('injury', 'w-3 h-3')}${p.injuryDays}j</i>`);
+            if (p.suspensionDays > 0) st.push(`<i class="st bad" title="${t('Suspendu')}">${icon('redCard', 'w-3 h-3')}${p.suspensionDays}</i>`);
+            if (p.egoStatus === 'wants_transfer') st.push(`<i class="st bad">${t('Veut partir')}</i>`);
+            else if (p.egoStatus === 'wants_playtime') st.push(`<i class="st warn">${t('Veut jouer')}</i>`);
+            if (p.loanedIn) st.push(`<i class="st info">${t('Prêt')}</i>`);
+            const ctr = this.contractEndingSoon(p);
+            return `<div class="sm-prow${starters.has(p.id) ? ' is-xi' : ''}" onclick="app.openPlayerCard('${p.id}')">
+                <span class="c-face">${playerFaceSVG(p)}</span>
+                <span class="c-name"><b>${p.name}</b><small>${p.nationality && typeof p.nationality === 'object' ? `${p.nationality.flag || ''} ${p.nationality.name || p.nationality.nat || ''}` : (p.nationality || '')}${starters.has(p.id) ? ` · ${t('Titulaire')}` : ''}</small></span>
+                <span class="c-pos" style="background:${posColor(p.position, 'hex') || ''}">${role}</span>
+                <span class="c-age">${p.age || '?'}</span>
+                <span class="c-ovr">${ovrRing(p.ovr, { size: 30 })}</span>
+                <span class="c-pot">${p.pot || '—'}</span>
+                <span class="c-bar"><small>${en}%</small>${bar(en, eCol)}</span>
+                <span class="c-bar"><small>${mo}%</small>${bar(mo, mCol)}</span>
+                <span class="c-st">${st.join('')}</span>
+                <span class="c-val">${formatMoney(value(p))}</span>
+                <span class="c-ctr${ctr ? ' is-warn' : ''}">${this.contractLabel ? this.contractLabel(p) : ''}</span>
+                <span class="c-rt">${p.lastRating ? `<b class="${p.lastRating >= 7.5 ? 'g' : p.lastRating >= 6 ? 'm' : 'b'}">${p.lastRating}</b>` : '—'}</span>
+            </div>`;
+        };
+        const hdr = `<div class="sm-phead"><span></span><span>${t('Joueur')}</span><span>${t('Poste')}</span><span>${t('Âge')}</span><span>${t('Note')}</span><span>Pot.</span><span>${t('Forme')}</span><span>${t('Moral')}</span><span>${t('Statut')}</span><span>${t('Valeur')}</span><span>${t('Contrat')}</span><span>${t('Dern.')}</span></div>`;
+        let html = hdr;
+        if (sort === 'pos' || sort === 'ovr') {
+            ['GB', 'DEF', 'MIL', 'ATT'].forEach(k => {
+                const g = list.filter(p => p.position === k);
+                if (!g.length) return;
+                html += `<div class="sm-pgroup">${NAMES[k]}<span>${g.length}</span></div>` + g.map(row).join('');
+            });
+        } else html += list.map(row).join('');
+        grid.innerHTML = html;
+        const cnt = document.getElementById('squad-count');
+        if (cnt) cnt.innerText = sq.length;
+        return true;
+    }
+
     renderSquad() {
+        // Paysage : vue en liste (ou cartes, au choix) avec en-tête et filtres
+        if (document.documentElement.classList.contains('land')) {
+            if (this.renderSquadHub()) return;
+        } else {
+            const h = document.getElementById('sm-squad-head'); if (h) h.remove();
+            const g0 = document.getElementById('squad-grid'); if (g0) g0.classList.remove('sm-squad-list');
+        }
         const grid = document.getElementById('squad-grid');
         // PERF : `grid.innerHTML += ...` dans la boucle faisait re-parser tout
         // le DOM de la grille à chaque joueur — coût quadratique, très sensible

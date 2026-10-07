@@ -1,3 +1,15 @@
+# Écrans de gestion refaits en « hubs » de jeu (07/10/2026)
+
+L'accueil et ses onglets ne changent pas. Les autres écrans reprennent le langage des jeux de gestion actuels — en-têtes à tuiles et cartes (Football Manager 26), hubs à onglets (EA FC 26), vues d'ensemble par section (Soccer Manager 26) — sans en copier les designs, avec la charte d'AECM uniquement.
+| Écran | Changement |
+|---|---|
+| Effectif | Tuiles (joueurs, note moyenne et du onze, âge moyen, masse salariale, indisponibles, contrats à régler) ; filtres par ligne ; tri (note, poste, âge, forme, valeur) ; **liste groupée par ligne** (visage, nationalité, poste, âge, note cerclée, potentiel, forme, moral, statuts, valeur, contrat, dernière note ; titulaires repérés) ; bascule Liste / Cartes (`renderSquadHub`) |
+| Mercato | Tuiles (budget, mercato ouvert ou fermé avec jours restants, effectif, liste de suivi, gemmes) ; **hub à onglets** Recherche / Packs de joueurs / Prêts ; filtres sur une ligne ; grille de 4 à 5 joueurs |
+| Entraînement, Académie, Manager, Palmarès, Campus | Tuiles de chiffres clés sous le titre ; panneaux sur deux colonnes |
+| Campus | Stade 3D et installations sur toute la largeur |
+| Tous | Longues explications repliées sur une ligne (ⓘ, un toucher les déplie) ; panneaux en grille à deux colonnes au lieu d'une pile |
+Mécanique commune : `hubify()` dans `sm-shell.js` (tuiles `HERO`, onglets `TABS`, grille `.sm-masonry`, notes `.sm-note`), réappliquée à chaque rendu d'écran.
+
 # Interface en paysage, façon jeu de gestion de football (06/10/2026)
 
 L'application passe en **paysage** (`AndroidManifest.xml` : `screenOrientation="sensorLandscape"`). Deux nouveaux fichiers chargés après le jeu, `sm-shell.css` et `sm-shell.js`. Aucune logique de jeu n'est modifiée : tout passe par `app.switchView`, `app.startSimulationSequence`, `app.openGlobalSearch`, `app.openOffice`. **Couleurs : uniquement la charte existante** (brand-500 / brand-600, ui-900 / 800 / 700, jetons `--surface-grad`, `--text`, `--border`…). La mise en page s'active quand l'écran est plus large que haut (`html.land`) ; le portrait reste tel qu'avant.

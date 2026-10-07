@@ -136,7 +136,7 @@
                 if (!going && before) { hist.push(before); if (hist.length > 30) hist.shift(); }
                 cur = id;
             }
-            sync();
+            sync(); queueHub();
             return r;
         };
         const uh = app.updateHeader && app.updateHeader.bind(app);
@@ -274,6 +274,151 @@
         if (was !== !!on) setTimeout(() => { try { window.Match3D && Match3D._S && Match3D._S.engine && Match3D._S.engine.resize(); } catch (e) {} }, 60);
     }
 
+    // =====================================================================
+    // ÉCRANS DE GESTION « HUB » (paysage) — l'accueil, le match, la tactique,
+    // l'effectif et le classement ont leur propre mise en page ; les autres
+    // écrans reçoivent ici le même langage :
+    //   • tuiles de chiffres clés en tête (comme les en-têtes des jeux de gestion) ;
+    //   • panneaux répartis en colonnes au lieu d'une longue pile ;
+    //   • longues explications repliées sur une ligne (un toucher les déplie).
+    // =====================================================================
+    const money = v => { try { return formatMoney(v || 0); } catch (e) { return String(v || 0); } };
+    const kpi = (label, val, sub, tone) => `<div class="sm-kpi${tone ? ' is-' + tone : ''}"><span>${esc(tr(label))}</span><b>${esc(val)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div>`;
+    const avgOf = (arr, f) => arr.length ? arr.reduce((s, x) => s + (f(x) || 0), 0) / arr.length : 0;
+    const HERO = {
+        market(a) {
+            let w = null; try { w = a.windowStatus(); } catch (e) {}
+            return [
+                kpi('Budget transferts', money(a.budget)),
+                w ? (w.open ? kpi('Mercato', tr('Ouvert'), `${w.name} · ${w.left} ${tr('j. restants')}`, 'good')
+                            : kpi('Mercato', tr('Fermé'), `${w.name} ${tr('dans')} ${w.wait} ${tr('j.')}`, 'warn')) : '',
+                kpi('Effectif', (a.userSquad || []).length, tr('joueurs')),
+                kpi('Liste de suivi', (a.shortlist || []).length, tr('joueurs suivis')),
+                kpi('Gemmes', a.gems || 0)
+            ];
+        },
+        training(a) {
+            const sq = a.userSquad || [];
+            const hurt = sq.filter(p => p.injuryDays > 0).length;
+            return [
+                kpi('Forme moyenne', Math.round(avgOf(sq, p => p.energy ?? 100)) + '%', '', avgOf(sq, p => p.energy ?? 100) < 70 ? 'warn' : 'good'),
+                kpi('Moral moyen', Math.round(avgOf(sq, p => p.morale ?? 80)) + '%'),
+                kpi('Note moyenne', avgOf(sq, p => p.ovr).toFixed(1)),
+                kpi('Blessés', hurt, '', hurt ? 'bad' : '')
+            ];
+        },
+        academy(a) {
+            const ac = a.academy || [];
+            return [
+                kpi('Jeunes', ac.length, tr("à l'académie")),
+                kpi('Meilleur potentiel', ac.length ? Math.max(...ac.map(p => p.pot || 0)) : '—', '', 'good'),
+                kpi('Âge moyen', ac.length ? avgOf(ac, p => p.age).toFixed(1) : '—', tr('ans')),
+                kpi('Budget', money(a.budget))
+            ];
+        },
+        awards(a) {
+            return [
+                kpi('Points de carrière', a.careerPoints || 0),
+                kpi('Réputation', (() => { try { return a.getReputationLabel(); } catch (e) { return '—'; } })()),
+                kpi('Saison', a.currentSeason || 1)
+            ];
+        },
+        manager(a) {
+            let conf = null; try { conf = a.boardConfidence(); } catch (e) {}
+            return [
+                kpi('Points de carrière', a.careerPoints || 0),
+                kpi('Réputation', (() => { try { return a.getReputationLabel(); } catch (e) { return '—'; } })()),
+                conf != null ? kpi('Confiance du conseil', conf + '%', '', conf < 35 ? 'bad' : conf < 55 ? 'warn' : 'good') : '',
+                kpi('Saison', a.currentSeason || 1)
+            ];
+        },
+        campus(a) {
+            let st = null; try { st = a.stadiumOf(a.userClubName); } catch (e) {}
+            return [
+                st ? kpi('Stade', st.capacity.toLocaleString('fr-FR'), tr('places')) : '',
+                kpi('Budget', money(a.budget)), kpi('Gemmes', a.gems || 0)
+            ];
+        }
+    };
+    const HUB_SKIP = new Set(['dashboard', 'match', 'tactics', 'squad', 'standings']);
+    // Onglets de hub : [id, libellé, ids des blocs affichés]
+    const TABS = {
+        market: [['search', 'Recherche', ['market-filter-bar', 'market-grid']],
+                 ['packs', 'Packs de joueurs', ['market-packs-panel']],
+                 ['loans', 'Prêts', ['loans-panel']]]
+    };
+    const hubTab = {};
+    const isPanel = el => el && el.nodeType === 1 && (el.matches('.panel-glass, .card, .ss-block') || /rounded-2xl/.test(el.className || '')) && el.offsetHeight > 40;
+    function hubify() {
+        const root = document.documentElement;
+        if (!root.classList.contains('land') || !window.app) return;
+        const view = document.getElementById('view-' + cur);
+        if (!view || view.classList.contains('hidden-view') || HUB_SKIP.has(cur)) return;
+        // 1. tuiles de chiffres clés, juste sous le titre de l'écran
+        const make = HERO[cur];
+        if (make) {
+            let hero = view.querySelector('.sm-hero');
+            const html = make(window.app).filter(Boolean).join('');
+            if (!hero) {
+                hero = document.createElement('div'); hero.className = 'sm-hero sm-kpis';
+                // juste sous la ligne de titre de l'écran (h3), quelle que soit sa profondeur
+                const h = [...view.querySelectorAll('h3')].find(x => !x.closest('.panel-glass, .card, [class*="rounded-2xl"], [class*="rounded-xl"]'));
+                // on remonte jusqu'à la ligne d'en-tête entière (bloc bas, hors panneau)
+                let anchor = h || null;
+                while (anchor && anchor.parentElement && anchor.parentElement !== view && anchor.parentElement.offsetHeight < 90 && !isPanel(anchor.parentElement)) anchor = anchor.parentElement;
+                if (anchor && anchor.parentElement) anchor.parentElement.insertBefore(hero, anchor.nextSibling);
+                else view.insertBefore(hero, view.firstChild);
+            }
+            if (hero.innerHTML !== html) hero.innerHTML = html;
+        }
+        // 1 bis. hub à onglets (une section à la fois, comme les hubs des jeux de football)
+        const tabs = TABS[cur];
+        if (tabs) {
+            let bar = view.querySelector('.sm-hub-tabs');
+            const sel = hubTab[cur] || tabs[0][0];
+            if (!bar) {
+                bar = document.createElement('div'); bar.className = 'sm-hub-tabs';
+                const hero = view.querySelector('.sm-hero');
+                if (hero && hero.parentNode) hero.parentNode.insertBefore(bar, hero.nextSibling); else view.insertBefore(bar, view.firstChild);
+                bar.addEventListener('click', e => {
+                    const b = e.target.closest('button'); if (!b) return;
+                    hubTab[cur] = b.dataset.tab; hubify();
+                });
+            }
+            const html = tabs.map(([id, label]) => `<button type="button" data-tab="${id}" class="${id === sel ? 'is-on' : ''}">${esc(tr(label))}</button>`).join('');
+            if (bar.innerHTML !== html) bar.innerHTML = html;
+            tabs.forEach(([id, , ids]) => ids.forEach(x => { const el = document.getElementById(x); if (el) el.classList.toggle('sm-tab-hidden', id !== sel); }));
+        }
+        // 2. panneaux en colonnes : le conteneur qui porte le plus de panneaux
+        let best = null, bestN = 1;
+        const scan = (el, d) => {
+            if (d > 3 || !el.children) return;
+            if (el !== view && getComputedStyle(el).display === 'grid') return;   // jamais une grille de cartes
+            const n = [...el.children].filter(isPanel).length;
+            if (n > bestN) { bestN = n; best = el; }
+            [...el.children].forEach(c => { if (!isPanel(c)) scan(c, d + 1); });
+        };
+        scan(view, 0);
+        if (best && !best.classList.contains('sm-masonry')) best.classList.add('sm-masonry');
+        // 3. explications longues : repliées sur une ligne
+        view.querySelectorAll('p').forEach(p => {
+            if (p.classList.contains('sm-note') || p.closest('button')) return;
+            const c = p.className || '';
+            if (!/text-(\[10px\]|\[11px\]|xs)/.test(c) || !/slate-(400|500|600)/.test(c)) return;
+            if ((p.textContent || '').trim().length > 90) p.classList.add('sm-note');
+        });
+    }
+    document.addEventListener('click', e => {
+        const n = e.target.closest && e.target.closest('p.sm-note');
+        if (n) n.classList.toggle('is-open');
+    });
+    let hubT = null;
+    const queueHub = () => { clearTimeout(hubT); hubT = setTimeout(() => { try { hubify(); } catch (e) {} }, 80); };
+    function watchMain() {
+        const main = document.querySelector('main');
+        if (main && window.MutationObserver) new MutationObserver(queueHub).observe(main, { childList: true, subtree: true });
+    }
+
     window.AECMShell = {
         // « Continuer » : même action que le bouton principal du tableau de bord (jouer la journée)
         continue() {
@@ -286,6 +431,7 @@
 
     function boot() {
         buildSide(); buildHeader(); buildMatchHud();
+        watchMain(); queueHub();
         if (!hookApp()) { const id = setInterval(() => { if (hookApp()) { clearInterval(id); sync(); } }, 200); }
         sync();
         setInterval(sync, 1500);
