@@ -6793,7 +6793,7 @@ function playerRole(p) {
 const SET_PIECE_ROLES = [
     { kind: 'penalty',  icon: icon('ball','w-4 h-4'), label: 'Penalty',    hint: 'Le sang-froid sur onze mètres',     accent: '#f59e0b' },
     { kind: 'freekick', icon: icon('target','w-4 h-4'), label: 'Coup franc', hint: 'La frappe par-dessus le mur',       accent: '#38bdf8' },
-    { kind: 'corner',   icon: icon('corner','w-4 h-4'), label: 'Corner',     hint: 'Le pied qui trouve la tête',        accent: '#a78bfa' },
+    { kind: 'corner',   icon: icon('corner','w-4 h-4'), label: 'Corner',     hint: 'Le pied qui trouve la tête',        accent: '#38bdf8' },
     { kind: 'captain',  icon: icon('captain','w-4 h-4'), label: 'Capitaine',  hint: 'Le patron dans le vestiaire',       accent: '#34d399' },
     { kind: 'playmaker',icon: icon('vision','w-4 h-4'), label: 'Meneur de jeu', hint: 'Celui par qui le jeu doit passer', accent: '#fb7185' }
 ];
@@ -6810,7 +6810,7 @@ const HALF_TIME_TALKS = [
       desc: "Vous leur dites votre confiance.",          good: ['draw', 'trail'], bad: [] },
     { label: 'Secouer',        icon: icon('fire','w-4 h-4'), accent: '#f97316', morale: -3, energy: 8,
       desc: "Le ton monte dans le vestiaire.",           good: ['trail'], bad: ['lead'] },
-    { label: 'Exiger le bloc', icon: icon('shield','w-4 h-4'), accent: '#a78bfa', morale:  1, energy: 5,
+    { label: 'Exiger le bloc', icon: icon('shield','w-4 h-4'), accent: '#38bdf8', morale:  1, energy: 5,
       desc: "Consignes serrées, on verrouille.",         good: ['lead'],  bad: ['trail'] }
 ];
 
@@ -7726,6 +7726,47 @@ function statGrid(p, known = true) {
 
 // Attributs en pastilles rondes (fiche joueur en paysage) : nom complet, valeur
 // cerclée de la couleur de son niveau, jauge dessous — la lecture des jeux de gestion.
+// ═══════════════════════════════════════════════════════════════════════════
+// CARTE JOUEUR UNIQUE — le même dessin partout (effectif, mercato, académie,
+// packs) : forme d'écusson, note et poste en haut à gauche, drapeau et
+// écusson du club, visage, nom, six attributs. Charte AECM, aucune bordure.
+// Le palier suit la note : élite (orange), or (≥ 75), argent (≥ 65), bronze.
+// opts : known (attributs visibles), club (écusson), sub (ligne sous la carte),
+//        badges (étiquettes en haut), foot (boutons sous la carte), click.
+// ═══════════════════════════════════════════════════════════════════════════
+function playerCardHTML(p, opts = {}) {
+    const known = opts.known !== false;
+    const ovr = p.ovr || 0;
+    const tier = !known ? 'is-unk' : ovr >= 85 ? 'is-elite' : ovr >= 75 ? 'is-gold' : ovr >= 65 ? 'is-silver' : 'is-bronze';
+    let pos = p.exactPosition || p.position || '';
+    const nat = p.nationality && typeof p.nationality === 'object' ? p.nationality : null;
+    const club = opts.club || p.fromClub || '';
+    let crest = ''; try { crest = club ? clubCrestSVG(club) : ''; } catch (e) {}
+    const stats = statKeysFor(p).slice(0, 6).map(([lbl, key]) => {
+        const v = Math.max(0, Math.min(99, (p.stats && p.stats[key]) || 0));
+        return `<span><b>${known ? v : '?'}</b><i>${t(lbl)}</i></span>`;
+    });
+    const name = String(p.name || '').split(' ');
+    const last = name.length > 1 ? name.slice(1).join(' ') : name[0];
+    return `<div class="pcd ${tier}${opts.click ? ' is-click' : ''}" ${opts.click ? `onclick="${opts.click}"` : ''}>
+        <div class="pcd-card">
+            <i class="pcd-deco"></i>
+            ${opts.badges ? `<div class="pcd-badges">${opts.badges}</div>` : ''}
+            <div class="pcd-side">
+                <b class="pcd-ovr">${known ? ovr : '?'}</b>
+                <span class="pcd-pos">${pos}</span>
+                ${nat ? `<i class="pcd-sep"></i><span class="pcd-flag" title="${nat.name || ''}">${nat.flag || nat.nat || ''}</span>` : ''}
+                ${crest ? `<i class="pcd-sep"></i><span class="pcd-crest">${crest}</span>` : ''}
+            </div>
+            <div class="pcd-face">${playerFaceSVG(p)}</div>
+            <div class="pcd-name">${last}</div>
+            <div class="pcd-stats"><div>${stats.slice(0, 3).join('')}</div><div>${stats.slice(3).join('')}</div></div>
+            ${opts.sub ? `<div class="pcd-sub">${opts.sub}</div>` : ''}
+        </div>
+        ${opts.foot ? `<div class="pcd-foot" onclick="event.stopPropagation()">${opts.foot}</div>` : ''}
+    </div>`;
+}
+
 function statRings(p, known = true) {
     if (isKeeper(p)) ensureKeeperStats(p);
     return statKeysFor(p).map(([lbl, key, full]) => {
@@ -7733,7 +7774,7 @@ function statRings(p, known = true) {
         const col = !known ? '#334155' : v >= 80 ? '#10b981' : v >= 70 ? '#84cc16' : v >= 60 ? '#f59e0b' : '#ef4444';
         return `<div class="sm-attr">
             <span class="sm-attr-l">${t(full || lbl)}</span>
-            <span class="sm-attr-v" style="border-color:${col}">${known ? v : '?'}</span>
+            <span class="sm-attr-v" style="background:${col}">${known ? v : '?'}</span>
             <span class="sm-attr-bar"><b style="width:${known ? v : 0}%;background:${col}"></b></span>
         </div>`;
     }).join('');
@@ -8417,10 +8458,73 @@ const SFX = {
     // Le but : la foule enfle d'un coup puis retombe lentement.
     goal() {
         this.noise(2.2, 500, 0.7, 0.30, 0, 1400);
+        this.noise(4.5, 800, 0.6, 0.20, 0.4, 500);                 // la clameur retombe lentement
         [523, 659, 784, 1046, 1318].forEach((f, i) => this.tone(f, 0.5, 'triangle', 0.14, i * 0.07));
         this.whistle(false);
+        this.drumFever = (this.ctx ? this.ctx.currentTime : 0) + 8; // les tambours s'emballent 8 s
     },
     miss()   { this.noise(0.7, 700, 1.2, 0.14, 0, 300); },
+    // « Ooooh » de la tribune : une voyelle de foule (bruit filtré qui monte puis retombe)
+    ooh() {
+        if (!this.enabled) return;
+        const ctx = this.init(); if (!ctx) return;
+        const t0 = ctx.currentTime, len = Math.floor(ctx.sampleRate * 1.6);
+        const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const f1 = ctx.createBiquadFilter(); f1.type = 'bandpass'; f1.Q.value = 3;
+        f1.frequency.setValueAtTime(380, t0); f1.frequency.linearRampToValueAtTime(820, t0 + 0.45); f1.frequency.linearRampToValueAtTime(420, t0 + 1.5);
+        const f2 = ctx.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = 1400;
+        const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.32, t0 + 0.35); g.gain.exponentialRampToValueAtTime(0.001, t0 + 1.55);
+        src.connect(f1); f1.connect(f2); f2.connect(g); g.connect(this.master);
+        src.start(t0); src.stop(t0 + 1.6);
+    },
+
+    // ── TAMBOURS DE SUPPORTERS ───────────────────────────────────────
+    // Rythme de tribune africaine joué en boucle (doum grave, claque aiguë, mains), entièrement
+    // synthétisé : aucun fichier audio. Il varie toutes les 8 mesures et s'emballe après un but.
+    drumHit(kind, t, vol) {
+        const ctx = this.ctx; if (!ctx) return;
+        if (kind === 'doum') {                                     // peau grave (djembé basse / grosse caisse)
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'sine'; o.frequency.setValueAtTime(115, t); o.frequency.exponentialRampToValueAtTime(58, t + 0.18);
+            g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+            o.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.3);
+        } else {                                                   // claque (bord du djembé) ou mains
+            const len = Math.floor(ctx.sampleRate * 0.08), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+            for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, kind === 'clap' ? 3 : 6);
+            const src = ctx.createBufferSource(); src.buffer = buf;
+            const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = kind === 'clap' ? 1600 : 900; f.Q.value = kind === 'clap' ? 0.8 : 2.5;
+            const g = ctx.createGain(); g.gain.value = vol;
+            src.connect(f); f.connect(g); g.connect(this.master); src.start(t);
+        }
+    },
+    startDrums() {
+        if (!this.enabled || this.drumTimer) return;
+        const ctx = this.init(); if (!ctx) return;
+        // 3 motifs de 16 doubles-croches : D = doum, T = claque, C = mains, . = silence
+        const PATTERNS = ['D..TD.T.D..TD.TT', 'D.T.D.T.DDT.D.TT', 'D..T..T.D.DT..TC'];
+        let step = 0, next = ctx.currentTime + 0.1, bar = 0, pat = PATTERNS[0];
+        this.drumTimer = setInterval(() => {
+            if (!this.ctx || !this.enabled) return;
+            const fever = this.drumFever && this.ctx.currentTime < this.drumFever;
+            const sixteenth = fever ? 0.105 : 0.135;              // ~111 bpm, ~143 bpm après un but
+            // le rythme suit l'action : plus fort quand le ballon approche d'un but
+            let heat = 0.35;
+            try { if (typeof MATCHSIM !== 'undefined' && MATCHSIM.active && MATCHSIM.ball) heat = Math.max(0, Math.min(1, Math.abs(MATCHSIM.ball.x - 50) / 50)); } catch (e) {}
+            if (this.crowdGain) this.crowdIntensity(fever ? 1 : heat * 0.8);
+            const base = (fever ? 0.20 : 0.10 + heat * 0.06);
+            while (next < this.ctx.currentTime + 0.25) {
+                const c = pat[step % 16];
+                if (c === 'D') this.drumHit('doum', next, base * 1.6);
+                else if (c === 'T') this.drumHit('tak', next, base * 0.9);
+                else if (c === 'C' || (fever && step % 4 === 2)) this.drumHit('clap', next, base * 0.8);
+                next += sixteenth; step++;
+                if (step % 16 === 0 && ++bar % 8 === 0) pat = PATTERNS[Math.floor(Math.random() * PATTERNS.length)];
+            }
+        }, 60);
+    },
+    stopDrums() { if (this.drumTimer) { clearInterval(this.drumTimer); this.drumTimer = null; } },
     card(red) {
         this.whistle(false);
         if (red) { this.tone(200, 0.35, 'sawtooth', 0.12, 0.15); this.tone(150, 0.45, 'sawtooth', 0.10, 0.25); }
@@ -8453,6 +8557,7 @@ const SFX = {
         src.start();
         g.gain.linearRampToValueAtTime(0.16, ctx.currentTime + 1.5); // montée en douceur
         this.crowdSrc = src; this.crowdGain = g; this.crowdFilter = f;
+        this.startDrums();
     },
     crowdIntensity(v) {
         if (!this.crowdGain || !this.ctx) return;
@@ -8461,6 +8566,7 @@ const SFX = {
         this.crowdFilter.frequency.linearRampToValueAtTime(600 + v * 1300, t + 0.35);
     },
     stopCrowd() {
+        this.stopDrums();
         if (!this.crowdSrc || !this.ctx) return;
         const t = this.ctx.currentTime;
         this.crowdGain.gain.linearRampToValueAtTime(0, t + 0.7);
@@ -8552,37 +8658,95 @@ const KIT_PATTERNS = ['solid', 'stripes', 'hoops', 'halves', 'sash', 'sleeves', 
 // ═══════════════════════════════════════════════════════════════════════════
 function stadiumSVG(design) {
     if (!design) return '';
-    const skyId = 'sky_' + design.id;
-    const crowd = design.crowd ? Array.from({ length: 3 }, (_, r) => {
-        const y = 78 + r * 9;
-        return Array.from({ length: 15 }, (_, i) =>
-            `<circle cx="${18 + i * 26}" cy="${y}" r="1.6" fill="${i % 3 === 0 ? design.accent : '#ffffff33'}"/>`
-        ).join('');
-    }).join('') : '';
-    const lights = design.lights ? `
-        <g stroke="#94a3b8" stroke-width="1.5"><line x1="14" y1="58" x2="14" y2="12"/><line x1="386" y1="58" x2="386" y2="12"/></g>
-        <g fill="#fff7d6" opacity=".95"><rect x="3" y="4" width="22" height="9" rx="1"/><rect x="375" y="4" width="22" height="9" rx="1"/></g>
-        <g fill="${design.accent}" opacity=".3"><ellipse cx="14" cy="60" rx="55" ry="26"/><ellipse cx="386" cy="60" rx="55" ry="26"/></g>` : '';
+    // Illustration « plan large de retransmission » : tribune d'en face sous son toit, foule,
+    // panneaux LED, pelouse en perspective tondue en bandes, projecteurs. Les couleurs viennent
+    // toutes du design (ciel, tribune, pelouse, accent) : chaque stade de la boutique garde son identité.
+    const u = 'st' + design.id + '_' + (stadiumSVG._n = (stadiumSVG._n || 0) + 1);
+    const night = !!design.lights;
+    // foule : rangées de points, couleurs tirées d'une suite fixe (pas de Math.random → rendu stable)
+    let crowd = '';
+    if (design.crowd) {
+        const tones = [design.accent, '#ffffff', '#cbd5e1', design.accent, '#94a3b8', '#ffffff'];
+        let s = 7;
+        for (let r = 0; r < 6; r++) {
+            const y = 66 + r * 6.6, x0 = 34 - r * 4.4, x1 = 366 + r * 4.4;
+            for (let x = x0; x < x1; x += 4.6) {
+                s = (s * 9301 + 49297) % 233280;
+                const k = s / 233280;
+                if (k < 0.18) continue;                       // quelques sièges vides
+                crowd += `<circle cx="${(x + k * 2).toFixed(1)}" cy="${(y + k).toFixed(1)}" r="${(1.05 + k * 0.5).toFixed(2)}" fill="${tones[Math.floor(k * tones.length)]}" opacity="${(0.35 + k * 0.5).toFixed(2)}"/>`;
+            }
+        }
+    }
+    // bandes de tonte : polygones qui convergent vers le point de fuite
+    const VPX = 200, top = 122, bot = 200, wt = 300, wb = 640, n = 12;
+    let stripes = '';
+    for (let i = 0; i < n; i += 2) {
+        const a = -wt / 2 + (wt / n) * i, b = a + wt / n, c = -wb / 2 + (wb / n) * (i + 1), d = -wb / 2 + (wb / n) * i;
+        stripes += `<polygon points="${VPX + a},${top} ${VPX + b},${top} ${VPX + c},${bot} ${VPX + d},${bot}" fill="#ffffff" opacity=".07"/>`;
+    }
+    const tower = (x, flip) => `
+        <g>
+            <polygon points="${x - 1.4},${night ? 18 : 30} ${x + 1.4},${night ? 18 : 30} ${x + 2.4},104 ${x - 2.4},104" fill="#1f2937"/>
+            <rect x="${x - 13}" y="${night ? 8 : 22}" width="26" height="11" rx="1.5" fill="#111827" stroke="#374151" stroke-width=".8"/>
+            ${night ? `<g fill="#fffbeb">${[0, 1, 2, 3].map(i => `<rect x="${x - 11 + i * 6}" y="10" width="4.6" height="3.4" rx=".6"/><rect x="${x - 11 + i * 6}" y="14.6" width="4.6" height="3.4" rx=".6"/>`).join('')}</g>
+            <ellipse cx="${x}" cy="13.5" rx="26" ry="14" fill="url(#${u}g)"/>
+            <polygon points="${x - 12},18 ${x + 12},18 ${flip ? x - 150 : x + 150},200 ${flip ? x - 40 : x + 40},200" fill="url(#${u}beam)" opacity=".55"/>` : ''}
+        </g>`;
     const fireworks = design.fireworks ? `
-        <g stroke="${design.accent}" stroke-width="1.4" stroke-linecap="round" opacity=".85">
-            <path d="M62 28l0 -14M62 28l10 -10M62 28l-10 -10M62 28l14 3M62 28l-14 3"/>
-            <path d="M318 38l0 -14M318 38l10 -10M318 38l-10 -10M318 38l14 3M318 38l-14 3"/>
+        <g stroke="${design.accent}" stroke-width="1.3" stroke-linecap="round" opacity=".9">
+            <path d="M88 26l0 -13M88 26l9 -9M88 26l-9 -9M88 26l13 2M88 26l-13 2M88 26l7 9M88 26l-7 9"/>
+            <path d="M306 34l0 -12M306 34l8 -8M306 34l-8 -8M306 34l12 2M306 34l-12 2M306 34l6 8M306 34l-6 8"/>
         </g>
-        <g fill="${design.accent}"><circle cx="62" cy="14" r="2"/><circle cx="318" cy="24" r="2"/></g>` : '';
+        <g fill="#ffffff"><circle cx="88" cy="26" r="1.8"/><circle cx="306" cy="34" r="1.8"/></g>` : '';
+    const stars = night ? [[40, 12], [120, 22], [160, 8], [248, 16], [290, 6], [350, 24], [70, 30], [215, 28]]
+        .map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 3 ? 0.6 : 0.9}" fill="#ffffff" opacity="${i % 2 ? 0.5 : 0.8}"/>`).join('') : '';
 
     return `
-    <svg viewBox="0 0 400 200" preserveAspectRatio="xMidYMax slice" class="w-full h-full">
-        <defs><linearGradient id="${skyId}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${design.sky[0]}"/><stop offset="100%" stop-color="${design.sky[1]}"/>
-        </linearGradient></defs>
-        <rect x="0" y="0" width="400" height="200" fill="url(#${skyId})"/>
-        <path d="M0 90 Q200 60 400 90 L400 130 Q200 105 0 130 Z" fill="${design.stand}"/>
-        ${crowd}${lights}
-        <path d="M0 130 Q200 108 400 130 L400 200 L0 200 Z" fill="${design.pitch}"/>
-        <path d="M0 160 Q200 140 400 160" stroke="#ffffff55" stroke-width="2" fill="none"/>
-        <ellipse cx="200" cy="150" rx="38" ry="9" fill="none" stroke="#ffffff55" stroke-width="2"/>
+    <svg viewBox="0 0 400 200" preserveAspectRatio="xMidYMid slice" class="w-full h-full" aria-hidden="true">
+        <defs>
+            <linearGradient id="${u}sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="${design.sky[0]}"/><stop offset="100%" stop-color="${design.sky[1]}"/>
+            </linearGradient>
+            <linearGradient id="${u}stand" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="${design.stand}" stop-opacity=".55"/><stop offset="100%" stop-color="${design.stand}"/>
+            </linearGradient>
+            <linearGradient id="${u}pitch" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="${design.pitch}" stop-opacity=".75"/><stop offset="100%" stop-color="${design.pitch}"/>
+            </linearGradient>
+            <linearGradient id="${u}led" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="${design.accent}" stop-opacity=".25"/><stop offset="50%" stop-color="${design.accent}" stop-opacity=".95"/><stop offset="100%" stop-color="${design.accent}" stop-opacity=".25"/>
+            </linearGradient>
+            <linearGradient id="${u}beam" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#fffbeb" stop-opacity=".5"/><stop offset="100%" stop-color="#fffbeb" stop-opacity="0"/>
+            </linearGradient>
+            <radialGradient id="${u}g"><stop offset="0%" stop-color="#fffbeb" stop-opacity=".85"/><stop offset="100%" stop-color="#fffbeb" stop-opacity="0"/></radialGradient>
+            <radialGradient id="${u}vig" cx="50%" cy="58%" r="75%"><stop offset="55%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".55"/></radialGradient>
+        </defs>
+        <rect x="0" y="0" width="400" height="200" fill="url(#${u}sky)"/>
+        ${stars}
+        <!-- toit et tribune d'en face -->
+        <polygon points="6,44 394,44 404,56 -4,56" fill="#0b1220"/>
+        <polygon points="-4,56 404,56 404,59 -4,59" fill="${design.accent}" opacity=".5"/>
+        <polygon points="8,59 392,59 420,110 -20,110" fill="url(#${u}stand)"/>
+        ${[72, 85, 98].map(y => `<line x1="-10" y1="${y}" x2="410" y2="${y}" stroke="#000" stroke-opacity=".22" stroke-width=".8"/>`).join('')}
+        ${crowd}
+        <!-- panneaux LED -->
+        <rect x="-10" y="110" width="420" height="7" fill="#0b1220"/>
+        <rect x="-10" y="111.2" width="420" height="4.6" fill="url(#${u}led)" opacity=".85"/>
+        <!-- pelouse -->
+        <polygon points="${VPX - wt / 2 - 40},${top - 5} ${VPX + wt / 2 + 40},${top - 5} 470,200 -70,200" fill="url(#${u}pitch)"/>
+        ${stripes}
+        <g fill="none" stroke="#ffffff" stroke-opacity=".6" stroke-width="1.1">
+            <polygon points="${VPX - wt / 2 + 4},${top + 2} ${VPX + wt / 2 - 4},${top + 2} ${VPX + wb / 2 - 8},${bot + 2} ${VPX - wb / 2 + 8},${bot + 2}"/>
+            <line x1="${VPX}" y1="${top + 2}" x2="${VPX}" y2="${bot}"/>
+            <ellipse cx="${VPX}" cy="156" rx="46" ry="11"/>
+        </g>
+        <circle cx="${VPX}" cy="156" r="1.6" fill="#ffffff" opacity=".7"/>
+        ${tower(50, false)}${tower(350, true)}
         ${fireworks}
-        ${design.premium ? `<rect x="1" y="1" width="398" height="198" fill="none" stroke="${design.accent}" stroke-width="2.5" opacity=".55"/>` : ''}
+        <rect x="0" y="0" width="400" height="200" fill="url(#${u}vig)"/>
+        ${design.premium ? `<rect x="1.5" y="1.5" width="397" height="197" fill="none" stroke="${design.accent}" stroke-width="2" opacity=".45"/>` : ''}
     </svg>`;
 }
 
@@ -8633,7 +8797,7 @@ const CAMPUS_FACILITIES = [
     { id: 'boutique', label: 'Boutique du Club', icon: 'coin', color: '#fbbf24',
       desc: "Maillots et produits dérivés — un revenu fixe supplémentaire à chaque match.",
       costs: [250000, 550000, 1000000, 1700000, 2800000], revenuePerLevel: 8000 },
-    { id: 'vip', label: 'Espace VIP', icon: 'crown', color: '#c4b5fd',
+    { id: 'vip', label: 'Espace VIP', icon: 'crown', color: '#7dd3fc',
       desc: "Loges premium pour sponsors et invités — revenu de prestige à chaque match.",
       costs: [400000, 900000, 1700000, 2900000, 4500000], revenuePerLevel: 12000 },
     { id: 'ambiance', label: 'Chaudron & Ambiance', icon: 'fire', color: '#ef4444',
@@ -8665,7 +8829,7 @@ const GOAL_CELEBRATIONS = [
     { id: 'fireworks',   label: 'Feu d\'artifice',  tier: 'gems',    cost: 120,
       ic: 'fire',     color: '#facc15', tpl: p => `${p} embrase le stade !` },
     { id: 'legend',      label: 'Statut de légende',tier: 'gems',   cost: 200,
-      ic: 'medal',    color: '#c4b5fd', tpl: p => `${p} entre dans la légende !` },
+      ic: 'medal',    color: '#7dd3fc', tpl: p => `${p} entre dans la légende !` },
     { id: 'continental', label: 'Nuit continentale',tier: 'gems',   cost: 260,
       ic: 'trophy',   color: '#38bdf8', tpl: p => `${p} illumine la soirée continentale !` }
 ];
@@ -8681,7 +8845,7 @@ const PROFILE_BADGES = [
     { id: 'tacticien',   label: 'Tacticien',         tier: 'credits', cost: 300, ic: 'target',    color: '#38bdf8' },
     { id: 'batisseur',   label: 'Bâtisseur',         tier: 'credits', cost: 600, ic: 'academy',   color: '#22c55e' },
     { id: 'gagneur',     label: 'Gagneur',           tier: 'credits', cost: 950, ic: 'trophy',    color: '#f59e0b' },
-    { id: 'legende',     label: 'Légende',           tier: 'gems',    cost: 150, ic: 'medal',     color: '#c4b5fd' },
+    { id: 'legende',     label: 'Légende',           tier: 'gems',    cost: 150, ic: 'medal',     color: '#7dd3fc' },
     { id: 'icone',       label: 'Icône continentale',tier: 'gems',    cost: 240, ic: 'captain',   color: '#facc15' }
 ];
 
@@ -10214,7 +10378,7 @@ if (badge) {
     // Le tap simple reste actif : on peut échanger au doigt ou au glissé.
     // ═══════════════════════════════════════════════════════════════════
     initSquadDrag() {
-        const zones = ['tactics-titulaires', 'tactics-remplacants', 'tactics-reservistes']
+        const zones = ['tactics-titulaires', 'tactics-remplacants', 'tactics-reservistes', 'tactics-pitch-layer', 'sm-bench-strip']
             .map(id => document.getElementById(id)).filter(Boolean);
         if (!zones.length) return;
 
@@ -10308,6 +10472,7 @@ if (badge) {
         if(!this.swapSelectedId) {
             this.swapSelectedId = playerId;
             this.renderTacticsLists();
+            try { this.renderTacticsPitch(); } catch (e) {}   // le joueur touché s'allume aussi sur le terrain
             // Banc et réservistes sont désormais des grilles toujours visibles :
             // plus rien à déplier, la cible est déjà à l'écran.
             SFX.select();
@@ -10516,6 +10681,8 @@ if (badge) {
         if (!slots) return;
         const i = slots.indexOf(pOut);
         if (i > -1) slots[i] = pIn;
+        // 3D : le remplaçant se lève du banc et entre, le remplacé va s'asseoir
+        if (i > -1) try { window.Match3D && Match3D.substitute && Match3D.substitute(isHome ? 'H' : 'A', i); } catch (e) {}
     }
     // Expulsion (ou sortie sans remplaçant) : la silhouette quitte la pelouse.
     simSendOff(isHome, p) {
@@ -11171,7 +11338,7 @@ if (badge) {
     padding:2px 5px;border-radius:4px;background:rgba(255,255,255,.07);color:#94a3b8}
 .comp-cup{background:rgba(56,189,248,.16);color:#7dd3fc}
 .comp-caf{background:rgba(249,115,22,.16);color:#fb923c}
-.comp-conf{background:rgba(167,139,250,.16);color:#c4b5fd}
+.comp-conf{background:rgba(56,189,248,.16);color:#7dd3fc}
 .comp-super{background:rgba(250,204,21,.16);color:#fde047}
 .cal-opp{flex:1;min-width:0;color:var(--text,#e2e8f0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cal-score{flex:none;font-weight:800;color:var(--text,#e2e8f0);min-width:44px;text-align:end}
@@ -15194,6 +15361,8 @@ if (badge) {
         }
         const moi = this.userClubName;
         const md = this.matchday || 0;
+        // Seul le tout prochain match est mis en avant (comme dans les jeux de gestion).
+        const prochain = list.filter(f => !f.played && (f.matchday || 0) >= md).sort((a, b) => a.matchday - b.matchday)[0];
 
         // 40 a 60 rencontres d'affilee cassaient la mise en page et noyaient
         // les matchs de coupe au milieu du championnat. On affiche la saison
@@ -15216,17 +15385,26 @@ if (badge) {
                 score = mien + ' - ' + sien;
                 ton = mien > sien ? 'is-win' : mien < sien ? 'is-loss' : 'is-draw';
             }
-            const suivant = !joue && (f.matchday || 0) >= md;
+            const suivant = f === prochain;
 
             // Vraie date du match (ex : "sam. 14 sept.")
             const mdLabel = this.formatMatchdayDate(f.matchday);
+            // Difficulte 1 a 5 : ecart de force, un peu plus dur a l'exterieur.
+            const moiT = dom ? f.home : f.away, advT = dom ? f.away : f.home;
+            const ecart = ((advT && advT.force) || 0) - ((moiT && moiT.force) || 0) + (dom ? 0 : 2);
+            const diff = Math.max(1, Math.min(5, Math.round(3 + ecart / 4)));
+            const pastille = joue
+                ? `<b class="cal-res ${ton}">${score}</b>`
+                : `<b class="cal-diff d${diff}">${diff}</b>`;
 
             return `
                 <div class="cal-row ${ton} ${suivant ? 'is-next' : ''}">
                     <span class="cal-md">${mdLabel}</span>
+                    <span class="cal-crest">${clubCrestSVG(adv)}</span>
+                    <span class="cal-opp">${adv}</span>
+                    <span class="cal-ha">${dom ? t('D') : t('E')}</span>
+                    ${pastille}
                     <i class="cal-comp comp-${c.id}">${t(c.court)}</i>
-                    <span class="cal-opp">${dom ? '' : '@ '}${adv}</span>
-                    <span class="cal-score">${joue ? score : (dom ? t('DOM') : t('EXT'))}</span>
                 </div>`;
         };
         // Trier les blocs par date du prochain match non-joué (ou premier match si tous joués)
@@ -15692,7 +15870,7 @@ if (badge) {
                 const eCol = en > 80 ? '#10b981' : en > 60 ? '#f59e0b' : '#ef4444';
                 const bad = player.injuryDays > 0 || player.suspensionDays > 0;
                 layer.innerHTML += `
-                <div class="sm-tok${bad ? ' is-bad' : ''}" style="left:${pos[0] * 2}%;top:${pos[1]}%">
+                <div class="sm-tok${bad ? ' is-bad' : ''}${this.swapSelectedId === player.id ? ' is-sel' : ''}" data-pid="${player.id}" onclick="app.selectForSwap('${player.id}')" style="left:${pos[0] * 2}%;top:${pos[1]}%">
                     <span class="sm-tok-face">${playerFaceSVG(player)}</span>
                     <span class="sm-tok-ovr">${player.ovr || '—'}</span>
                     <span class="sm-tok-pos">${pRole}</span>
@@ -15771,6 +15949,38 @@ if (badge) {
             <defs>${head('tm-f', 'rgba(255,255,255,.6)')}${head('tm-b', 'rgba(255,255,255,.38)')}</defs>${out}</svg>`;
     }
 
+    renderBenchStrip() {
+        const pitch = document.getElementById('tactics-pitch-layer');
+        const box = pitch && pitch.parentElement;
+        if (!box) return;
+        let strip = document.getElementById('sm-bench-strip');
+        if (!strip) {
+            strip = document.createElement('div');
+            strip.id = 'sm-bench-strip';
+            box.insertAdjacentElement('afterend', strip);
+        }
+        const sel = this.swapSelectedId;
+        const selP = sel && this.userSquad.find(p => p.id === sel);
+        const bench = this.userSquad.slice(11, 18);
+        const eCol = e => e > 80 ? '#10b981' : e > 60 ? '#f59e0b' : '#ef4444';
+        const chip = p => {
+            const en = Math.round(p.energy ?? 100), bad = p.injuryDays > 0 || p.suspensionDays > 0;
+            return `<button type="button" class="smb-p${sel === p.id ? ' is-sel' : ''}${bad ? ' is-bad' : ''}" data-pid="${p.id}" onclick="app.selectForSwap('${p.id}')">
+                    <span class="smb-face">${playerFaceSVG(p)}</span>
+                    <span class="smb-txt"><b>${p.name.split(' ').pop()}</b><span><i class="${posColor(p.position, 'text')}">${playerRole(p).short || p.position}</i> <em style="color:${eCol(en)}">${en}%</em></span></span>
+                    <span class="smb-ovr">${p.ovr}</span>
+                </button>`;
+        };
+        strip.innerHTML = `
+            <div class="smb-head">
+                <b>${t('Banc')}</b>
+                <span>${selP ? `${t('Échanger')} <em>${selP.name.split(' ').pop()}</em> ${t('avec…')}` : t('Touchez un joueur, puis un autre pour les échanger')}</span>
+                ${selP ? `<button type="button" onclick="app.swapSelectedId=null;app.renderTacticsView()">${t('Annuler')}</button>` : ''}
+            </div>
+            <div class="smb-row">${bench.map(chip).join('') || `<span class="smb-empty">${t('Banc vide')}</span>`}</div>`;
+        this.initSquadDrag();
+    }
+
     renderTacticsLists() {
         this.renderTeamInstructions();
         this.renderOppInstructions();
@@ -15847,6 +16057,10 @@ if (badge) {
 
         // 2. Remplaçants (11 à 17) - Limité à 7 joueurs
         listRem.innerHTML = this.userSquad.slice(11, 18).map(renderPlayerRow).join('');
+
+        // Paysage : le banc s'affiche en bande juste SOUS le terrain (comme dans les jeux de gestion) —
+        // toucher un joueur du terrain puis un remplaçant suffit à les échanger.
+        this.renderBenchStrip();
 
         // 3. Réservistes (18 et plus) - Reste de l'effectif
         if (listRes) {
@@ -16134,6 +16348,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                         this.marketPool.splice(targetIndex, 1);
                         transferCount++;
                         
+                        this.logTransfer(newPlayer, originClubName || null, team.name, fee);
                         // On garde en mémoire le plus gros transfert pour l'annoncer au joueur
                         if (!notableTransfer || newPlayer.ovr > notableTransfer.ovr) {
                             notableTransfer = { player: newPlayer, club: team.name };
@@ -16260,6 +16475,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
             this.reorderAISquad(buyer);
             this.reorderAISquad(seller);
 
+            this.logTransfer(player, seller.name, buyer.name, asking);
             done++;
             if (!notable || player.ovr > notable.player.ovr) notable = { player, buyer, seller, asking, distressed };
         }
@@ -17415,21 +17631,13 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
         wrap.className = 'fixed inset-0 z-[150] flex items-end sm:items-center justify-center';
         wrap.innerHTML = `
             <div class="absolute inset-0 bg-black/75"></div>
-            <div class="relative z-10 w-full sm:max-w-sm sm:rounded-2xl overflow-hidden shadow-2xl border-t sm:border border-white/10 bg-ui-900">
+            <div class="relative z-10 w-full sm:max-w-2xl sm:rounded-2xl overflow-hidden shadow-2xl bg-ui-900">
                 <div class="p-4 pb-2 text-center">
                     <p class="text-[10px] uppercase font-bold tracking-widest text-brand-400">${pack.label}</p>
                     <p class="text-[10px] text-slate-500 mt-0.5">${t('Nouveaux joueurs confirmés')}</p>
                 </div>
-                <div class="max-h-[55vh] overflow-y-auto px-4 flex flex-col gap-2">
-                    ${players.map(p => `
-                        <div class="flex items-center gap-3 p-2 rounded-xl bg-ui-800/60 border border-white/5">
-                            <div class="w-10 h-10 shrink-0">${playerFaceSVG(p, { plain: true })}</div>
-                            <div class="min-w-0 flex-1">
-                                <p class="text-xs font-bold text-white truncate">${p.name}</p>
-                                <p class="text-[10px] text-slate-500">${p.position} &bull; ${p.age} ans &bull; ${t('potentiel')} ${this.potLabel(p)}</p>
-                            </div>
-                            <span class="font-teko text-xl text-brand-400 shrink-0">${p.ovr}</span>
-                        </div>`).join('')}
+                <div class="max-h-[62vh] overflow-y-auto px-4 pcd-grid">
+                    ${players.map(p => playerCardHTML(p, { club: this.userClubName })).join('')}
                 </div>
                 <div class="p-4 pt-3">
                     <button onclick="document.getElementById('pack-reveal-modal').remove()"
@@ -18520,7 +18728,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
 
     setLegacyPane(pane) {
         this._legacyPane = pane;
-        this._setPane('leg-seg', 'leg-pane-', ['career', 'honours', 'squad'], pane);
+        this._setPane('leg-seg', 'leg-pane-', ['career', 'awards', 'honours', 'squad'], pane);
     }
 
     setManagerPane(pane) {
@@ -18567,45 +18775,94 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
             </div>`;
         }).join('');
 
-        // Onze de la semaine
+        // Onze de la journée : sur un vrai mini-terrain, ligne par ligne (gardien à gauche, attaque à droite)
         const aw = this.lastAwards;
-        let elevenHTML = emptyState('vision', t('Le onze sera désigné après la prochaine journée'), 'py-6');
+        let elevenHTML = `<div class="lg-empty">${icon('vision', 'w-7 h-7')}<b>${t('Onze de la journée')}</b><span>${t('Le onze sera désigné après la prochaine journée')}</span></div>`;
         let coachHTML = '';
         if (aw && aw.eleven?.length) {
-            const line = (pos) => aw.eleven.filter(x => x.pos === pos).map(x => `
-                <div onclick="app.openPlayerCard('${x.id}')" class="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:brightness-125 transition-all ${x.isUser ? 'bg-brand-500/10 ring-1 ring-brand-500/40' : 'bg-ui-900'}">
-                    <span class="w-5 h-5 shrink-0">${clubCrestSVG(x.club)}</span>
-                    <span class="min-w-0 flex-1">
-                        <span class="block text-[10px] font-bold ${posColor(x.pos,'text')} leading-none">${x.pos}</span>
-                        <span class="block text-xs text-white truncate">${x.name.split(' ').pop()}</span>
-                    </span>
-                    <span class="font-teko text-base ${x.note >= 8 ? 'text-emerald-400' : 'text-white'} shrink-0">${x.note}</span>
-                </div>`).join('');
+            const tok = x => `
+                <button type="button" class="aw-tok${x.isUser ? ' is-mine' : ''}" onclick="app.openPlayerCard('${x.id}')">
+                    <span class="aw-tok-crest">${clubCrestSVG(x.club)}</span>
+                    <span class="aw-tok-name">${x.name.split(' ').pop()}</span>
+                    <span class="aw-tok-note${x.note >= 8 ? ' is-top' : ''}">${x.note}</span>
+                </button>`;
             elevenHTML = `
-                <div class="flex flex-col gap-1.5">
-                    ${['ATT','MIL','DEF','GB'].map(p => `<div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">${line(p)}</div>`).join('')}
+                <div class="aw-pitch">
+                    <div class="aw-pitch-lines"><i></i><i></i><i></i></div>
+                    ${['GB', 'DEF', 'MIL', 'ATT'].map(p => `<div class="aw-line">${aw.eleven.filter(x => x.pos === p).map(tok).join('')}</div>`).join('')}
                 </div>`;
-            if (aw.coachName) {
-                coachHTML = `
-                <div class="panel-glass rounded-2xl p-4 border ${aw.coachIsUser ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-white/5'} mb-4 flex items-center gap-3">
-                    <div class="w-9 h-9 shrink-0 flex items-center justify-center ${aw.coachIsUser ? 'text-yellow-400' : 'text-slate-500'}">${icon('captain','w-6 h-6')}</div>
-                    <div class="min-w-0 flex-1">
-                        <p class="text-[10px] uppercase font-bold tracking-widest text-slate-500">${t('Coach de la journée')}</p>
-                        <p class="text-sm font-bold text-white truncate">${aw.coachName}</p>
-                    </div>
-                    <div class="w-7 h-7 shrink-0">${clubCrestSVG(aw.coachTeam)}</div>
+            if (aw.coachName) coachHTML = `
+                <div class="aw-coach${aw.coachIsUser ? ' is-mine' : ''}">
+                    <span class="aw-coach-ic">${icon('captain', 'w-5 h-5')}</span>
+                    <span class="aw-coach-txt"><small>${t('Coach de la journée')}</small><b>${aw.coachName}</b></span>
+                    <span class="aw-coach-crest">${clubCrestSVG(aw.coachTeam)}</span>
                 </div>`;
-            }
         }
 
+        // Rendez-vous quotidien : la série des 7 jours en pastilles
+        const st = this.dailyState();
+        const rw = this.dailyReward(st.streak);
+        const pos7 = ((st.streak - 1) % 7 + 7) % 7;
+        const daily = `
+            <div class="aw-daily${st.available ? ' is-ready' : ''}">
+                <div class="aw-daily-top">
+                    <span class="aw-daily-ic">${icon('calm', 'w-6 h-6')}</span>
+                    <span class="aw-daily-txt">
+                        <small>${t('Rendez-vous quotidien')}</small>
+                        <b>${st.available ? `${t('Jour')} ${st.streak} — ${rw.label}` : `${t('Série de')} ${st.streak} ${t('jour(s)')}`}</b>
+                        <span>${st.available ? `+${rw.credits} ${t('crédits à récupérer')}` : t('Revenez demain pour poursuivre la série')}</span>
+                    </span>
+                    ${st.available
+                        ? `<button onclick="app.claimDaily()" class="btn-primary aw-cta">${t('Récupérer')}</button>`
+                        : (this.adAvailable('dailyBoost')
+                            ? `<button onclick="app.watchAdForDailyBoost()" class="aw-cta is-ghost">&#9654; ${t('Doubler')}</button>`
+                            : `<span class="aw-done">${t('Pris')}</span>`)}
+                </div>
+                <div class="aw-streak">${Array.from({ length: 7 }, (_, i) => `<i class="${i < pos7 || (!st.available && i === pos7) ? 'is-done' : i === pos7 ? 'is-now' : ''}">${i + 1}</i>`).join('')}</div>
+            </div>`;
+
+        // Objectifs de la semaine : une ligne chacun, barre fine, récompense à droite
+        const goalRows = w.goals.map(g => {
+            const def = WEEKLY_GOALS.find(x => x.id === g.id);
+            if (!def) return '';
+            const pct = Math.min(100, Math.round((g.progress / def.target) * 100));
+            return `
+            <div class="aw-goal${g.claimed ? ' is-done' : ''}">
+                <span class="aw-goal-ic">${icon(g.claimed ? 'trophy' : 'target', 'w-4 h-4')}</span>
+                <span class="aw-goal-main">
+                    <b>${t(def.label)}</b>
+                    <i><em style="width:${pct}%"></em></i>
+                </span>
+                <span class="aw-goal-val"><b>${g.progress}/${def.target}</b><small>+${def.credits} ${t('cr.')}</small></span>
+            </div>`;
+        }).join('');
+
+        // Pass de saison : une piste horizontale, palier par palier (gratuit en haut, prestige en bas)
+        const pts = this.passPoints();
+        const lbl = (r) => r.credits ? `${r.credits} cr.` : r.suit ? t('Tenue') : r.kit ? t('Maillot') : '—';
+        const cell = (i, track, r, claimed, locked, reached) => {
+            if (claimed) return `<span class="aw-cell is-claimed">${icon('check', 'w-3.5 h-3.5')} ${t('Pris')}</span>`;
+            if (!reached || locked) return `<span class="aw-cell${locked ? ' is-locked' : ''}">${lbl(r)}</span>`;
+            return `<button onclick="app.claimPassTier(${i}, '${track}')" class="aw-cell is-claim">${lbl(r)}</button>`;
+        };
+        const passTrack = SEASON_PASS.map((tier, i) => {
+            const stt = this.passTierStatus(i);
+            return `
+            <div class="aw-tier${stt.reached ? ' is-reached' : ''}">
+                <span class="aw-tier-at">${tier.at}</span>
+                ${cell(i, 'free', tier.free, stt.freeClaimed, false, stt.reached)}
+                ${cell(i, 'prestige', tier.prestige, stt.prestigeClaimed, !this.hasSeasonPass(), stt.reached)}
+            </div>`;
+        }).join('');
+        const maxAt = SEASON_PASS.length ? SEASON_PASS[SEASON_PASS.length - 1].at : 1;
+
         el.innerHTML = `
-            <div class="flex justify-between items-center gap-2 mb-4">
-                <h3 class="font-teko text-3xl text-white uppercase tracking-wide">${t('Distinctions')}</h3>
-                <span class="badge-status badge-brand shrink-0">${this.credits || 0} crédits</span>
+            <div class="aw-head">
+                <h3 class="font-teko">${t('Distinctions')}</h3>
+                <span class="aw-credits">${icon('coin', 'w-4 h-4')} ${this.credits || 0} ${t('crédits')}</span>
             </div>
 
-
-            <div class="seg mb-4" id="aw-seg">
+            <div class="seg mb-3" id="aw-seg">
                 <button class="seg-btn is-active" data-pane="now" onclick="app.setAwardsPane('now')">
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1H16Z"/></svg>
                     <span>${t('En cours')}</span>
@@ -18617,87 +18874,40 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
             </div>
 
             <div class="tac-pane" id="aw-pane-now">
-            ${(() => {
-                const st = this.dailyState();
-                const rw = this.dailyReward(st.streak);
-                return `
-                <div class="panel-glass rounded-2xl p-4 border ${st.available ? 'border-brand-500/40 bg-brand-500/5' : 'border-white/5'} mb-4 flex items-center gap-3">
-                    <div class="w-10 h-10 shrink-0 flex items-center justify-center rounded-xl ${st.available ? 'text-brand-400 bg-brand-500/10' : 'text-slate-600 bg-ui-900'}">
-                        ${icon('calm', 'w-6 h-6')}
+                <div class="lg-grid">
+                    <div class="lg-col">
+                        ${daily}
+                        <section class="lg-card">
+                            <div class="lg-card-head"><h4>${t('Objectifs de la semaine')}</h4><span class="lg-meta" title="${left} ${t('journée(s) restante(s)')}">${icon('clock', 'w-3 h-3')} ${left} j.</span></div>
+                            <div class="aw-goals">${goalRows}</div>
+                        </section>
                     </div>
-                    <div class="min-w-0 flex-1">
-                        <p class="text-[10px] uppercase font-bold tracking-widest text-slate-500">${t('Rendez-vous quotidien')}</p>
-                        <p class="text-sm font-bold text-white truncate">
-                            ${st.available ? `Jour ${st.streak} — ${rw.label}` : `${t('Série de')} ${st.streak} ${t('jour(s)')}`}
-                        </p>
-                        <p class="text-[10px] text-slate-500">${st.available ? `+${rw.credits} ${t('crédits à récupérer')}` : t('Revenez demain pour poursuivre la série')}</p>
+                    <div class="lg-col">
+                        <section class="lg-card">
+                            <div class="lg-card-head"><h4>${t('Onze de la journée')}</h4>${aw ? `<span class="lg-meta">J${aw.matchday}</span>` : ''}</div>
+                            ${elevenHTML}
+                        </section>
+                        ${coachHTML}
                     </div>
-                    ${st.available
-                        ? `<button onclick="app.claimDaily()" class="btn-primary px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white shrink-0">${t('Récupérer')}</button>`
-                        : (this.adAvailable('dailyBoost')
-                            ? `<button onclick="app.watchAdForDailyBoost()" class="px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500 hover:text-white transition-colors shrink-0">&#9654; ${t('Doubler')}</button>`
-                            : `<span class="badge-status badge-success shrink-0">${t('Pris')}</span>`)}
-                </div>`;
-            })()}
-
-            <div class="panel-glass rounded-2xl p-4 border border-white/5 mb-4">
-                <div class="flex items-center justify-between mb-3">
-                    <h4 class="text-[10px] font-bold uppercase tracking-widest text-slate-500">${t('Objectifs de la semaine')}</h4>
-                    <span class="text-[10px] text-slate-500">${left} ${t('journée(s) restante(s)')}</span>
                 </div>
-                <div class="flex flex-col gap-2">${goals}</div>
-            </div>
-
-            ${coachHTML}
-
-            <div class="panel-glass rounded-2xl p-4 border border-white/5 mb-4">
-                <h4 class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">${t('Onze de la journée')}${aw ? ` &bull; J${aw.matchday}` : ''}</h4>
-                ${elevenHTML}
-            </div>
-
             </div>
 
             <div class="tac-pane hidden" id="aw-pane-season">
-            <!-- ── PASS DE SAISON ────────────────────────────────────────
-                 Deux pistes alimentées par les points de carrière déjà gagnés
-                 en jouant. La piste Prestige n'apporte que crédits et
-                 cosmétiques : aucun avantage sportif. Le bouton d'achat de la
-                 piste Prestige reste ici (achat lié à la progression), le
-                 reste des leviers de monétisation vit dans l'onglet Boutique. -->
-            <div class="panel-glass rounded-2xl p-4 border border-white/5 mb-4">
-                <div class="sec-head">
-                    <span>${t('Pass de saison')}</span>
-                    <span class="text-[10px] text-slate-500">${this.passPoints()} ${t('pts de carrière')}</span>
-                </div>
-                ${!this.hasSeasonPass() ? `
-                    <button onclick="app.buyIAP('season_pass')" ${this._buyInFlight ? 'disabled' : ''} class="w-full mb-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500 hover:text-white transition-colors disabled:opacity-50">
-                        ${t('Ouvrir la piste Prestige')} &bull; ${(IAP_CATALOG.find(i => i.sku === 'season_pass') || {}).price || ''}
-                    </button>` : `
-                    <div class="mb-3 badge-status badge-brand justify-center">${t('Piste Prestige active')}</div>`}
-                <div class="flex flex-col gap-2">
-                    ${SEASON_PASS.map((tier, i) => {
-                        const stt = this.passTierStatus(i);
-                        const lbl = (r) => r.credits ? `${r.credits} crédits` : r.suit ? t('Tenue exclusive') : r.kit ? t('Maillot exclusif') : '—';
-                        const cell = (track, r, claimed, locked) => {
-                            if (claimed) return `<span class="badge-status badge-success justify-center w-full">Pris</span>`;
-                            if (!stt.reached) return `<span class="badge-status badge-neutral justify-center w-full">${lbl(r)}</span>`;
-                            if (locked) return `<span class="badge-status badge-neutral justify-center w-full opacity-60">${lbl(r)}</span>`;
-                            return `<button onclick="app.claimPassTier(${i}, '${track}')" class="w-full py-1 rounded-lg text-[10px] font-bold uppercase bg-brand-500/20 text-brand-300 hover:bg-brand-500 hover:text-white transition-colors">${lbl(r)}</button>`;
-                        };
-                        return `
-                        <div class="flex items-center gap-2 p-2 rounded-xl ${stt.reached ? 'bg-ui-900' : 'bg-ui-900/50'} border border-white/5">
-                            <span class="w-10 shrink-0 text-center font-teko text-lg ${stt.reached ? 'text-white' : 'text-slate-600'}">${tier.at}</span>
-                            <div class="flex-1 min-w-0">${cell('free', tier.free, stt.freeClaimed, false)}</div>
-                            <div class="flex-1 min-w-0">${cell('prestige', tier.prestige, stt.prestigeClaimed, !this.hasSeasonPass())}</div>
-                        </div>`;
-                    }).join('')}
-                </div>
-                <div class="flex gap-2 mt-2 text-[10px] uppercase font-bold tracking-widest text-slate-600">
-                    <span class="w-10 shrink-0"></span>
-                    <span class="flex-1 text-center">${t('Gratuit')}</span>
-                    <span class="flex-1 text-center">${t('Prestige')}</span>
-                </div>
-            </div>
+                <section class="lg-card">
+                    <div class="lg-card-head">
+                        <h4>${t('Pass de saison')}</h4>
+                        <span class="lg-meta">${pts} ${t('pts de carrière')}</span>
+                    </div>
+                    <div class="aw-pass-bar"><i style="width:${Math.min(100, Math.round(pts / Math.max(1, maxAt) * 100))}%"></i></div>
+                    <div class="aw-pass">
+                        <div class="aw-pass-legend"><span></span><span>${t('Gratuit')}</span><span>${t('Prestige')}</span></div>
+                        <div class="aw-pass-track">${passTrack}</div>
+                    </div>
+                    ${!this.hasSeasonPass() ? `
+                        <button onclick="app.buyIAP('season_pass')" ${this._buyInFlight ? 'disabled' : ''} class="aw-prestige">
+                            ${icon('crown', 'w-4 h-4')} ${t('Ouvrir la piste Prestige')} &bull; ${(IAP_CATALOG.find(i => i.sku === 'season_pass') || {}).price || ''}
+                        </button>` : `<div class="aw-prestige is-on">${icon('crown', 'w-4 h-4')} ${t('Piste Prestige active')}</div>`}
+                </section>
             </div>`;
         this.setAwardsPane(this._awardsPane || 'now');
     }
@@ -18721,7 +18931,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                 </div>
                 <div id="shop-currency-badges" class="flex items-center gap-1.5 shrink-0">
                     <span class="badge-status badge-brand">${this.credits || 0} crédits</span>
-                    <span class="badge-status" style="color:#a78bfa;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)">${this.gems || 0} gemmes</span>
+                    <span class="badge-status" style="color:#38bdf8;background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.3)">${this.gems || 0} gemmes</span>
                 </div>
             </div>
 
@@ -18849,7 +19059,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                  de joueur, même le "jackpot". -->
             <div id="shop-wheel-section" class="panel-glass rounded-2xl p-4 border border-purple-500/20 bg-purple-500/5 mb-4">
                 <div class="flex items-center gap-3 mb-2">
-                    <span class="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center" style="color:#c4b5fd;background:rgba(167,139,250,.14)">${icon('wheel', 'w-5 h-5')}</span>
+                    <span class="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center" style="color:#7dd3fc;background:rgba(56,189,248,.14)">${icon('wheel', 'w-5 h-5')}</span>
                     <h4 class="text-[10px] font-bold uppercase tracking-widest text-slate-500">${t('Roue de la Fortune')}</h4>
                 </div>
                 <!-- CONFORMITÉ GOOGLE PLAY : probabilités affichées clairement
@@ -18865,7 +19075,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                 <button onclick="app.spinWheel()" ${(this.wheelFreeAvailable() || (this.gems || 0) >= WHEEL_SPIN_COST) ? '' : 'disabled'}
                     class="w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors ${(this.wheelFreeAvailable() || (this.gems || 0) >= WHEEL_SPIN_COST)
                         ? 'text-white' : 'bg-ui-900 text-slate-600 cursor-not-allowed'}"
-                    ${(this.wheelFreeAvailable() || (this.gems || 0) >= WHEEL_SPIN_COST) ? `style="background:linear-gradient(90deg,#a78bfa,#7c3aed)"` : ''}>
+                    ${(this.wheelFreeAvailable() || (this.gems || 0) >= WHEEL_SPIN_COST) ? `style="background:linear-gradient(90deg,#38bdf8,#0284c7)"` : ''}>
                     ${this.wheelFreeAvailable() ? t('Tour gratuit du jour') : `${t('Tourner')} &bull; ${WHEEL_SPIN_COST} ${t('gemmes')}`}
                 </button>
             </div>
@@ -18885,10 +19095,10 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                         const gemSize = ['w-6 h-6', 'w-8 h-8', 'w-10 h-10'][i] || 'w-8 h-8';
                         return `
                         <button onclick="app.buyIAP('${g.sku}')" ${this._buyInFlight ? 'disabled' : ''} class="relative text-center p-3 rounded-xl border border-white/5 bg-ui-800/60 hover:border-purple-400/40 hover:bg-white/5 transition-all disabled:opacity-50 flex flex-col items-center gap-1.5">
-                            ${g.tag ? `<span class="absolute top-2 end-2 badge-status" style="color:#a78bfa;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)">${t(g.tag)}</span>` : ''}
-                            <span class="${gemSize} shrink-0" style="color:#a78bfa;filter:drop-shadow(0 2px 6px rgba(167,139,250,.4))">${icon('gem', 'w-full h-full')}</span>
+                            ${g.tag ? `<span class="absolute top-2 end-2 badge-status" style="color:#38bdf8;background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.3)">${t(g.tag)}</span>` : ''}
+                            <span class="${gemSize} shrink-0" style="color:#38bdf8;filter:drop-shadow(0 2px 6px rgba(56,189,248,.4))">${icon('gem', 'w-full h-full')}</span>
                             <p class="text-xs font-bold text-white">${g.gems} ${t('gemmes')}</p>
-                            <p class="text-[10px] font-bold uppercase tracking-widest" style="color:#a78bfa">${g.price}</p>
+                            <p class="text-[10px] font-bold uppercase tracking-widest" style="color:#38bdf8">${g.price}</p>
                         </button>`;
                     }).join('')}
                 </div>
@@ -18969,10 +19179,10 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                                 ${worn ? `<span class="text-brand-400">Actif</span>`
                                   : owned ? `<span class="text-slate-300">${t('Utiliser')}</span>`
                                   : d.tier === 'gems'
-                                    ? `<span class="${afford ? '' : 'text-slate-500'}" style="color:${afford ? '#c4b5fd' : ''}">${d.cost} gemmes</span>`
+                                    ? `<span class="${afford ? '' : 'text-slate-500'}" style="color:${afford ? '#7dd3fc' : ''}">${d.cost} gemmes</span>`
                                     : `<span class="${afford ? 'text-white' : 'text-slate-500'}">${d.cost} cr.</span>`}
                             </div>
-                            ${d.tier === 'gems' && !owned ? `<span class="absolute top-1 end-1 w-4 h-4 rounded-full flex items-center justify-center" style="color:#c4b5fd;background:rgba(0,0,0,.55)">${icon('gem', 'w-2.5 h-2.5')}</span>` : ''}
+                            ${d.tier === 'gems' && !owned ? `<span class="absolute top-1 end-1 w-4 h-4 rounded-full flex items-center justify-center" style="color:#7dd3fc;background:rgba(0,0,0,.55)">${icon('gem', 'w-2.5 h-2.5')}</span>` : ''}
                         </button>`;
                     }).join('')}
                 </div>
@@ -19045,14 +19255,14 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                                 : owned ? 'border-white/10 bg-ui-800/40 hover:border-white/30'
                                 : afford ? 'border-white/10 bg-ui-800/40 hover:border-brand-500/50'
                                 : 'border-white/5 bg-ui-900 opacity-45 cursor-not-allowed'}">
-                            ${d.tier === 'gems' && !owned ? `<span class="absolute top-1.5 end-1.5 w-4 h-4 rounded-full flex items-center justify-center" style="color:#c4b5fd;background:rgba(0,0,0,.4)">${icon('gem', 'w-2.5 h-2.5')}</span>` : ''}
+                            ${d.tier === 'gems' && !owned ? `<span class="absolute top-1.5 end-1.5 w-4 h-4 rounded-full flex items-center justify-center" style="color:#7dd3fc;background:rgba(0,0,0,.4)">${icon('gem', 'w-2.5 h-2.5')}</span>` : ''}
                             <span class="w-9 h-9 rounded-lg flex items-center justify-center ${owned ? '' : 'opacity-60'}" style="color:${d.color};background:${d.color}22">${d.ic ? icon(d.ic, 'w-5 h-5') : ''}</span>
                             <p class="text-[10px] font-bold text-center text-white leading-tight">${t(d.label)}</p>
                             <p class="text-[9px] font-bold uppercase tracking-widest text-center">
                                 ${worn ? `<span class="text-brand-400">${t('Active')}</span>`
                                   : owned ? `<span class="text-slate-400">${t('Utiliser')}</span>`
                                   : d.tier === 'gems'
-                                    ? `<span style="color:${afford ? '#c4b5fd' : '#64748b'}">${d.cost} gemmes</span>`
+                                    ? `<span style="color:${afford ? '#7dd3fc' : '#64748b'}">${d.cost} gemmes</span>`
                                     : `<span class="${afford ? 'text-white' : 'text-slate-500'}">${d.cost} cr.</span>`}
                             </p>
                         </button>`;
@@ -19077,14 +19287,14 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                                 : owned ? 'border-white/10 bg-ui-800/40 hover:border-white/30'
                                 : afford ? 'border-white/10 bg-ui-800/40 hover:border-brand-500/50'
                                 : 'border-white/5 bg-ui-900 opacity-45 cursor-not-allowed'}">
-                            ${d.tier === 'gems' && !owned ? `<span class="absolute top-1.5 end-1.5 w-4 h-4 rounded-full flex items-center justify-center" style="color:#c4b5fd;background:rgba(0,0,0,.4)">${icon('gem', 'w-2.5 h-2.5')}</span>` : ''}
+                            ${d.tier === 'gems' && !owned ? `<span class="absolute top-1.5 end-1.5 w-4 h-4 rounded-full flex items-center justify-center" style="color:#7dd3fc;background:rgba(0,0,0,.4)">${icon('gem', 'w-2.5 h-2.5')}</span>` : ''}
                             <span class="w-9 h-9 rounded-full flex items-center justify-center ${owned ? '' : 'opacity-60'}" style="color:${d.color};background:${d.color}22;border:1.5px solid ${d.color}55">${d.ic ? icon(d.ic, 'w-5 h-5') : ''}</span>
                             <p class="text-[10px] font-bold text-center text-white leading-tight">${t(d.label)}</p>
                             <p class="text-[9px] font-bold uppercase tracking-widest text-center">
                                 ${worn ? `<span class="text-brand-400">Actif</span>`
                                   : owned ? `<span class="text-slate-400">Porter</span>`
                                   : d.tier === 'gems'
-                                    ? `<span style="color:${afford ? '#c4b5fd' : '#64748b'}">${d.cost} gemmes</span>`
+                                    ? `<span style="color:${afford ? '#7dd3fc' : '#64748b'}">${d.cost} gemmes</span>`
                                     : `<span class="${afford ? 'text-white' : 'text-slate-500'}">${d.cost} cr.</span>`}
                             </p>
                         </button>`;
@@ -19222,17 +19432,6 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
         el.innerHTML = `
             <div class="flex justify-between items-center gap-2 mb-4">
                 <h3 class="font-teko text-3xl text-white uppercase tracking-wide">${t('Campus')}</h3>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <span class="badge-status badge-brand">${formatMoney(this.budget || 0)}</span>
-                    <span class="badge-status" style="color:#a78bfa;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)">${this.gems || 0} gemmes</span>
-                </div>
-            </div>
-
-            <!-- Orientation de la prospection : elle decide du profil des
-                 jeunes que l'academie produira dans trois ans. -->
-            <div class="panel-glass rounded-2xl p-4 border border-white/5 mb-4">
-                <div class="sec-head mb-2"><span>${t('Prospection des jeunes')}</span></div>
-                <div id="acad-region-panel"></div>
             </div>
 
             <!-- Aperçu du stade actif + lien vers sa galerie (restée en
@@ -19249,11 +19448,26 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                         <button type="button" onclick="app.mountCampusStadium('night')" data-w="night" class="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-black/55 text-white border border-white/15">${t('Nuit')}</button>
                     </div>
                     <div class="absolute bottom-2 start-2 z-10 px-2.5 py-1 rounded-lg bg-black/55 border border-white/15 text-[10px] font-bold text-white pointer-events-none" id="campus-stadium-cap"></div>
+                    <div class="cmp-pins">
+                        ${CAMPUS_FACILITIES.map((fac, i) => {
+                            const lvl = this.campusLevel(fac.id), max = fac.costs.length;
+                            return `<button type="button" class="cmp-pin p${i}" onclick="document.getElementById('cmp-fac-${fac.id}')?.scrollIntoView({behavior:'smooth',block:'center'})">
+                                <i style="color:${fac.color}">${icon(fac.icon, 'w-4 h-4')}</i><span>${t(fac.label)}</span>
+                                <b style="--p:${Math.round(lvl / max * 100)}">${lvl}</b></button>`;
+                        }).join('')}
+                    </div>
                 </div>
                 <div class="flex items-center justify-between gap-2">
                     <p class="text-[10px] text-slate-500">${t('Design actif :')} <span class="text-white font-bold">${activeDesign.label}</span></p>
                     <button onclick="app.switchView('shop')" class="text-[10px] uppercase font-bold tracking-widest text-brand-400 hover:text-white transition-colors">${t('Changer de design')} &rarr;</button>
                 </div>
+            </div>
+
+            <!-- Orientation de la prospection : elle decide du profil des
+                 jeunes que l'academie produira dans trois ans. -->
+            <div class="panel-glass rounded-2xl p-4 border border-white/5 mb-4">
+                <div class="sec-head mb-2"><span>${t('Prospection des jeunes')}</span></div>
+                <div id="acad-region-panel"></div>
             </div>
 
             <!-- CAMPUS : construction modulaire du stade, façon "Campus" —
@@ -19283,7 +19497,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                         const affordMaintGems = (this.gems || 0) >= maintGemCost;
                         const condColor = condition >= 70 ? '#34d399' : condition >= 35 ? '#f59e0b' : '#ef4444';
                         return `
-                        <div class="p-3 rounded-xl border ${needsMaint && condition < 35 ? 'border-red-500/30' : 'border-white/5'} bg-ui-800/40 flex flex-col gap-2">
+                        <div id="cmp-fac-${fac.id}" class="p-3 rounded-xl ${needsMaint && condition < 35 ? 'cmp-alert' : ''} bg-ui-800/40 flex flex-col gap-2">
                             <div class="flex items-center gap-2.5">
                                 <span class="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center" style="color:${fac.color};background:${fac.color}22">${icon(fac.icon, 'w-5 h-5')}</span>
                                 <div class="min-w-0 flex-1">
@@ -19310,7 +19524,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                             <button onclick="app.upgradeCampusFacilityGems('${fac.id}')" ${affordGems ? '' : 'disabled'}
                                 class="w-full py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${affordGems
                                     ? 'text-white' : 'text-slate-600 bg-ui-900 cursor-not-allowed'}"
-                                ${affordGems ? `style="background:rgba(167,139,250,.18);color:#c4b5fd"` : ''}>
+                                ${affordGems ? `style="background:rgba(56,189,248,.18);color:#7dd3fc"` : ''}>
                                 &#9889; ${gemCost} gemmes
                             </button>` : ''}
                             ${needsMaint ? `
@@ -19323,7 +19537,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                                 <button onclick="app.maintainCampusFacilityGems('${fac.id}')" ${affordMaintGems ? '' : 'disabled'}
                                     class="px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${affordMaintGems
                                         ? 'text-white' : 'text-slate-600 bg-ui-900 cursor-not-allowed'}"
-                                    ${affordMaintGems ? `style="background:rgba(167,139,250,.18);color:#c4b5fd"` : ''}>
+                                    ${affordMaintGems ? `style="background:rgba(56,189,248,.18);color:#7dd3fc"` : ''}>
                                     &#9889; ${maintGemCost}
                                 </button>
                             </div>` : ''}
@@ -20402,7 +20616,42 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                         })()}
                     </div>
                 </div>
+                ${(() => {
+                    let role = ''; try { role = playerRole(p).name || ''; } catch (e) {}
+                    const fin = (() => { try { return this.contractEndingSoon(p); } catch (e) { return false; } })();
+                    const rows = [
+                        [t('Poste'), (p.exactPosition || p.position || '') + (role ? ' · ' + t(role) : '')],
+                        [t('Valeur'), p.price ? `<b class="pc-val">${formatMoney(p.price)}</b>` : '—'],
+                        [t('Âge'), (p.age || '?') + ' ' + t('ans')],
+                        [t('Salaire'), p.wage ? formatMoney(p.wage) + ' / ' + t('mois') : '—'],
+                        [t('Contrat'), fin ? `<b class="pc-warn">${t('Fin de contrat')}</b>` : t('En cours')],
+                        [t('Potentiel'), this.potLabel(p)],
+                        [t('Matchs au club'), p.gamesForClub || 0]
+                    ];
+                    return `<div class="pc-info">${rows.map(r => `<div><span>${r[0]}</span><em>${r[1]}</em></div>`).join('')}</div>`;
+                })()}
                 <div class="overflow-y-auto px-4 py-3 flex-1">
+                    ${(() => {
+                        // Tuiles d'état (moral, forme, disponibilité, confiance de jeu)
+                        const mo = Math.round(p.morale ?? 70), en = Math.round(p.energy ?? 100);
+                        const tone = v => v >= 70 ? 'is-good' : v >= 45 ? 'is-mid' : 'is-low';
+                        const face = v => {
+                            const m = v >= 70 ? 'M8 14.5c1.2 1.6 2.5 2.3 4 2.3s2.8-.7 4-2.3' : v >= 45 ? 'M8.5 15.5h7' : 'M8 16.8c1.2-1.6 2.5-2.3 4-2.3s2.8.7 4 2.3';
+                            return `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/><circle cx="9" cy="10" r="1.3" fill="#0a0e17"/><circle cx="15" cy="10" r="1.3" fill="#0a0e17"/><path d="${m}" stroke="#0a0e17" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
+                        };
+                        const ring = v => `<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="4"/><circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="${(v / 100 * 94.2).toFixed(1)} 94.2" transform="rotate(-90 18 18)"/><text x="18" y="22.5" text-anchor="middle" font-size="11" font-weight="800" fill="#fff">${v}</text></svg>`;
+                        const inj = p.injuryDays > 0, sus = p.suspensionDays > 0;
+                        const dispo = inj ? [t('Blessé'), tf('{n} j.', { n: p.injuryDays }), 'is-low']
+                            : sus ? [t('Suspendu'), tf('{n} match(s)', { n: p.suspensionDays }), 'is-low']
+                            : [t('Disponible'), t('Apte à jouer'), 'is-good'];
+                        const lbl = v => v >= 70 ? t('Bon') : v >= 45 ? t('Moyen') : t('Faible');
+                        return `<div class="pc-status">
+                            <div class="${tone(mo)}"><small>${t('Moral')}</small><i>${face(mo)}</i><b>${lbl(mo)}</b></div>
+                            <div class="${tone(en)}"><small>${t('Forme')}</small><i>${ring(en)}</i><b>${en >= 90 ? t('Prêt') : lbl(en)}</b></div>
+                            <div class="${dispo[2]}"><small>${t('Disponibilité')}</small><i class="pc-cards"><span></span><span></span></i><b>${dispo[0]}</b><em>${dispo[1]}</em></div>
+                            <div class="is-good"><small>${t(matchLabel)}</small><i class="pc-num">${p.seasonApps || 0}</i><b>${p.goals || 0} ${t('buts')} · ${p.assists || 0} ${t('passes')}</b></div>
+                        </div>`;
+                    })()}
                     ${document.documentElement.classList.contains('land') ? `<p class="sm-attr-title">${t('Attributs')}<span>${p.ovr || ''}</span></p><div class="sm-attrs">${statRings(p, true)}</div>` : ''}
                     ${(() => {
                         const c = p.contract && p.contract.clauses;
@@ -20428,11 +20677,6 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                     ${this.playerGoalHTML(p)}
                     ${this.mentorSelectorHTML(p)}
                     ${this.squadStatusSelectorHTML(p)}
-                    <div class="grid grid-cols-3 gap-2 mb-3">
-                        <div class="p-2 rounded-lg bg-ui-800/60 text-center"><p class="font-teko text-xl text-white">${p.seasonApps || 0}</p><p class="text-[9px] text-slate-500 uppercase tracking-widest">${matchLabel}</p></div>
-                        <div class="p-2 rounded-lg bg-ui-800/60 text-center"><p class="font-teko text-xl text-white">${p.goals || 0}</p><p class="text-[9px] text-slate-500 uppercase tracking-widest">${t('Buts')}</p></div>
-                        <div class="p-2 rounded-lg bg-ui-800/60 text-center"><p class="font-teko text-xl text-white">${p.assists || 0}</p><p class="text-[9px] text-slate-500 uppercase tracking-widest">${t('Passes')}</p></div>
-                    </div>
                     ${document.documentElement.classList.contains('land') ? '' : `<p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">${t('Statistiques')}</p>
                     <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mb-3">${statGrid(p, true)}</div>`}
                     <div class="p-3 rounded-xl bg-ui-800/40 border border-white/5 mb-3">
@@ -20532,9 +20776,42 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
         });
     }
 
+    // ── TRANSFERTS DU CONTINENT (fil façon « transferts mondiaux ») ─────────
+    logTransfer(p, from, to, fee) {
+        if (!p) return;
+        if (!Array.isArray(this.transferFeed)) this.transferFeed = [];
+        this.transferFeed.unshift({ n: p.name, pos: p.exactPosition || p.position || '', ovr: p.ovr || 0,
+            from: from || null, to, fee: fee || 0, md: this.matchday || 0, s: this.season || 1 });
+        if (this.transferFeed.length > 60) this.transferFeed.length = 60;
+    }
+
+    renderTransferFeed() {
+        const box = document.getElementById('transfer-feed-panel');
+        if (!box) return;
+        const feed = this.transferFeed || [];
+        if (!feed.length) { box.innerHTML = emptyState('clock', t('Aucun transfert pour le moment'), 'py-6'); return; }
+        const ovrCls = o => o >= 80 ? 'is-elite' : o >= 70 ? 'is-good' : o >= 60 ? 'is-mid' : 'is-low';
+        let date = ''; 
+        box.innerHTML = `<div class="tf-head"><span>${t('Transferts du continent')}</span><b>${feed.length}</b></div>
+            <div class="tf-list">${feed.map(f => {
+                try { date = this.formatMatchdayDate(f.md); } catch (e) { date = ''; }
+                return `<div class="tf-row">
+                    <b class="tf-pos">${f.pos}</b>
+                    <b class="tf-ovr ${ovrCls(f.ovr)}">${f.ovr}</b>
+                    <span class="tf-name">${f.n}</span>
+                    <span class="tf-club">${f.from ? `<i>${clubCrestSVG(f.from)}</i><em>${f.from}</em>` : `<em class="is-free">${t('Agent libre')}</em>`}</span>
+                    <svg class="tf-arrow" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h9V4l8 8-8 8v-5H4z"/></svg>
+                    <span class="tf-club"><i>${clubCrestSVG(f.to)}</i><em>${f.to}</em></span>
+                    <span class="tf-fee">${f.fee ? formatMoney(f.fee) : '—'}</span>
+                    <span class="tf-date">${date}</span>
+                </div>`;
+            }).join('')}</div>`;
+    }
+
     renderMarket() {
         // Injecter la barre de filtres si pas encore présente
         this.renderMarketChips();
+        this.renderTransferFeed();
         this.renderMarketPacks(); // PACKS DE JOUEURS — voir PLAYER_PACKS
         // FIX #7 : on ne (re)génère les agents libres "aléatoires" que s'il n'y en a pas encore.
         // Avant, generateFreeAgents() était appelé à CHAQUE rendu du marché (donc après chaque
@@ -20558,7 +20835,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
             <div id="shop-packs-section" class="panel-glass rounded-2xl p-4 border border-white/5 mb-4">
                 <div class="sec-head">
                     <span>${t('Packs de joueurs')}</span>
-                    <span class="badge-status" style="color:#a78bfa;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)">${this.gems || 0} ${t('gemmes')}</span>
+                    <span class="badge-status" style="color:#38bdf8;background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.3)">${this.gems || 0} ${t('gemmes')}</span>
                 </div>
                 <p class="text-[10px] text-slate-500 mb-3">${t("Des joueurs confirmés (80+) directement dans l'effectif pro — un raccourci vers ce que le mercato permet déjà, en plus rapide.")}</p>
                 <!-- CONFORMITÉ GOOGLE PLAY : la note exacte ET le poste de
@@ -20588,14 +20865,14 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                                 </span>
                                 <div class="min-w-0 flex-1">
                                     <p class="text-xs font-bold text-white truncate">${t(pk.label)}</p>
-                                    <p class="text-[10px] font-bold" style="color:#c4b5fd">${minOvr}-${maxOvr} <span class="text-slate-500 font-normal">note</span></p>
+                                    <p class="text-[10px] font-bold" style="color:#7dd3fc">${minOvr}-${maxOvr} <span class="text-slate-500 font-normal">note</span></p>
                                 </div>
                             </div>
                             <p class="text-[10px] text-slate-500 leading-snug">${t(pk.desc)}</p>
                             <button onclick="app.buyPlayerPack('${pk.id}')" ${afford ? '' : 'disabled'}
                                 class="w-full py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${afford
                                     ? 'text-white'
-                                    : 'text-slate-600 bg-ui-900 cursor-not-allowed'}" ${afford ? `style="background:rgba(167,139,250,.18);color:#c4b5fd"` : ''}>${pk.gemCost} gemmes</button>
+                                    : 'text-slate-600 bg-ui-900 cursor-not-allowed'}" ${afford ? `style="background:rgba(56,189,248,.18);color:#7dd3fc"` : ''}>${pk.gemCost} gemmes</button>
                             <button onclick="app.buyIAP('${pk.sku}')" ${this._buyInFlight ? 'disabled' : ''}
                                 class="w-full py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-slate-300 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50">${pk.price}</button>
                         </div>`;
@@ -20816,7 +21093,7 @@ sellPlayer(playerId) {
         const opponent = userMatchInfo.home.isUser ? userMatchInfo.away : userMatchInfo.home;
         // Mémorisé pour l'écran des compositions (showLineups), qui a besoin des
         // deux équipes et pas seulement de l'adversaire.
-        this._pendingMatch = { home: userMatchInfo.home, away: userMatchInfo.away, isCAF: isCAFMatch };
+        this._pendingMatch = { home: userMatchInfo.home, away: userMatchInfo.away, isCAF: isCAFMatch, fixture: userMatchInfo };
         this.showPreMatchReport(opponent, () => {
             this._pendingMatch = null;
             this.runLiveMatch(userMatchInfo.home, userMatchInfo.away, otherMatches, isCAFMatch, userMatchInfo); // FIX #98
@@ -21856,6 +22133,7 @@ simulateAIBypassMatchday(otherMatches) {
                         player.matchExitMinute = this.liveMatch.minute;
                         // FIX #24 : incrémenter le compteur de changements (manquait — l'IA pouvait dépasser 5)
                         if (isHomeTeam) this.liveMatch.subsMade.home++; else this.liveMatch.subsMade.away++;
+                        try { window.AECMShell && AECMShell.subCard(sub, player, isHomeTeam ? this.liveMatch.home : this.liveMatch.away); } catch (e) {}
                         this.logCommentary(`${icon('substitution')} ${t('Changement :')} ${sub.name} ${t('remplace')} ${player.name} ${t('sorti sur blessure.')}`, "text-blue-400 italic");
                     } else {
                         // S'il n'y a plus personne sur le banc de l'IA, le joueur sort définitivement
@@ -22199,6 +22477,8 @@ simulateAIBypassMatchday(otherMatches) {
         const resolveShot = () => {
         if (this.liveMatch !== lmShot || this._matchOver) return;
         if (onTarget && !isGoal && MATCHSIM.active) MATCHSIM.note('save', isHome ? 'A' : 'H', 0);
+        // la tribune vibre sur une vraie occasion manquée (arrêt ou tir de peu à côté)
+        if (!isGoal && finalXG > 0.1) { try { SFX.ooh(); } catch (e) {} }
 
         if (isGoal) {
             if (isHome) this.liveMatch.homeScore++; else this.liveMatch.awayScore++;
@@ -22344,6 +22624,7 @@ simulateAIBypassMatchday(otherMatches) {
                 aiStarters.splice(idx, 1, pIn);
                 aiBench.splice(aiBench.indexOf(pIn), 1);
                 if (isHomeUser) this.liveMatch.subsMade.away++; else this.liveMatch.subsMade.home++;
+                try { window.AECMShell && AECMShell.subCard(pIn, tired, isHomeUser ? this.liveMatch.away : this.liveMatch.home); } catch (e) {}
                 this.logCommentary(`${icon('substitution')} ${t("Changement tactique pour l'adversaire.")}`, "text-blue-400 text-[10px] mt-1");
             }
         }
@@ -22351,158 +22632,178 @@ simulateAIBypassMatchday(otherMatches) {
     
 
     // Affiche le menu des remplacements et met le match en PAUSE
+    // ══ REMPLACEMENTS EN MATCH ═══════════════════════════════════════════
+    // Comme dans les jeux de gestion : le onze est sur un terrain, le banc juste
+    // dessous. On touche un joueur, puis un autre — le changement est fait.
+    // Plusieurs changements d'affilée sans rouvrir la fenêtre ; un bouton
+    // « Fatigué » propose d'un geste le changement le plus utile.
     showSubstitutions() {
-        if (!this.liveMatch || this.liveMatch.minute >= this.liveMatch.maxMinute) return; // FIX #89
-        
-        const isHome = this.liveMatch.home.isUser;
-        const starters = isHome ? this.liveMatch.homeStarters : this.liveMatch.awayStarters;
-        const bench = isHome ? this.liveMatch.homeBench : this.liveMatch.awayBench;
-        const subsMade = isHome ? this.liveMatch.subsMade.home : this.liveMatch.subsMade.away;
-
+        const lm = this.liveMatch;
+        if (!lm || lm.minute >= lm.maxMinute) return; // FIX #89
+        const isHome = lm.home.isUser;
+        const subsMade = isHome ? lm.subsMade.home : lm.subsMade.away;
         if (subsMade >= this.subsAllowed()) { // FIX #99
             this.showNotification(`Vous avez déjà effectué vos ${this.subsAllowed()} changements autorisés !`, "error"); // FIX #97 / #99
             return;
         }
-
         // METTRE LE MATCH EN PAUSE
-        clearInterval(this.liveMatch.interval);
-        document.getElementById('live-time').classList.remove('animate-pulse');
+        clearInterval(lm.interval);
+        const lt = document.getElementById('live-time'); if (lt) lt.classList.remove('animate-pulse');
+        this._subSel = null;
+        this._subDone = [];
+        document.getElementById('sub-modal')?.remove();
+        const wrap = document.createElement('div');
+        wrap.id = 'sub-modal';
+        wrap.className = 'subx-wrap';
+        document.body.appendChild(wrap);
+        this.renderSubModal();
+    }
 
-        // Création de l'interface (Modale)
-        let html = `
-        <div id="sub-modal" class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div class="bg-ui-800 border border-white/10 rounded-2xl p-5 w-full max-w-lg shadow-2xl">
-                <div class="flex justify-between items-center mb-5 border-b border-white/10 pb-3">
-                    <h3 class="text-white font-teko text-3xl leading-none flex items-center gap-2">${icon('substitution','w-6 h-6')} ${t('Remplacements')}</h3>
-                    <span class="bg-brand-500/20 text-brand-400 px-2 py-1 rounded-lg text-xs font-bold">${this.subsAllowed() - subsMade} ${t('restants')}</span>
+    renderSubModal() {
+        const wrap = document.getElementById('sub-modal');
+        const lm = this.liveMatch;
+        if (!wrap || !lm) return;
+        const isHome = lm.home.isUser;
+        const starters = isHome ? lm.homeStarters : lm.awayStarters;
+        const bench = isHome ? lm.homeBench : lm.awayBench;
+        const made = isHome ? lm.subsMade.home : lm.subsMade.away;
+        const left = Math.max(0, this.subsAllowed() - made);
+        const coords = FORMATIONS_MAP[this.userTactics.formation] || FORMATIONS_MAP['4-4-2'];
+        const sel = this._subSel;
+        const eCol = e => e > 70 ? '#10b981' : e > 45 ? '#f59e0b' : '#ef4444';
+        const last = p => p.name.split(' ').pop();
+        let ctx = null; try { ctx = this.ratingContext(false); } catch (e) {}
+        const note = p => { try { return ctx ? this.computePlayerRating(p, ctx).toFixed(1) : ''; } catch (e) { return ''; } };
+
+        // le onze, chacun à sa place (case du moteur de match)
+        const used = new Set();
+        const toks = starters.map(p => {
+            let i = this.simIdx(isHome, p);
+            if (used.has(i) || !coords[i]) i = coords.findIndex((c, k) => !used.has(k));
+            used.add(i);
+            const c = coords[i] || [50, 50];
+            const en = Math.round(p.energy ?? 100);
+            const n = note(p);
+            return `
+            <button type="button" class="subx-tok${sel && sel.id === p.id ? ' is-sel' : ''}${en <= 45 ? ' is-tired' : ''}"
+                    style="left:${c[0] * 2}%;top:${c[1]}%" onclick="app.tapSub('xi','${p.id}')">
+                <span class="subx-face">${playerFaceSVG(p)}<i style="--e:${en};--c:${eCol(en)}"></i></span>
+                <span class="subx-name">${last(p)}</span>
+                <span class="subx-meta"><b style="color:${eCol(en)}">${en}%</b>${n ? `<em>${n}</em>` : ''}</span>
+            </button>`;
+        }).join('');
+
+        const benchHtml = bench.length ? bench.map(p => `
+            <button type="button" class="subx-b${sel && sel.id === p.id ? ' is-sel' : ''}" ${left ? '' : 'disabled'} onclick="app.tapSub('bench','${p.id}')">
+                <span class="subx-b-face">${playerFaceSVG(p)}</span>
+                <span class="subx-b-txt"><b>${last(p)}</b><span class="${posColor(p.position, 'text')}">${playerRole(p).short || p.position}</span></span>
+                <span class="subx-b-ovr">${p.ovr}</span>
+            </button>`).join('') : `<span class="subx-empty">${t('Banc vide')}</span>`;
+
+        const hint = !left ? t('Tous les changements sont faits')
+            : !sel ? t('Touchez un joueur à faire sortir, puis son remplaçant')
+            : sel.side === 'xi' ? `${t('Qui remplace')} ${last(starters.find(p => p.id === sel.id) || { name: '' })} ?`
+            : `${t('À la place de qui ?')}`;
+
+        wrap.innerHTML = `
+            <div class="subx-scrim" onclick="app.closeSubs()"></div>
+            <div class="subx-panel" role="dialog" aria-modal="true">
+                <div class="subx-head">
+                    <h3>${icon('substitution', 'w-5 h-5')} ${t('Remplacements')}</h3>
+                    <span class="subx-left${left ? '' : ' is-zero'}">${left} ${left > 1 ? t('restants') : t('restant')}</span>
+                    <span class="subx-hint">${hint}</span>
+                    ${left && bench.length ? `<button type="button" class="subx-auto" onclick="app.autoSub()" title="${t('Fait sortir le joueur le plus fatigué pour le meilleur remplaçant à son poste')}">${icon('bolt', 'w-4 h-4')} ${t('Le plus fatigué')}</button>` : ''}
                 </div>
-
-                <div class="grid grid-cols-2 gap-3 mb-5">
-                    <!-- Sortant : la fatigue est le critère de décision, donc en barre -->
-                    <div>
-                        <label class="text-slate-400 text-[10px] uppercase font-bold tracking-widest mb-2 block">${t('Sort')}</label>
-                        <div class="flex flex-col gap-1.5 max-h-[38vh] overflow-y-auto no-scrollbar pe-0.5">
-                            ${starters.map(p => `
-                                <button onclick="app.pickSub('out','${p.id}')" data-sub-out="${p.id}"
-                                    class="sub-pick w-full flex items-center gap-2 p-2 rounded-lg border text-start transition-all border-white/5 bg-ui-900 hover:bg-white/5">
-                                    <span class="w-7 h-7 rounded-full bg-ui-800 border border-white/10 overflow-hidden shrink-0">${playerFaceSVG(p)}</span>
-                                    <span class="min-w-0 flex-1">
-                                        <span class="block text-[10px] font-bold uppercase ${posColor(p.position,'text')} leading-none">${p.position}</span>
-                                        <span class="block text-xs text-white truncate leading-tight">${p.name.split(' ').pop()}</span>
-                                        <span class="block h-1 bg-ui-700 rounded-full overflow-hidden mt-1">
-                                            <span class="block h-full rounded-full" style="width:${Math.round(p.energy)}%;background:${p.energy > 70 ? '#10b981' : p.energy > 45 ? '#f59e0b' : '#ef4444'}"></span>
-                                        </span>
-                                    </span>
-                                    <span class="font-teko text-lg text-white shrink-0">${Math.round(p.energy)}</span>
-                                </button>`).join('')}
-                        </div>
+                <div class="subx-body">
+                    <div class="subx-pitch"><div class="subx-lines"><i></i><i></i><i></i><i></i></div>${toks}</div>
+                    <div class="subx-side">
+                        <h4>${t('Banc')}</h4>
+                        <div class="subx-bench">${benchHtml}</div>
+                        ${this._subDone.length ? `<div class="subx-log">${this._subDone.map(s => `<span>${icon('substitution', 'w-3 h-3')} <b>${s.inn}</b> ${t('pour')} ${s.out}</span>`).join('')}</div>` : ''}
                     </div>
-
-                    <!-- Entrant : c'est le niveau qui compte, donc l'OVR en gros -->
-                    <div>
-                        <label class="text-slate-400 text-[10px] uppercase font-bold tracking-widest mb-2 block">${t('Entre')}</label>
-                        <div class="flex flex-col gap-1.5 max-h-[38vh] overflow-y-auto no-scrollbar pe-0.5">
-                            ${bench.length > 0
-                                ? bench.map(p => `
-                                <button onclick="app.pickSub('in','${p.id}')" data-sub-in="${p.id}"
-                                    class="sub-pick w-full flex items-center gap-2 p-2 rounded-lg border text-start transition-all border-white/5 bg-ui-900 hover:bg-white/5">
-                                    <span class="w-7 h-7 rounded-full bg-ui-800 border border-white/10 overflow-hidden shrink-0">${playerFaceSVG(p)}</span>
-                                    <span class="min-w-0 flex-1">
-                                        <span class="block text-[10px] font-bold uppercase ${posColor(p.position,'text')} leading-none">${p.position}</span>
-                                        <span class="block text-xs text-white truncate leading-tight">${p.name.split(' ').pop()}</span>
-                                    </span>
-                                    <span class="font-teko text-xl text-white shrink-0">${p.ovr}</span>
-                                </button>`).join('')
-                                : emptyState('academy', 'Banc vide', 'py-4')}
-                        </div>
-                    </div>
                 </div>
-
-                <!-- Valeurs sélectionnées, lues par confirmSub() -->
-                <input type="hidden" id="sub-out" value="${starters[0] ? starters[0].id : ''}">
-                <input type="hidden" id="sub-in" value="${bench[0] ? bench[0].id : ''}">
-
-                <div class="flex gap-3">
-                    <button onclick="app.cancelSub()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-lg font-bold text-sm transition-colors">${t('Annuler (Reprendre)')}</button>
-                    ${bench.length > 0 ? `<button onclick="app.confirmSub()" class="flex-1 btn-primary py-3 rounded-lg font-bold text-sm">${t('Valider')}</button>` : ''}
+                <div class="subx-foot">
+                    ${sel ? `<button type="button" class="subx-ghost" onclick="app.tapSub(null)">${t('Annuler la sélection')}</button>` : '<span></span>'}
+                    <button type="button" class="btn-primary subx-go" onclick="app.closeSubs()">${icon('play', 'w-4 h-4')} ${t('Reprendre le match')}</button>
                 </div>
-            </div>
-        </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', html);
-
-        // Refléter visuellement la présélection (1er de chaque colonne), sinon
-        // le coach ne voit pas ce qui partirait s'il validait tout de suite.
-        if (starters[0]) this.pickSub('out', starters[0].id);
-        if (bench[0])    this.pickSub('in',  bench[0].id);
+            </div>`;
     }
 
-    // Sélection visuelle d'un sortant / entrant. On stocke dans les champs cachés
-    // que confirmSub() lit déjà, pour ne rien changer à la logique du changement.
-    pickSub(side, id) {
-        const field = document.getElementById(side === 'out' ? 'sub-out' : 'sub-in');
-        if (field) field.value = id;
-        document.querySelectorAll(`[data-sub-${side}]`).forEach(b => {
-            const on = b.getAttribute('data-sub-' + side) === id;
-            b.classList.toggle('border-brand-500', on);
-            b.classList.toggle('bg-brand-500/10', on);
-            b.classList.toggle('border-white/5', !on);
-            b.classList.toggle('bg-ui-900', !on);
-        });
-    }
-
-    // Annuler le changement et relancer le chrono
-    cancelSub() {
-        const modal = document.getElementById('sub-modal');
-        if(modal) modal.remove();
-        
-        // REPRENDRE LE MATCH
-        if(this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) { // FIX #89
-            document.getElementById('live-time').classList.add('animate-pulse');
-            // Remets bien la même vitesse que celle que tu as réglée (Lent / Normal / Rapide)
-            this.liveMatch.interval = setInterval(() => this.tickLiveMatch(), MATCH_TEMPOS[this.getTempo()].clock); 
+    // Toucher un joueur : 1er toucher = sélection, 2e toucher dans l'autre groupe = changement
+    tapSub(side, id) {
+        if (!side) { this._subSel = null; this.renderSubModal(); return; }
+        const sel = this._subSel;
+        if (!sel || sel.side === side) {
+            this._subSel = (sel && sel.id === id) ? null : { side, id };
+            try { SFX.select(); } catch (e) {}
+            this.renderSubModal();
+            return;
         }
+        const outId = side === 'xi' ? id : sel.id, inId = side === 'bench' ? id : sel.id;
+        this._subSel = null;
+        this.applySub(outId, inId);
+        this.renderSubModal();
     }
 
-    // Appliquer le changement
-    confirmSub() {
-        const outId = document.getElementById('sub-out').value;
-        const inId = document.getElementById('sub-in').value;
+    // Un geste : le titulaire le plus fatigué sort, le meilleur remplaçant de sa ligne entre
+    autoSub() {
+        const lm = this.liveMatch; if (!lm) return;
+        const isHome = lm.home.isUser;
+        const starters = isHome ? lm.homeStarters : lm.awayStarters;
+        const bench = isHome ? lm.homeBench : lm.awayBench;
+        const line = p => p.position === 'GB' ? 'GB' : ['DC', 'DD', 'DG', 'DEF'].includes(p.position) ? 'DEF' : ['MC', 'MDC', 'MOC', 'MD', 'MG', 'MIL'].includes(p.position) ? 'MIL' : 'ATT';
+        const tired = starters.filter(p => p.position !== 'GB').sort((a, b) => (a.energy ?? 100) - (b.energy ?? 100))[0];
+        if (!tired) return;
+        const pool = bench.filter(p => p.position !== 'GB' || tired.position === 'GB');
+        const same = pool.filter(p => line(p) === line(tired)).sort((a, b) => b.ovr - a.ovr);
+        const pick = same[0] || pool.sort((a, b) => b.ovr - a.ovr)[0];
+        if (!pick) { this.showNotification(t('Aucun remplaçant disponible.'), 'warning'); return; }
+        this._subSel = null;
+        this.applySub(tired.id, pick.id);
+        this.renderSubModal();
+    }
 
-        const isHome = this.liveMatch.home.isUser;
-        let starters = isHome ? this.liveMatch.homeStarters : this.liveMatch.awayStarters;
-        let bench = isHome ? this.liveMatch.homeBench : this.liveMatch.awayBench;
-
-        let outIdx = starters.findIndex(p => p.id === outId);
-        let inIdx = bench.findIndex(p => p.id === inId);
-
-        if (outIdx > -1 && inIdx > -1) {
-            let pOut = starters[outIdx];
-            let pIn = bench[inIdx];
-
-            // Échange des joueurs
-            this.simReplace(isHome, pOut, pIn);
-            starters.splice(outIdx, 1, pIn);
-            bench.splice(inIdx, 1); // Le joueur quitte le banc, il ne peut plus rentrer
-            pIn.matchEntryMinute = this.liveMatch.minute; // Minute d'entrée du remplaçant
-            // Minute de SORTIE du remplacé : il repart au banc, mais il a couru.
-            // Sans cette marque, il était traité comme un joueur n'ayant pas joué
-            // et récupérait de l'énergie au lieu d'en dépenser.
-            pOut.matchExitMinute = this.liveMatch.minute;
-
-            // Incrémentation du compteur
-            if (isHome) this.liveMatch.subsMade.home++;
-            else this.liveMatch.subsMade.away++;
-
-            // Commentaire du match
-            this.logCommentary(`${icon('substitution')} ${t('CHANGEMENT TACTIQUE :')} ${pIn.name} ${t('entre à la place de')} ${pOut.name}.`, "text-blue-400 font-bold border-blue-500/20 text-sm mt-2 mb-2");
-        }
-
+    // Applique un changement (même logique que l'ancien confirmSub)
+    applySub(outId, inId) {
+        const lm = this.liveMatch; if (!lm) return false;
+        const isHome = lm.home.isUser;
+        const made = isHome ? lm.subsMade.home : lm.subsMade.away;
+        if (made >= this.subsAllowed()) { this.showNotification(`Vous avez déjà effectué vos ${this.subsAllowed()} changements autorisés !`, 'error'); return false; }
+        const starters = isHome ? lm.homeStarters : lm.awayStarters;
+        const bench = isHome ? lm.homeBench : lm.awayBench;
+        const outIdx = starters.findIndex(p => p.id === outId);
+        const inIdx = bench.findIndex(p => p.id === inId);
+        if (outIdx < 0 || inIdx < 0) return false;
+        const pOut = starters[outIdx], pIn = bench[inIdx];
+        this.simReplace(isHome, pOut, pIn);
+        starters.splice(outIdx, 1, pIn);
+        bench.splice(inIdx, 1);                 // Le joueur quitte le banc, il ne peut plus rentrer
+        pIn.matchEntryMinute = lm.minute;       // Minute d'entrée du remplaçant
+        // Minute de SORTIE du remplacé : il repart au banc, mais il a couru.
+        pOut.matchExitMinute = lm.minute;
+        if (isHome) lm.subsMade.home++; else lm.subsMade.away++;
+        try { window.AECMShell && AECMShell.subCard(pIn, pOut, isHome ? lm.home : lm.away); } catch (e) {}
+        this.logCommentary(`${icon('substitution')} ${t('CHANGEMENT TACTIQUE :')} ${pIn.name} ${t('entre à la place de')} ${pOut.name}.`, "text-blue-400 font-bold border-blue-500/20 text-sm mt-2 mb-2");
         this.retuneMatchSim(); // LOT 15 : le nom au-dessus du maillot suit le changement
-
-        // On ferme la fenêtre, ce qui relance le match automatiquement
-        this.cancelSub(); 
+        (this._subDone || (this._subDone = [])).push({ out: pOut.name.split(' ').pop(), inn: pIn.name.split(' ').pop() });
+        try { SFX.whistle ? SFX.whistle() : SFX.confirm(); SFX.buzz(15); } catch (e) {}
+        return true;
     }
+
+    // Fermer la fenêtre et relancer le chrono
+    closeSubs() {
+        document.getElementById('sub-modal')?.remove();
+        this._subSel = null;
+        const lm = this.liveMatch;
+        if (lm && lm.minute < lm.maxMinute && !this._matchOver) { // FIX #89
+            const lt = document.getElementById('live-time'); if (lt) lt.classList.add('animate-pulse');
+            clearInterval(lm.interval);
+            // Remets bien la même vitesse que celle réglée (Lent / Normal / Rapide)
+            lm.interval = setInterval(() => this.tickLiveMatch(), MATCH_TEMPOS[this.getTempo()].clock);
+        }
+    }
+    // anciens noms (compatibilité)
+    cancelSub() { this.closeSubs(); }
 
     // ══ L'ADJOINT SUR LE BANC ════════════════════════════════════════════
     // L'Entraîneur Adjoint lit le match à votre place et vous alerte aux
@@ -23045,77 +23346,105 @@ simulateAIBypassMatchday(otherMatches) {
             return out.slice(0, 11);
         };
 
-        const rows = (team, isUserSide) => xi(team).map(p => {
-            const known = isUserSide || hasScout;
-            return `
-            <div class="lu-row">
-                <span class="lu-face">${playerFaceSVG(p)}</span>
-                <span class="lu-pos ${posColor(p.position, 'text')}">${p.position}</span>
-                <span class="lu-pname">${p.name.split(' ').pop()}</span>
-                <span class="lu-ovr ${known ? '' : 'hidden-ovr'}">${known ? p.ovr : '?'}</span>
+        // ── Composition « jeu de gestion » : les deux onze face à face sur UN terrain ──
+        const formOf = team => team.isUser ? (this.userTactics.formation || '4-4-2') : this.ensureCoach(team).formation;
+        const coordsOf = team => FORMATIONS_MAP[formOf(team)] || FORMATIONS_MAP['4-4-2'];
+        const known = team => !!team.isUser || hasScout;
+        const last = p => p.name.split(' ').pop();
+        const ovrCls = o => o >= 85 ? 'is-elite' : o >= 75 ? 'is-good' : o >= 65 ? 'is-mid' : 'is-low';
+        // l'ordre de xi() suit la formation (gardien, défenseurs, milieux, attaquants) comme FORMATIONS_MAP
+        const tokens = (team, right) => {
+            const c = coordsOf(team), k = known(team);
+            return xi(team).map((p, i) => {
+                const pos = c[i] || [25, 50];
+                // chaque moitié est exploitée en entier (largeur et hauteur) : les lignes respirent
+                const hx = 6 + (pos[0] - 5) * 0.93, x = right ? 100 - hx : hx;   // 6 % (gardien) à 43 % (attaque) : pas de contact au rond central
+                const y = Math.max(13, Math.min(87, 50 + (pos[1] - 50) * 1.22));
+                return `<div class="lu2-tok" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">
+                    <span class="lu2-face">${playerFaceSVG(p)}</span>
+                    <span class="lu2-ovr ${k ? ovrCls(p.ovr) : 'is-hidden'}">${k ? p.ovr : '?'}</span>
+                    <span class="lu2-name">${last(p)}</span>
+                </div>`;
+            }).join('');
+        };
+        const benchOf = team => {
+            if (team.isUser) return (this.userSquad || []).slice(11, 18);
+            const inXi = new Set(xi(team).map(p => p.id));
+            return (team.squad || []).filter(p => !inXi.has(p.id)).sort((x, y) => y.ovr - x.ovr).slice(0, 7);
+        };
+        const avg = team => Math.round(xi(team).reduce((t2, p) => t2 + (p.ovr || 0), 0) / Math.max(1, xi(team).length));
+        const kitCol = (team, away) => { try { return clubKit(team.name, away).base || '#1f2937'; } catch (e) { return '#1f2937'; } };
+        const coachCell = (team, right) => {
+            if (team.isUser) {
+                const m = this.manager || {};
+                return `<div class="lu2-coach${right ? ' is-right' : ''}">
+                    <span class="lu2-coach-face">${managerPortraitSVG(m.name || 'Coach', m.avatarStyle || 'navy', { variant: m.faceVariant || 0, age: m.age || 46 })}</span>
+                    <span class="lu2-coach-txt"><b>${m.name || t('Vous')}</b><small>${t('Votre équipe')}</small></span>
+                    <span class="lu2-kit">${kitSVG(team.name, team !== home)}</span>
+                </div>`;
+            }
+            const c = this.ensureCoach(team);
+            const phil = COACH_PHILOSOPHIES[c.philosophy] || {};
+            return `<div class="lu2-coach${right ? ' is-right' : ''}">
+                <span class="lu2-coach-face">${managerPortraitSVG(c.name, c.avatarStyle, { variant: c.variant, age: c.age })}</span>
+                <span class="lu2-coach-txt"><b>${c.name}</b><small>${phil.label || ''} · ${'★'.repeat(c.level || 1)}</small></span>
+                <span class="lu2-kit">${kitSVG(team.name, team !== home)}</span>
             </div>`;
-        }).join('');
-
-        const side = (team) => `
-            <div class="lu-side">
-                <div style="display:flex;align-items:center;gap:6px">
-                    <div class="lu-crest">${clubCrestSVG(team.name)}</div>
-                    <!-- Maillot porté ce match : domicile pour le club qui reçoit -->
-                    <div style="width:26px;height:26px;flex-shrink:0;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">${kitSVG(team.name, team !== home)}</div>
-                </div>
-                <div class="lu-name">${team.name}</div>
-                <div class="lu-form">${team.isUser ? (this.userTactics.formation || '4-4-2') : this.ensureCoach(team).formation}</div>
-                <!-- Note moyenne du onze aligné : la comparaison des deux camps
-                     se fait d'un coup d'œil, sans additionner mentalement. -->
-                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-weight:700">
-                    XI <b style="color:#f1f5f9;font-family:Teko,sans-serif;font-size:15px">${
-                        Math.round(xi(team).reduce((s, p) => s + (p.ovr || 0), 0) / Math.max(1, xi(team).length))
-                    }</b>
-                </div>
-            </div>`;
-
-        // Petite fiche entraîneur adverse : son visage suffit à donner une
-        // identité au coach d'en face, sans texte superflu.
-        const coachStrip = (() => {
-            const opp = home.isUser ? away : home;
-            if (opp.isUser) return '';
-            const c = this.ensureCoach(opp);
-            const phil = COACH_PHILOSOPHIES[c.philosophy];
-            return `
-            <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
-                <span style="width:26px;height:26px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#0b1220;border:1px solid rgba(255,255,255,.1)">${managerPortraitSVG(c.name, c.avatarStyle, { variant: c.variant, age: c.age })}</span>
-                <span style="font-size:11px;color:#94a3b8;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                    <b style="color:#e2e8f0">${c.name}</b> &bull; ${phil.label}
-                </span>
-            </div>`;
-        })();
+        };
+        const fx = info.fixture || {};
+        let dateTxt = '', compTxt = '', stadTxt = '';
+        try { dateTxt = fx.matchday != null ? this.formatMatchdayDate(fx.matchday) : ''; } catch (e) {}
+        compTxt = info.isCAF ? t('Ligue des champions africaine')
+            : (fx.type && /CUP/.test(fx.type)) ? t('Coupe nationale')
+            : (fx.type && /SUPERCUP/.test(fx.type)) ? t('Supercoupe')
+            : t('Championnat');
+        try { stadTxt = this.stadiumOf(home.name).name || ''; } catch (e) {}
 
         const old = document.getElementById('lineups');
         if (old) old.remove();
 
         const wrap = document.createElement('div');
         wrap.id = 'lineups';
-        wrap.className = 'lu-wrap';
+        wrap.className = 'lu-wrap lu2';
         wrap.setAttribute('role', 'dialog');
         wrap.innerHTML = `
-            <div class="lu-card">
-                <div class="lu-head">
-                    ${side(home)}
-                    <span class="lu-vs">VS</span>
-                    ${side(away)}
-                </div>
-                ${coachStrip}
-                <div class="lu-body">
-                    <div class="lu-col">${rows(home, !!home.isUser)}</div>
-                    <div class="lu-col">${rows(away, !!away.isUser)}</div>
-                </div>
-                <div class="lu-foot">
-                    <button type="button" class="pm-back" onclick="app.closeLineups()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        Retour
+            <div class="lu2-card">
+                <div class="lu2-top">
+                    <button type="button" class="lu2-back" onclick="app.closeLineups()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <span>${t('Retour')}</span>
                     </button>
-                    <button type="button" class="pm-go" style="flex:1" onclick="app.kickOff()">${t("Coup d'envoi")}</button>
+                    <div class="lu2-team" style="--kc:${kitCol(home, false)}">
+                        <span class="lu2-tname">${home.name}</span>
+                        <span class="lu2-tcrest">${clubCrestSVG(home.name)}</span>
+                    </div>
+                    <div class="lu2-team is-away" style="--kc:${kitCol(away, true)}">
+                        <span class="lu2-tcrest">${clubCrestSVG(away.name)}</span>
+                        <span class="lu2-tname">${away.name}</span>
+                    </div>
+                    <button type="button" class="lu2-go" onclick="app.kickOff()">
+                        <span>${t("Coup d'envoi")}</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
                 </div>
+                <div class="lu2-info">
+                    ${dateTxt ? `<span>${icon('clock', 'w-3.5 h-3.5')} ${dateTxt}</span>` : ''}
+                    <span>${icon('trophy', 'w-3.5 h-3.5')} ${compTxt}</span>
+                    ${stadTxt ? `<span>${icon('shield', 'w-3.5 h-3.5')} ${stadTxt}</span>` : ''}
+                </div>
+                <div class="lu2-sub">
+                    <span><b>${formOf(home)}</b> · XI ${known(home) ? avg(home) : '?'}</span>
+                    <span>XI ${known(away) ? avg(away) : '?'} · <b>${formOf(away)}</b></span>
+                </div>
+                <div class="lu2-pitch">
+                    <div class="lu2-lines"><i></i><i></i><i></i><i></i><i></i></div>
+                    ${tokens(home, false)}${tokens(away, true)}
+                </div>
+                <div class="lu2-bench">
+                    <div>${benchOf(home).map(p => `<span>${last(p)}</span>`).join('')}</div>
+                    <div>${benchOf(away).map(p => `<span>${last(p)}</span>`).join('')}</div>
+                </div>
+                <div class="lu2-foot">${coachCell(home, false)}${coachCell(away, true)}</div>
             </div>`;
         document.body.appendChild(wrap);
         requestAnimationFrame(() => wrap.classList.add('is-open'));
@@ -25123,7 +25452,7 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
         const streams = [
             { key: 'ticketing', label: t('Billetterie'), value: bd.ticketing, color: '#f59e0b', ic: 'crown' },
             { key: 'tv',        label: t('Droits TV'),   value: bd.tv,        color: '#38bdf8', ic: 'vision' },
-            { key: 'bonus',     label: t('Primes'),      value: bd.bonus,     color: '#a78bfa', ic: 'trophy' },
+            { key: 'bonus',     label: t('Primes'),      value: bd.bonus,     color: '#38bdf8', ic: 'trophy' },
             { key: 'campus',    label: t('Boutique'),    value: bd.campus,    color: '#f472b6', ic: 'gift' },
             { key: 'sponsors',  label: t('Sponsors'),    value: sponsors,     color: '#10b981', ic: 'coin' }
         ];
@@ -25681,18 +26010,12 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
             const hw = f.homeScore > f.awayScore, aw = f.awayScore > f.homeScore;
             const mine = f.home.isUser || f.away.isUser;
             return `
-            <div class="flex items-center gap-2 p-2 rounded-xl ${mine ? 'bg-brand-500/10 ring-1 ring-brand-500/30' : 'bg-ui-800/40'}">
-                <div class="flex items-center gap-1.5 flex-1 min-w-0 justify-end text-end">
-                    <span class="text-[10px] truncate ${hw ? 'text-white font-bold' : 'text-slate-400'}">${f.home.name}</span>
-                    <span class="w-5 h-5 shrink-0">${clubCrestSVG(f.home.name)}</span>
-                </div>
-                <div class="shrink-0 px-2 py-0.5 rounded-lg bg-ui-900 text-white font-teko text-base leading-none tnum">
-                    ${f.homeScore}-${f.awayScore}
-                </div>
-                <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                    <span class="w-5 h-5 shrink-0">${clubCrestSVG(f.away.name)}</span>
-                    <span class="text-[10px] truncate ${aw ? 'text-white font-bold' : 'text-slate-400'}">${f.away.name}</span>
-                </div>
+            <div class="rd-row${mine ? ' is-me' : ''}">
+                <span class="rd-name is-h${hw ? ' is-w' : ''}">${f.home.name}</span>
+                <span class="rd-crest">${clubCrestSVG(f.home.name)}</span>
+                <b class="rd-score">${f.homeScore} - ${f.awayScore}</b>
+                <span class="rd-crest">${clubCrestSVG(f.away.name)}</span>
+                <span class="rd-name${aw ? ' is-w' : ''}">${f.away.name}</span>
             </div>`;
         };
 
@@ -25701,7 +26024,7 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
                 <span class="acc-title">${t('Résultats')} &bull; ${this.formatMatchdayDate(md)}</span>
                 <span class="badge-status badge-neutral">${rows.length} matchs</span>
             </div>
-            <div class="flex flex-col gap-1.5">${rows.map(line).join('')}</div>`;
+            <div class="rd-list">${rows.map(line).join('')}</div>`;
     }
 
     renderStandings(forcedLeagueId = null) {
@@ -26059,63 +26382,28 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
 
             // Affichage UI Blessures et Cartons
             let statusBadge = '';
-            if (p.injuryDays > 0) statusBadge = `<div class="absolute top-2 start-2 badge-status badge-danger z-30">${icon('injury','w-3 h-3')} ${p.injuryDays}J</div>`;
-            else if (p.suspensionDays > 0) statusBadge = `<div class="absolute top-2 start-2 badge-status badge-danger z-30">${icon('redCard','w-3 h-3')} ${p.suspensionDays}J</div>`;
-            else if (p.yellowCards > 0) statusBadge = `<div class="absolute top-2 start-2 badge-status badge-warning z-30">${icon('yellowCard','w-3 h-3')} ${p.yellowCards}</div>`;
+            if (p.injuryDays > 0) statusBadge = `<div class="badge-status badge-danger">${icon('injury','w-3 h-3')} ${p.injuryDays}J</div>`;
+            else if (p.suspensionDays > 0) statusBadge = `<div class="badge-status badge-danger">${icon('redCard','w-3 h-3')} ${p.suspensionDays}J</div>`;
+            else if (p.yellowCards > 0) statusBadge = `<div class="badge-status badge-warning">${icon('yellowCard','w-3 h-3')} ${p.yellowCards}</div>`;
 
             // ÉGO : réclame du temps de jeu ou exige un transfert
             let egoBadge = '';
-            if (p.egoStatus === 'wants_transfer') egoBadge = `<div class="absolute top-2 end-2 badge-status badge-danger z-30" title="${t('Exige un transfert')}">${icon('alert','w-3 h-3')} ${t('Transfert')}</div>`;
-            else if (p.egoStatus === 'wants_playtime') egoBadge = `<div class="absolute top-2 end-2 badge-status badge-warning z-30" title="${t('Réclame du temps de jeu')}">${icon('alert','w-3 h-3')} ${t('Frustré')}</div>`;
+            if (p.egoStatus === 'wants_transfer') egoBadge = `<div class="badge-status badge-danger" title="${t('Exige un transfert')}">${icon('alert','w-3 h-3')} ${t('Transfert')}</div>`;
+            else if (p.egoStatus === 'wants_playtime') egoBadge = `<div class="badge-status badge-warning" title="${t('Réclame du temps de jeu')}">${icon('alert','w-3 h-3')} ${t('Frustré')}</div>`;
 
             // LOT 9 : visage propre au joueur (généré depuis son id)
             const avatarSvg = typeof playerFaceSVG === 'function' ? playerFaceSVG(p) : `<svg viewBox="0 0 24 24" class="w-full h-full fill-current opacity-50"><path d="M12,19.2C9.5,19.2 7.29,17.92 6,16C6.03,14 10,12.9 12,12.9C14,12.9 17.97,14 18,16C16.71,17.92 14.5,19.2 12,19.2M12,5A3,3 0 0,1 15,8A3,3 0 0,1 12,11A3,3 0 0,1 9,8A3,3 0 0,1 12,5M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z"/></svg>`;
 
-            cards.push(`
-                <div onclick="app.openPlayerCard('${p.id}')" class="lift relative bg-gradient-to-br ${c.bg} rounded-2xl p-[2px] overflow-hidden shadow-[0_5px_15px_rgba(0,0,0,0.3)] group cursor-pointer">
-                    ${statusBadge}
-                    ${egoBadge}
-                    <div class="h-full w-full bg-ui-900/90 rounded-xl p-3 flex flex-col justify-between backdrop-blur-md">
-                        <!-- Radar en filigrane : la silhouette du profil se devine
-                             derrière la carte, sans gêner la lecture. -->
-                        <div class="absolute -end-3 -bottom-2 w-28 h-28 opacity-[0.13] pointer-events-none">${statRadar(p, { size: 100 })}</div>
-                        
-                        <div class="flex justify-between items-start mb-2 relative z-10">
-                            <div class="flex flex-col items-center gap-1">
-                                ${ovrRing(p.ovr, { size: 42 })}
-                                <span class="text-[10px] font-bold ${c.text} uppercase tracking-wider">${p.position}</span>
-                                ${p.lastRating ? `<span class="text-[10px] font-black px-1.5 py-0.5 rounded-lg ${p.lastRating >= 7.5 ? 'bg-emerald-500/20 text-emerald-400' : p.lastRating >= 6.0 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}">${p.lastRating}</span>` : ''}
-                            </div>
-                            <div class="w-12 h-12 rounded-full bg-gradient-to-b from-white/10 to-transparent border border-white/10 overflow-hidden shadow-inner">
-                                ${avatarSvg}
-                            </div>
-                        </div>
-
-                        <div class="text-center border-b border-white/10 pb-1 mb-2 relative z-10">
-                            <h4 class="font-bold text-white text-xs truncate uppercase tracking-widest">${p.name}</h4>
-                            <div class="text-[10px] text-slate-400 mt-0.5">${p.age || '?'} ans &bull; Salaire: ${formatMoney(p.wage || 0)}/m</div>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-x-2.5 gap-y-1 relative z-10 mb-3">
-                            ${statGrid(p, true)}
-                        </div>
-
-                        <div class="relative z-10 bg-ui-800 rounded-lg p-1.5 border border-white/5 mt-2">
-                            <div class="flex items-center gap-2">
-                                <div class="flex-1">
-                                    <div class="flex justify-between text-[10px] font-bold uppercase text-slate-500 mb-0.5"><span>${t('Forme')}</span><span class="text-white">${Math.floor(p.energy)}%</span></div>
-                                    <div class="h-1 w-full bg-ui-900 rounded-full overflow-hidden"><div class="h-full ${energyColor}" style="width: ${p.energy}%"></div></div>
-                                </div>
-                                <div class="flex-1">
-                                    <div class="flex justify-between text-[10px] font-bold uppercase text-slate-500 mb-0.5"><span>${t('Moral')}</span><span class="${(p.morale ?? 80) < 50 ? 'text-red-400' : 'text-white'}">${p.morale ?? 80}%</span></div>
-                                    <div class="h-1 w-full bg-ui-900 rounded-full overflow-hidden"><div class="h-full" style="width:${p.morale ?? 80}%;background:${(p.morale ?? 80) < 40 ? '#ef4444' : (p.morale ?? 80) < 65 ? '#f59e0b' : '#38bdf8'}"></div></div>
-                                </div>
-                            </div>
-
-                            <!-- Ce qui exige une décision reste visible sur la
-                                 vignette, sous forme d'étiquette et non de
-                                 bouton : on voit le problème en balayant la
-                                 grille, on le règle dans la fiche. -->
+            const en = Math.round(p.energy ?? 100), mo = Math.round(p.morale ?? 80);
+            cards.push(playerCardHTML(p, {
+                click: `app.openPlayerCard('${p.id}')`,
+                club: this.userClubName,
+                badges: statusBadge + egoBadge,
+                sub: `${p.age || '?'} ${t('ans')} · ${formatMoney(p.wage || 0)}/m${p.lastRating ? ` · <b>${p.lastRating}</b>` : ''}`,
+                foot: `<div class="pcd-meters">
+                        <span><i style="width:${en}%;background:${en > 80 ? '#10b981' : en > 60 ? '#f59e0b' : '#ef4444'}"></i><em>${t('Forme')} ${en}%</em></span>
+                        <span><i style="width:${mo}%;background:${mo < 40 ? '#ef4444' : mo < 65 ? '#f59e0b' : '#38bdf8'}"></i><em>${t('Moral')} ${mo}%</em></span>
+                    </div>
                             ${(() => {
                                 const ch = [];
                                 if (this.contractEndingSoon(p))
@@ -26126,11 +26414,8 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
                                 return ch.length ? `<div class="sq-chips">${ch.join('')}</div>` : '';
                             })()}
 
-                            ${this.healButtonHTML(p, true)}
-                        </div>
-                    </div>
-                </div>
-            `);
+                    ${this.healButtonHTML(p, true)}`
+            }));
         });
         grid.innerHTML = cards.join('');
         const cnt = document.getElementById('squad-count');
@@ -26769,44 +27054,20 @@ reputationStars() {
             const pc = posColor(p.position);
             const potColor = p.pot >= 88 ? 'text-yellow-400' : p.pot >= 82 ? 'text-emerald-400' : 'text-slate-400';
             
-            return `
-            <div onclick="app.openPlayerCard('${p.id}')" class="panel-glass rounded-xl p-4 border border-white/5 flex flex-col gap-3 cursor-pointer hover:border-white/20 transition-colors">
-                <div class="flex justify-between items-start gap-2">
-                    <div class="w-11 h-11 rounded-full bg-ui-900 border border-white/10 overflow-hidden shrink-0">${playerFaceSVG(p)}</div>
-                    <div class="flex-1 min-w-0">
-                        <h4 class="font-bold text-white text-sm truncate">${p.name}</h4>
-                        <div class="flex items-center gap-2 mt-1">
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase ${pc}">${p.position}</span>
-                            <span class="text-[10px] text-slate-400">${p.age} ans</span>
-                        </div>
-                    </div>
-                    <div class="text-end">
-                        <div class="font-teko text-2xl text-white leading-none">${p.ovr}</div>
-                        <div class="text-[10px] font-bold ${potColor}">POT ${p.pot}</div>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-x-2.5 gap-y-1">
-                    ${statGrid(p, true)}
-                </div>
-                <!-- Bilan en équipe réserve (voir simulateAcademyReserveMatches) —
-                     tant qu'il n'est ni prêté ni promu, c'est là qu'il joue. -->
-                <div class="flex items-center justify-between text-[10px] text-slate-400 px-0.5">
-                    <span class="inline-flex items-center gap-1">${icon('ball','w-2.5 h-2.5')} ${p.seasonApps || 0} ${(p.seasonApps||0) > 1 ? t('matchs en réserve') : t('match en réserve')}</span>
-                    <span>${p.goals || 0} B &bull; ${p.assists || 0} P</span>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
-                    <span>${formatMoney(p.wage || 500)}/mois</span>
-                    <span class="badge-status badge-info">${icon('academy','w-3 h-3')} Formation</span>
-                </div>
-                <button onclick="event.stopPropagation(); app.promoteFromAcademy('${p.id}')"
+            return playerCardHTML(p, {
+                click: `app.openPlayerCard('${p.id}')`,
+                club: this.userClubName,
+                badges: `<div class="badge-status badge-info">POT ${p.pot}</div>`,
+                sub: `${p.age} ${t('ans')} · ${p.seasonApps || 0} ${t('en réserve')} · ${p.goals || 0} B · ${p.assists || 0} P`,
+                foot: `                <button onclick="event.stopPropagation(); app.promoteFromAcademy('${p.id}')"
                     class="w-full py-2 bg-brand-500/20 text-brand-400 hover:bg-brand-500 hover:text-white rounded-lg text-xs font-bold transition-colors uppercase tracking-wide">
                     ${icon('renew','w-3 h-3')} ${t('Promouvoir')}
                 </button>
                 <button onclick="event.stopPropagation(); app.openLoanMarket('${p.id}')"
                     class="w-full py-1.5 bg-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white rounded-lg text-xs font-bold transition-colors uppercase tracking-wide">
                     🤝 Prêter
-                </button>
-            </div>`;
+                </button>`
+            });
         }).join('');
 
         container.innerHTML = html;
@@ -27892,137 +28153,145 @@ reputationStars() {
 
         const recentlyRetired = this.history.filter(h => h.retired && h.retired.length > 0).slice(0, 3);
 
-        // Bandeau de synthèse : le bilan d'une carrière en quatre chiffres,
-        // avant d'entrer dans le détail saison par saison.
+        // Bandeau de tête : l'écusson et le bilan d'une carrière en quatre chiffres.
         const seasons = this.history.length;
         const titles = this.history.filter(h => h.userLeagueChampion === h.userClubName).length;
         const cafs   = this.history.filter(h => h.cafWinner === h.userClubName).length;
         const podium = this.history.filter(h => h.userRank && h.userRank <= 3).length;
-        const stat = (val, lbl, col) => `
-            <div class="flex-1 min-w-0 text-center p-2.5 rounded-xl bg-ui-900/60 border border-white/5">
-                <div class="font-teko text-3xl leading-none tnum" style="color:${col}">${val}</div>
-                <div class="text-[10px] uppercase font-bold tracking-widest text-slate-500 mt-1 truncate">${lbl}</div>
-            </div>`;
+        const club = this.userClubName || 'Club';
+        const statTile = (val, lbl, col) => `<div class="lg-stat"><b style="color:${col}">${val}</b><span>${t(lbl)}</span></div>`;
 
-        container.innerHTML = `
-
-            <div class="seg mb-4" id="leg-seg">
-                <button class="seg-btn is-active" data-pane="career" onclick="app.setLegacyPane('career')">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22,21H2V3H4V19H6V10H10V19H12V6H16V19H18V14H22V21Z"/></svg>
-                    <span>${t('Carrière')}</span>
-                </button>
-                <button class="seg-btn" data-pane="honours" onclick="app.setLegacyPane('honours')">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12,15C8.7,15 6,12.3 6,9V3H18V9C18,12.3 15.3,15 12,15M12,17C13,17 13,19 13,19V21H16V22H8V21H11V19C11,19 11,17 12,17Z"/></svg>
-                    <span>${t('Palmarès')}</span>
-                </button>
-                <button class="seg-btn" data-pane="squad" onclick="app.setLegacyPane('squad')">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12.5,7H11V13L15.75,15.85L16.5,14.62L12.5,12.25V7Z"/></svg>
-                    <span>${t('Vétérans')}</span>
-                </button>
-            </div>
-
-            <div class="tac-pane" id="leg-pane-career">
-        <div class="panel-glass rounded-2xl p-4 mb-4 border border-white/5 relative overflow-hidden">
-            <div class="absolute -end-6 -bottom-8 w-32 h-32 opacity-[0.07] pointer-events-none">${clubCrestSVG(this.userClubName || 'Club')}</div>
-            <div class="sec-head relative z-10"><span>${t('Bilan de carrière')}</span></div>
-            <div class="flex gap-2 relative z-10">
-                ${stat(seasons, 'Saisons', '#e2e8f0')}
-                ${stat(titles, 'Titres', '#facc15')}
-                ${stat(cafs, 'Continental', '#f97316')}
-                ${stat(podium, 'Podiums', '#10b981')}
-            </div>
-        </div>
-
-        ${(() => {
-            // COURBE DE CARRIÈRE : le classement final saison après saison.
-            // C'est la seule vue qui montre l'ARC d'une carrière — une série de
-            // cartes ne dit pas si on monte, si on stagne ou si on décroche.
-            const hist = [...this.history].reverse();   // de la plus ancienne à la plus récente
-            if (hist.length < 2) return '';
+        // Trajectoire : le classement final saison après saison
+        const trajectory = (() => {
+            const hist = [...this.history].reverse();
+            if (hist.length < 2) return `
+                <div class="lg-empty">${icon('trophy', 'w-7 h-7')}
+                    <b>${t('Votre histoire commence')}</b>
+                    <span>${t('La courbe de votre carrière apparaîtra après deux saisons complètes.')}</span>
+                </div>`;
             const nT = (this.globalData[this.userLeagueId]?.standings || []).length || 20;
             const W = 300, H = 90, pad = 6;
             const x = i => pad + (i / Math.max(1, hist.length - 1)) * (W - pad * 2);
             const y = r => pad + ((r - 1) / Math.max(1, nT - 1)) * (H - pad * 2);
             const pts = hist.map((h, i) => [x(i), y(h.userRank || nT)]);
             const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
-            const area = `${line} L${pts[pts.length-1][0].toFixed(1)},${H-pad} L${pts[0][0].toFixed(1)},${H-pad} Z`;
+            const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${H - pad} L${pts[0][0].toFixed(1)},${H - pad} Z`;
             return `
-            <div class="panel-glass rounded-2xl p-4 mb-4 border border-white/5">
-                <div class="sec-head"><span>${t('Trajectoire')}</span></div>
-                <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:96px">
+                <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:120px" preserveAspectRatio="none">
                     <defs><linearGradient id="trajg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0" stop-color="#f97316" stop-opacity=".35"/>
-                        <stop offset="1" stop-color="#f97316" stop-opacity="0"/>
+                        <stop offset="0" stop-color="#f97316" stop-opacity=".35"/><stop offset="1" stop-color="#f97316" stop-opacity="0"/>
                     </linearGradient></defs>
-                    <!-- Bande verte : zone de qualification continentale (top 3) -->
-                    <rect x="0" y="${pad}" width="${W}" height="${y(3)-pad}" fill="#10b981" opacity=".07"/>
-                    <!-- Bande rouge : zone de relégation -->
-                    <rect x="0" y="${y(nT-2)}" width="${W}" height="${H-pad-y(nT-2)}" fill="#ef4444" opacity=".07"/>
+                    <rect x="0" y="${pad}" width="${W}" height="${y(3) - pad}" fill="#10b981" opacity=".07"/>
+                    <rect x="0" y="${y(nT - 2)}" width="${W}" height="${H - pad - y(nT - 2)}" fill="#ef4444" opacity=".07"/>
                     <path d="${area}" fill="url(#trajg)"/>
-                    <path d="${line}" fill="none" stroke="#f97316" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+                    <path d="${line}" fill="none" stroke="#f97316" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
                     ${pts.map((p, i) => {
                         const r = hist[i].userRank || nT;
                         const col = r === 1 ? '#facc15' : r <= 3 ? '#10b981' : r >= nT - 2 ? '#ef4444' : '#f8fafc';
                         return `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${r === 1 ? 4 : 3}" fill="${col}" stroke="#0a0f1c" stroke-width="1.5"/>`;
                     }).join('')}
                 </svg>
-                <div class="flex justify-between text-[10px] text-slate-600 font-bold mt-1">
-                    <span>S${hist[0].season}</span>
-                    <span class="text-slate-500">1<sup>er</sup> en haut &bull; ${nT}<sup>e</sup> ${t('en bas')}</span>
-                    <span>S${hist[hist.length-1].season}</span>
+                <div class="lg-axis"><span>S${hist[0].season}</span><span>1<sup>er</sup> ${t('en haut')} &bull; ${nT}<sup>e</sup> ${t('en bas')}</span><span>S${hist[hist.length - 1].season}</span></div>`;
+        })();
+
+        // Dernière saison archivée, en une carte
+        const lastH = this.history[0];
+        const lastCard = lastH ? `
+            <div class="lg-last">
+                <div class="lg-rank ${lastH.userRank === 1 ? 'is-gold' : lastH.userRank && lastH.userRank <= 3 ? 'is-green' : ''}"><b>${lastH.userRank || '—'}</b><span>${lastH.userRank === 1 ? t('Champion') : t('place')}</span></div>
+                <div class="lg-last-txt">
+                    <small>${t('Saison')} ${lastH.season}</small>
+                    <b>${lastH.userPoints != null ? lastH.userPoints + ' pts' : ''}</b>
+                    <span>${t('Champion :')} ${lastH.userLeagueChampion || '—'}</span>
                 </div>
+                ${lastH.topScorer ? `<div class="lg-last-scorer"><small>${t('Meilleur buteur')}</small><b>${lastH.topScorer.name}</b><span>${lastH.topScorer.goals} ${t('buts')}</span></div>` : ''}
+            </div>` : `
+            <div class="lg-empty">${icon('clock', 'w-7 h-7')}
+                <b>${t('Saison')} ${this.currentSeason || 1} ${t('en cours')}</b>
+                <span>${t('Le palmarès se remplira à la fin de votre première saison')}</span>
             </div>`;
-        })()}
 
-        ${this.awardsPanelHtml()}
+        const tabBtn = (pane, label, path, on) => `
+            <button class="seg-btn${on ? ' is-active' : ''}" data-pane="${pane}" onclick="app.setLegacyPane('${pane}')">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="${path}"/></svg><span>${t(label)}</span>
+            </button>`;
 
+        container.innerHTML = `
+            <div class="lg-hero">
+                <div class="lg-hero-glow"></div>
+                <div class="lg-hero-crest">${clubCrestSVG(club)}</div>
+                <div class="lg-hero-id">
+                    <small>${t('Histoire du club')}</small>
+                    <b>${club}</b>
+                    <span>${seasons ? `${seasons} ${t('saison(s) au compteur')}` : t('Première saison en cours')}</span>
+                </div>
+                <div class="lg-hero-stats">
+                    ${statTile(seasons, 'Saisons', '#e2e8f0')}
+                    ${statTile(titles, 'Titres', '#facc15')}
+                    ${statTile(cafs, 'Continental', '#f97316')}
+                    ${statTile(podium, 'Podiums', '#10b981')}
+                </div>
+            </div>
+
+            <div class="seg mb-3" id="leg-seg">
+                ${tabBtn('career', 'Carrière', 'M22,21H2V3H4V19H6V10H10V19H12V6H16V19H18V14H22V21Z', true)}
+                ${tabBtn('awards', 'Trophées', 'M12,8L10.67,8.09C9.27,7.11 7.47,6.5 5.5,6.5C5.5,6.5 5.5,6.5 5.5,6.5L7.5,2H16.5L18.5,6.5C16.53,6.5 14.73,7.11 13.33,8.09L12,8M12,9A6,6 0 0,1 18,15A6,6 0 0,1 12,21A6,6 0 0,1 6,15A6,6 0 0,1 12,9M12,11.5L11.18,13.3L9.2,13.5L10.7,14.8L10.27,16.75L12,15.75L13.73,16.75L13.3,14.8L14.8,13.5L12.82,13.3L12,11.5Z')}
+                ${tabBtn('honours', 'Palmarès', 'M12,15C8.7,15 6,12.3 6,9V3H18V9C18,12.3 15.3,15 12,15M12,17C13,17 13,19 13,19V21H16V22H8V21H11V19C11,19 11,17 12,17Z')}
+                ${tabBtn('squad', 'Vétérans', 'M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12.5,7H11V13L15.75,15.85L16.5,14.62L12.5,12.25V7Z')}
+            </div>
+
+            <div class="tac-pane" id="leg-pane-career">
+                <div class="lg-grid">
+                    <section class="lg-card"><h4>${t('Trajectoire')}</h4>${trajectory}</section>
+                    <section class="lg-card"><h4>${t('Dernière saison')}</h4>${lastCard}</section>
+                </div>
+            </div>
+
+            <div class="tac-pane hidden" id="leg-pane-awards">
+                ${this.awardsPanelHtml()}
             </div>
 
             <div class="tac-pane hidden" id="leg-pane-honours">
-        <div class="panel-glass rounded-xl p-4 mb-4 border border-white/5">
-            <h4 class="font-teko text-xl text-white uppercase mb-3 flex items-center gap-2">${icon('trophy','w-5 h-5')} Palmarès saison par saison</h4>
-            ${palmares}
-        </div>
-
-        <div class="panel-glass rounded-xl p-4 mb-4 border border-white/5">
-            <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
-                <h4 class="font-teko text-xl text-white uppercase flex items-center gap-2">${icon('medal','w-4 h-4')} Records de tous les temps</h4>
-                <div class="flex gap-1">
-                    <button onclick="app.setLegacyScope(false)" class="px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-colors ${onlyMine ? 'bg-ui-800 text-slate-400' : 'bg-brand-500 text-white'}">${t('Afrique')}</button>
-                    <button onclick="app.setLegacyScope(true)" class="px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-colors ${onlyMine ? 'bg-brand-500 text-white' : 'bg-ui-800 text-slate-400'}">${t('Mon club')}</button>
+                <div class="lg-grid">
+                    <section class="lg-card"><h4>${t('Saison par saison')}</h4>${palmares}</section>
+                    <section class="lg-card">
+                        <div class="lg-card-head">
+                            <h4>${t('Records de tous les temps')}</h4>
+                            <div class="lg-pills">
+                                <button onclick="app.setLegacyScope(false)" class="${onlyMine ? '' : 'is-on'}">${t('Afrique')}</button>
+                                <button onclick="app.setLegacyScope(true)" class="${onlyMine ? 'is-on' : ''}">${t('Mon club')}</button>
+                            </div>
+                        </div>
+                        <div class="lg-boards">
+                            ${board(`${icon('ball', 'w-3.5 h-3.5')} ${t('Buteurs')}`, 1, 'b')}
+                            ${board(`${icon('target', 'w-3.5 h-3.5')} ${t('Passeurs')}`, 2, 'p')}
+                            ${board(`${icon('boot', 'w-3.5 h-3.5')} ${t('Matchs joués')}`, 0, 'm')}
+                        </div>
+                    </section>
                 </div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                ${board(`${icon('ball','w-3.5 h-3.5')} Buteurs`, 1, 'b')}
-                ${board(`${icon('target','w-3.5 h-3.5')} ${t('Passeurs')}`, 2, 'p')}
-                ${board(`${icon('boot','w-3.5 h-3.5')} ${t('Matchs joués')}`, 0, 'm')}
-            </div>
-
-        </div>
-
             </div>
 
             <div class="tac-pane hidden" id="leg-pane-squad">
-        <div class="panel-glass rounded-xl p-4 border border-white/5">
-            <h4 class="font-teko text-xl text-white uppercase mb-1 flex items-center gap-2">${icon('clock','w-4 h-4')} Fin de carrière</h4>
-            <p class="text-[10px] text-slate-400 mb-3">Risque de retraite à l'issue de la saison en cours, à l'âge qu'ils auront alors.</p>
-            ${veteranHtml}
-            ${recentlyRetired.length > 0 ? `
-            <div class="mt-4 pt-3 border-t border-white/5">
-                <h5 class="font-teko text-base text-slate-300 uppercase mb-2">${t('Ils ont raccroché')}</h5>
-                ${recentlyRetired.map(h => `
-                    <div class="mb-2">
-                        <span class="badge-status badge-neutral mb-1">Saison ${h.season}</span>
-                        <div class="flex flex-wrap gap-2 mt-1.5">
-                            ${h.retired.map(n => `
-                                <span class="flex items-center gap-1.5 bg-ui-900 border border-white/5 rounded-full ps-1 pe-2.5 py-1">
-                                    <span class="w-5 h-5 rounded-full overflow-hidden bg-ui-800 grayscale opacity-70 shrink-0">${playerFaceSVG({ id: n, name: n, age: 35, position: 'MIL' })}</span>
-                                    <span class="text-[10px] text-slate-400">${n}</span>
-                                </span>`).join('')}
-                        </div>
-                    </div>`).join('')}
-            </div>` : ''}
-            </div>
+                <section class="lg-card">
+                    <h4>${t('Fin de carrière')}</h4>
+                    <p class="lg-sub">${t("Risque de retraite à l'issue de la saison, à l'âge qu'ils auront alors.")}</p>
+                    ${veteranHtml}
+                    ${recentlyRetired.length > 0 ? `
+                    <div class="mt-4 pt-3 border-t border-white/5">
+                        <h5 class="font-teko text-base text-slate-300 uppercase mb-2">${t('Ils ont raccroché')}</h5>
+                        ${recentlyRetired.map(h => `
+                            <div class="mb-2">
+                                <span class="badge-status badge-neutral mb-1">${t('Saison')} ${h.season}</span>
+                                <div class="flex flex-wrap gap-2 mt-1.5">
+                                    ${h.retired.map(n => `
+                                        <span class="flex items-center gap-1.5 bg-ui-900 rounded-full ps-1 pe-2.5 py-1">
+                                            <span class="w-5 h-5 rounded-full overflow-hidden bg-ui-800 grayscale opacity-70 shrink-0">${playerFaceSVG({ id: n, name: n, age: 35, position: 'MIL' })}</span>
+                                            <span class="text-[10px] text-slate-400">${n}</span>
+                                        </span>`).join('')}
+                                </div>
+                            </div>`).join('')}
+                    </div>` : ''}
+                </section>
             </div>`;
         this.setLegacyPane(this._legacyPane || 'career');
     }
@@ -29680,34 +29949,13 @@ renderMarketFiltered(posFilter = 'ALL', maxPrice = Infinity, minOvr = 0) {
             ? `<span class="text-[10px] text-slate-500 inline-flex items-center gap-1">${icon('clipboard','w-2.5 h-2.5')} ${this.contractLabel(p)}</span>`
             : '';
 
-        html += `
-        <div ${p.isScouted ? `onclick="app.openPlayerCard('${p.id}')"` : ''} class="relative bg-gradient-to-br ${c.bg} rounded-2xl p-[2px] overflow-hidden shadow-[0_5px_15px_rgba(0,0,0,0.3)] ${p.isScouted ? 'cursor-pointer' : ''}">
-            ${isFree ? `<div class="absolute top-2 end-2 z-10 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg">${t('LIBRE')}</div>` : ''}
-            <div class="h-full w-full bg-ui-900/90 rounded-xl p-3 flex flex-col justify-between backdrop-blur-md">
-                <div class="flex justify-between items-start mb-2">
-                    <div class="flex flex-col items-center">
-                        <span class="font-teko text-3xl font-black text-white leading-none">${displayOvr}</span>
-                        <span class="text-[10px] font-bold ${c.text} uppercase">${p.position}</span>
-                    </div>
-                    <div class="w-12 h-12 rounded-full bg-gradient-to-b from-white/10 to-transparent border border-white/10 overflow-hidden shadow-inner">${playerFaceSVG(p)}</div>
-                </div>
-                <div class="text-center border-b border-white/10 pb-1 mb-2">
-                    <h4 class="font-bold text-white text-xs truncate uppercase">${p.name}</h4>
-                    <div class="flex items-center justify-center gap-1.5 mt-1">
-                        ${p.fromClub ? `<div class="w-4 h-4 shrink-0">${clubCrestSVG(p.fromClub)}</div>` : ''}
-                        <p class="text-[10px] text-slate-500 truncate">${p.fromClub || t('Agent libre')} &bull; ${formatMoney(p.wage || 0)}/m ${contractBadge}</p>
-                    </div>
-                </div>
-                <!-- Radar + barres : la forme donne le profil en un regard, les
-                     barres gardent les valeurs exactes pour comparer deux joueurs. -->
-                <div class="flex items-center gap-2 mb-3">
-                    <div class="w-[74px] h-[74px] shrink-0">${statRadar(p, { size: 100, known: p.isScouted, labels: true })}</div>
-                    <div class="grid grid-cols-1 gap-y-1 flex-1 min-w-0">
-                        ${statGrid(p, p.isScouted)}
-                    </div>
-                </div>
-                ${repBlock}
-                <div class="mt-auto" onclick="event.stopPropagation()">
+        html += playerCardHTML(p, {
+            known: p.isScouted,
+            click: p.isScouted ? `app.openPlayerCard('${p.id}')` : '',
+            club: p.fromClub || '',
+            badges: isFree ? `<div class="badge-status badge-success">${t('LIBRE')}</div>` : '',
+            sub: `${p.fromClub || t('Agent libre')} · ${formatMoney(p.wage || 0)}/m${p.contract ? ' · ' + this.contractLabel(p) : ''}`,
+            foot: `${repBlock}
                     ${scoutBtn}
                     <button onclick="app.buyPlayer('${p.id}')" ${isFree && quotaLeft <= 0 ? 'disabled' : ''} class="w-full btn-primary py-1.5 rounded-lg font-bold text-white text-[10px] uppercase flex justify-between px-3 items-center ${isFree && quotaLeft <= 0 ? 'opacity-40 cursor-not-allowed' : ''}">
                         <span>${isFree ? t('Signer') : t('Acheter')}</span>
@@ -29717,10 +29965,8 @@ renderMarketFiltered(posFilter = 'ALL', maxPrice = Infinity, minOvr = 0) {
                         quotaLeft > 0
                             ? `${t('Prime à la signature')} &bull; ${quotaLeft}/${FREE_AGENT_QUOTA} ${t('signature(s) restante(s)')}`
                             : t("Quota d'agents libres épuisé cette saison")
-                    }</p>` : ''}
-                </div>
-            </div>
-        </div>`;
+                    }</p>` : ''}`
+        });
     });
 
     if (allPlayers.length === 0) {
@@ -29928,6 +30174,7 @@ generateFreeAgents() {
             lang: this.lang || 'fr',
             theme: this.theme || 'dark',
             unlockedBadges: this.unlockedBadges || ['none', 'debutant'],
+            transferFeed: (this.transferFeed || []).slice(0, 60),
             premium: !!this.premium,
             seasonPass: !!this.seasonPass,
             vipUntil: this.vipUntil || 0,             // ABONNEMENT VIP — expiration simulée
@@ -30071,6 +30318,7 @@ generateFreeAgents() {
         applyTheme(this.theme);
         applyLanguage(this.lang);
         this.unlockedBadges = data.unlockedBadges || ['none', 'debutant'];
+        this.transferFeed = Array.isArray(data.transferFeed) ? data.transferFeed : [];
         // MONÉTISATION : absent des anciennes sauvegardes -> valeurs neutres.
         this.premium = !!data.premium;
         this.seasonPass = !!data.seasonPass;
@@ -31589,6 +31837,18 @@ generateFreeAgents() {
                 <button onclick="app.replayShopTutorial()" class="w-full mt-2 py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-ui-900 text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
                     ${t('Revoir le tutoriel de la boutique')}
                 </button>
+                ${(() => {
+                    // Cinématique 3D de lancement (voir sm-shell.js / Match3D.intro)
+                    let on = true; try { on = localStorage.getItem('AECM_INTRO') !== '0'; } catch (e) {}
+                    return `<div class="grid grid-cols-2 gap-2 mt-2">
+                        <button onclick="AECMShell.toggleIntro(); app.renderSettings()" class="py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors ${on ? 'bg-brand-500/15 text-brand-400' : 'bg-ui-900 text-slate-500 hover:text-white'}">
+                            ${t('Cinématique au lancement')} : ${on ? t('Oui') : t('Non')}
+                        </button>
+                        <button onclick="AECMShell.replayIntro()" class="py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-ui-900 text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                            ${t('Revoir la cinématique')}
+                        </button>
+                    </div>`;
+                })()}
             </div>
 
             <!-- SAUVEGARDE — la section manquait : le moteur de sauvegarde

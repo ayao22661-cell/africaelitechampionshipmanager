@@ -1,3 +1,74 @@
+# Match plus vivant : silhouettes, banc animé, tambours, écran géant (07/10/2026)
+
+| Élément | Détail |
+|---|---|
+| Silhouettes | Nouveau joueur de champ (cheveux longs) dans la rotation des 22, aux couleurs du club ; chaque joueur a sa taille (±5 %) et sa carrure (±4 %), stables d'un match à l'autre |
+| Gardiens | Gardien domicile violet, gardien extérieur vert (nouveau modèle), gardien remplaçant violet/vert : ils gardent leurs propres couleurs |
+| Détail | Modèles détaillés (« match ») sur tous les appareils |
+| Banc vivant | Assis, staff et remplaçants suivent le ballon de la tête et respirent ; ils **applaudissent** les occasions de leur équipe (assis), le préparateur aussi ; l'entraîneur **longe sa zone technique** en pas chassés pour suivre le jeu |
+| Tambours de supporters | Rythmes de tribune synthétisés (doum, claque, mains), 3 motifs qui alternent ; plus forts quand le ballon approche d'un but, ils s'emballent 8 s après un but. Aucun fichier audio |
+| Foule | « Ooooh » sur une vraie occasion manquée ; clameur plus longue sur un but ; la nappe de foule suit enfin l'action (elle n'était jamais pilotée) |
+| Écran géant | Au-dessus de la tribune derrière le but : « EN DIRECT », noms sur les couleurs des maillots, score, minute ; « BUT ! » sur bandes orange pendant 6 s après un but |
+| Poids | +0,4 Mo (3 modèles à ~130 Ko) |
+
+# Bancs et nouvelles animations sur TOUS les appareils (07/10/2026)
+
+Plus aucun tri par appareil : les abris, le staff, les 7 remplaçants, leurs réactions et les remplacements en direct s'affichent aussi sur les téléphones modestes (avant : rien sur ces téléphones, et 5 remplaçants au lieu de 7 sur les écrans étroits).
+
+# Écran toujours allumé en jeu (07/10/2026)
+
+Le téléphone se mettait en veille au bout de quelques secondes, même pendant un match. `MainActivity` pose maintenant `FLAG_KEEP_SCREEN_ON` : l'écran reste allumé tant que le jeu est au premier plan, la veille normale reprend dès qu'on quitte l'appli. (Changement natif Android : il ne passe pas par `assets/www`.)
+
+# Bancs de touche vivants : staff, remplaçants, remplacements en direct (07/10/2026)
+
+| Élément | Détail |
+|---|---|
+| Nouveaux personnages 3D | 7 membres du staff (entraîneur en costume, entraîneur en survêtement, 2 adjoints, médecin, kiné, préparateur physique) + nouvel arbitre (`3d/staff/*.glb`). Les fichiers fournis (25 Mo chacun, sans squelette) ont été **squelettés automatiquement** (squelette des joueurs greffé, poids de peau transférés) puis allégés : ~6 000 triangles, texture 1024 WebP, meshopt → **110 à 155 Ko** chacun (1,1 Mo en tout). Script : `tools/rig_staff.mjs` |
+| Bancs | Chaque banc : l'entraîneur debout dans la zone technique, 3 membres du staff assis, 5 à 7 remplaçants assis **aux couleurs du club** (gardien remplaçant compris), le préparateur physique debout à côté des remplaçants. Assise du banc ramenée à 45 cm |
+| Poses ajoutées | Assis, bras levés, mains sur la tête (os orientés par le code : aucune animation de ce type n'existait) |
+| Réactions | But : l'entraîneur et le préparateur bondissent bras levés, le staff et les remplaçants se lèvent pour fêter ; l'entraîneur adverse met les mains sur la tête puis donne des consignes. Occasion arrêtée : l'entraîneur de l'attaque met les mains sur la tête. Pendant le jeu : consignes régulières, il suit le ballon du regard |
+| Remplacements en direct | Le remplaçant se lève, rejoint la ligne médiane et entre à sa place dans le jeu ; le joueur remplacé sort par le même endroit et va s'asseoir à sa place sur le banc (vous et l'adversaire, blessures comprises) — `Match3D.substitute`, appelé par `simReplace` |
+| Cinématique | L'entraîneur est le vrai modèle en costume ; nouvel arbitre |
+| Téléphones faibles | Pas de bancs (comme le décor des abris), aucun coût |
+
+# Maillots 3D propres (07/10/2026)
+
+| Problème | Correction |
+|---|---|
+| Maillots « déchirés », taches de la couleur d'origine | Recoloration **par triangle** du modèle (`kitMasks`) au lieu d'un tri pixel par pixel : chaque morceau de maillot ou de short est repeint en entier ; manches, col et chaussettes inclus |
+| Plaques d'une autre couleur sur le short | Le short est repéré par triangle (hauteur sur le corps + couleur), plus de demi-short |
+| Lignes sur le maillot, points clairs sur les bras | Bords des îlots de texture remplis avec la couleur de l'îlot voisin (`padIslands`) ; pixels d'arête mal attribués écartés |
+| Plis trop sombres (maillot blanc sale) | Ombrage adouci (`paintZone`) |
+
+# Carte joueur unique, partout (07/10/2026)
+
+Une seule carte joueur, inspirée des cartes des jeux de football (forme d'écusson, note et poste en haut à gauche, drapeau et écusson du club, visage, nom, six attributs en deux colonnes), aux couleurs AECM et sans aucune bordure.
+| Où | Ce qui change |
+|---|---|
+| Effectif (vue Cartes) | Carte unique + jauges Forme / Moral, alertes (contrat, ego) et soin dessous |
+| Mercato | Carte unique (attributs « ? » tant que le joueur n'est pas supervisé) + boutons Superviser / Acheter / Signer dessous |
+| Académie | Carte unique (potentiel en étiquette, bilan en réserve) + Promouvoir / Prêter dessous |
+| Packs de joueurs | Les recrues apparaissent en cartes |
+Paliers par note : élite ≥ 85 (orange), or ≥ 75, argent ≥ 65, bronze. Fonction commune : `playerCardHTML(p, opts)` dans `app.js`, styles `.pcd-*` dans `sm-shell.css`.
+
+# Inspiration « jeux de gestion » appliquée partout, charte AECM conservée (07/10/2026)
+
+Inspiré des captures fournies (Soccer Manager, Football Manager Mobile, FC Mobile, UFL), sans rien copier : uniquement l'orange #f97316 et les gris ui-900/800/700.
+| Écran | Changement |
+|---|---|
+| Tous | **Aucune bordure, aucun contour** : règle globale (seuls les traits du terrain restent) ; faux contours en dégradé des cartes joueurs et « rings » supprimés ; vérifié sur les 16 écrans (0 contour) |
+| Tous | Onglets façon SM : onglet actif en bloc orange plein, biseauté ; barres d'onglets plus fines (34 px) |
+| Tous | Un nouvel écran s'ouvre en haut (il gardait le défilement de l'écran précédent) |
+| Gemmes | Plus de violet (hors charte) : bleu ciel, comme l'icône du bandeau |
+| Calendrier | Ligne façon FM : date · écusson · adversaire · D/E · **difficulté 1 à 5 colorée** (ou score V/N/D) · compétition ; seul le prochain match est en orange |
+| Classement | En-tête sur une ligne (ligue + pays) ; zones sur la pastille du rang ; résultats de la journée « domicile · écusson · score · écusson · extérieur », votre match en orange |
+| Effectif | Le tableau apparaît dès l'ouverture : tuiles de chiffres sur une ligne, titre masqué, en-tête de colonnes collant |
+| Fiche joueur | Colonne gauche façon fiche de gestion (poste, valeur, âge, salaire, contrat, potentiel, matchs) ; **tuiles d'état** Moral / Forme / Disponibilité / Matchs ; actions sur une ligne ; notes d'attributs en cercles pleins |
+| Mercato | Nouvel onglet **Transferts** : les transferts du continent (poste · note · joueur · club → club · montant · date), enregistrés et sauvegardés (`logTransfer`, `transferFeed`) |
+| Campus | Carte du club : étiquettes des installations posées sur le stade, avec leur niveau en anneau orange (un toucher descend à l'installation) |
+| Match | **But** : carte du buteur (note, poste, visage, nom) + grand bandeau orange rayé « BUT ! » ; **remplacement** : carte entrant ↗ / sortant ↙ avec écusson et minute (vous et l'adversaire) ; tableau de score aux couleurs des maillots |
+| Cinématique | Nom du stade en bandeau : bloc icône + titre sur bande orange + capacité et compétition |
+
 # Écrans de gestion refaits en « hubs » de jeu (07/10/2026)
 
 L'accueil et ses onglets ne changent pas. Les autres écrans reprennent le langage des jeux de gestion actuels — en-têtes à tuiles et cartes (Football Manager 26), hubs à onglets (EA FC 26), vues d'ensemble par section (Soccer Manager 26) — sans en copier les designs, avec la charte d'AECM uniquement.
@@ -415,3 +486,50 @@ Aucun bug fonctionnel connu, et les deux pistes d'approfondissement sont implém
 - Billets de championnat domestique africain : 5 – 20 $
 - Prime CAF Champions League 2025/26 pour le vainqueur : ~6 M$ (le jeu est à 5 M€, cohérent)
 - Transferts de stars africaines vers l'Europe : 30-80 M€ (hors périmètre — le jeu modélise des transferts intra-Afrique, bien plus bas)
+
+## 07/10/2026 — Revue des pop-ups en paysage
+- Dialogues (entretien, presse, interview) en 2 colonnes ; effectif adverse, prêts et packs en grille.
+- Derniers contours orange supprimés (ombres intérieures, focus, carte du prochain match).
+- Paysage : bureau du club, messagerie, compositions (22 joueurs visibles), discours de mi-temps, remplacements, consignes en direct (15 formations), notes d après-match.
+- Portrait des joueurs agrandi dans les dialogues ; barre orange retirée du rapport d avant-match.
+
+## 07/10/2026 — Graphisme, cinématique de lancement, gestes en match
+- Cinématique 3D au lancement (stade du club de nuit, projecteurs qui s allument, survol en drone, sortie des deux équipes du tunnel, logo AECM26). Bouton Passer ; réglage Paramètres (activer/désactiver, revoir).
+- Match 3D : passe courte du plat du pied, contrôle du receveur (poitrine/tête sur ballon haut), frappe en pleine course, tacles debout/glissés variés, chute et relevé du joueur taclé, interception, gardien (dégagement, relance, pas chassés, placement de sa défense), inclinaison du corps en sprint.
+- Carte Prochain match : nouveau décor de stade (perspective, tonte, foule, LED, projecteurs) pour les 6 stades de la boutique.
+- Effectif : 6 chiffres clés sur une ligne, filtres sur une ligne. Entrée d écran animée, réaction au toucher des boutons, halo de fond, palier du menu lisible.
+
+## 07/10/2026 — Cinématique de match façon PES, shorts aux couleurs du club
+- Cinématique de lancement : après les projecteurs, le survol et la sortie du tunnel, un vrai match joué par le moteur (non jouable) : l entraîneur au bord du terrain donne ses consignes (tirées de vos tactiques, sous-titrées), coup d envoi, plan télé, travelling au ras de la pelouse, frappe au ralenti filmée derrière le but, BUT ! avec le nom du buteur, joie de l entraîneur, grue + logo. Arbitre présent.
+- Shorts : la zone du short est retrouvée sur le modèle 3D (entre genou et taille) et peinte à la couleur de short du club ; fini le short noir d un des modèles de joueurs.
+
+## 07/10/2026 — Joueurs 3D : fin du rendu gris et délavé
+- Matériaux des joueurs passés de métal (metallic = 1, gris sans reflets) à tissu mat, opaques.
+- Léger éclairage propre tiré de la texture : maillots et peau gardent leurs couleurs sous la pluie et la nuit.
+- Couleurs de tenue très sombres relevées en 3D (même teinte) pour rester lisibles ; voile de pluie allégé.
+
+## 07/10/2026 — Écrans qui restaient affichés
+- Campus : une fois visité, son écran (et son stade 3D) restait affiché sous tous les autres (mise en page en colonnes qui forçait l affichage). Un écran caché reste désormais caché.
+- Changer d écran ferme les fenêtres de navigation restées ouvertes : recherche, effectif d un autre club, bureau, fiches (comparaison, agence, données, chronique, recrutement).
+
+## 07/10/2026 — Refonte Héritage et Distinctions, fin des textes coupés
+- Héritage : bandeau de tête (écusson + 4 chiffres de carrière), 4 onglets (Carrière, Trophées, Palmarès, Vétérans), cartes épurées, palmarès en 2 colonnes, records lisibles.
+- Course aux trophées : Ballon d Or pleine largeur, autres distinctions en cartes verticales, tableaux en 2 colonnes, noms sur 2 lignes.
+- Distinctions : rendez-vous quotidien avec la série des 7 jours, objectifs en lignes fines, Onze de la journée sur un mini-terrain, Pass de saison en piste horizontale ; bandeau et titre redondants retirés.
+- Partout en paysage : plus de textes coupés « … » (deux lignes à la place), libellés des tuiles de chiffres entiers, État du club sur une colonne, cartes d intensité d entraînement lisibles.
+- Aucune bordure : contours retirés des nouveaux composants (Héritage, Distinctions, tuiles, puces, cinématique) et des barres d onglets ; les blocs se distinguent par leur fond.
+
+## 07/10/2026 — Remplacements simplifiés (façon jeux de gestion)
+- Avant le match (Tactique, paysage) : joueurs du terrain cliquables ; banc en bande sous le terrain ; réservistes en liste compacte à droite. Toucher un joueur puis un autre = échange (glisser-déposer aussi). Le joueur touché s allume.
+- Pendant le match : nouvel écran Remplacements = le onze sur un terrain (énergie en anneau, note du match, fatigués en rouge) + le banc. Toucher un titulaire puis un remplaçant = changement fait ; plusieurs changements d affilée ; bouton « Le plus fatigué » (un geste) ; « Reprendre le match ».
+
+## 07/10/2026 — La 3D se lance sur mobile
+- Le garde-fou de fluidité ne coupe plus la 3D pour toujours : 8 s de chauffe, seuil 12 i/s, deux paliers de résolution, et en dernier recours 2D pour CE match seulement (jamais mémorisé).
+- Seul le bouton 2D/3D enregistre un choix ; un ancien « 2D » écrit automatiquement par les versions précédentes est ignoré. 3D par défaut sur tous les appareils compatibles.
+- Échec de chargement 3D : la raison s affiche, et le bouton 2D/3D retente le chargement.
+- Android : accélération matérielle explicite et mémoire étendue (largeHeap) pour la 3D.
+- Cause du « 3D indisponible : [object Event] » sur mobile : la cinématique de lancement créait le décodeur des modèles 3D sans le régler sur la copie locale ; Babylon allait le chercher sur Internet, l échec restait en mémoire et bloquait la 3D des matchs. Un seul réglage partagé (ensureBabylon) pour la cinématique, le match et le stade du Campus : plus aucun fichier chargé hors de l application.
+- Message d erreur 3D précis : étape en cours + fichier concerné.
+
+## 07/10/2026 — Compositions d avant-match façon jeux de gestion
+- Les deux onze face à face sur UN terrain (votre club et l adversaire de chaque côté), visage + note de chaque joueur (note cachée « ? » sans recruteur), bandeau des deux clubs aux couleurs de leur maillot, Retour / Coup d envoi aux extrémités, ligne date · compétition · stade, formation et moyenne du onze, remplaçants sous chaque moitié, entraîneurs et maillots en bas. Placement sans chevauchement. Sans bordures.

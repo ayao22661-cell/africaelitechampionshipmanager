@@ -388,6 +388,10 @@ window.I18N_EN = {
     'Ambiance sonore': 'Sound',
     'Revoir le tutoriel': 'Replay the Tutorial',
     'Revoir le tutoriel de la boutique': 'Replay the Shop Tutorial',
+    'Cinématique au lancement': 'Launch cinematic',
+    'Revoir la cinématique': 'Replay the cinematic',
+    'Oui': 'Yes',
+    'Non': 'No',
 
     // ── Négociations de transfert et contrats ────────────────────────────
     'Renouvellement de contrat': 'Contract Renewal',

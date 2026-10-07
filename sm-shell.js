@@ -131,12 +131,31 @@
             const before = cur;
             // le stade 3D du Campus ne tourne que quand on le regarde
             if (id !== 'campus' && window.Match3D && Match3D.stopStadiumPreview) try { Match3D.stopStadiumPreview(); } catch (e) {}
+            // Changer d'écran ferme les fenêtres de NAVIGATION restées ouvertes (recherche, effectif d'un
+            // autre club, bureau, fiches) : sinon elles restaient affichées par-dessus le nouvel écran.
+            // Les fenêtres qui attendent une décision (interview, fin de saison…) ne sont pas touchées.
+            if (id !== 'inbox') {
+                ['global-search-modal', 'team-squad-modal'].forEach(k => { const m = document.getElementById(k); if (m) m.classList.add('hidden'); });
+                ['compare-modal', 'agency-modal', 'datahub-modal', 'chronicle-modal', 'scout-modal'].forEach(k => { const m = document.getElementById(k); if (m) m.remove(); });
+                const of = document.getElementById('club-office');
+                if (of && !of.hidden && app.closeOffice) try { app.closeOffice(); } catch (e) {}
+            }
             const r = sv(id);
             if (id !== 'inbox' && id !== before && document.getElementById('view-' + id) && !document.getElementById('view-' + id).classList.contains('hidden-view')) {
                 if (!going && before) { hist.push(before); if (hist.length > 30) hist.shift(); }
                 cur = id;
             }
             sync(); queueHub();
+            // un nouvel écran s'ouvre toujours en haut (il gardait le défilement du précédent)
+            if (id !== before) { const sc = document.querySelector('main .overflow-y-auto, main.overflow-y-auto, .flex-1.overflow-y-auto'); if (sc) sc.scrollTop = 0; }
+            // entrée d'écran : léger fondu + glissé, comme un changement de menu dans un jeu
+            if (id !== before && id !== 'match') {
+                const v = document.getElementById('view-' + id);
+                if (v && !v.classList.contains('hidden-view')) {
+                    v.classList.remove('sm-enter'); void v.offsetWidth; v.classList.add('sm-enter');
+                    clearTimeout(v._smEnterT); v._smEnterT = setTimeout(() => v.classList.remove('sm-enter'), 420);
+                }
+            }
             return r;
         };
         const uh = app.updateHeader && app.updateHeader.bind(app);
@@ -254,19 +273,61 @@
             showGoalCard(p, club, a.matchClock ? a.matchClock() : (lm.minute + "'"), `${lm.homeScore} - ${lm.awayScore}`);
         });
     }
+    // Carte du buteur façon jeux de football : la carte du joueur à gauche,
+    // un grand bandeau « BUT ! » en bas avec le nom et l'écusson du club.
     function showGoalCard(p, club, minute, score) {
         let el = document.getElementById('sm-goal');
-        if (!el) { el = document.createElement('div'); el.id = 'sm-goal'; el.className = 'sm-goal'; (document.getElementById('view-match') || document.body).appendChild(el); }
+        if (!el) { el = document.createElement('div'); el.id = 'sm-goal'; el.className = 'sm-goal'; document.body.appendChild(el); }
         let face = ''; try { face = p ? playerFaceSVG(p) : ''; } catch (e) {}
         let crest = ''; try { crest = club ? clubCrestSVG(club.name) : ''; } catch (e) {}
-        el.innerHTML = `<span class="sm-goal-face">${face || crest}</span>
-            <span class="sm-goal-txt"><b>${esc(p ? p.name : (club ? club.name : ''))}</b><em>${tr('BUT !')}</em><small>${esc(minute)} · ${esc(score)}</small></span>
-            <span class="sm-goal-crest">${crest}</span>`;
+        let pos = ''; try { pos = p ? playerRole(p).short : ''; } catch (e) { pos = (p && p.position) || ''; }
+        const nom = p ? String(p.name || '') : (club ? club.name : '');
+        el.innerHTML = `
+            <div class="sm-goal-card">
+                <span class="sm-goal-ovr">${p && p.ovr ? p.ovr : ''}</span>
+                <span class="sm-goal-pos">${esc(pos)}</span>
+                <span class="sm-goal-face">${face || crest}</span>
+                <b class="sm-goal-name">${esc(nom.split(' ').pop())}</b>
+            </div>
+            <div class="sm-goal-tag"><span>${esc(nom)}</span><i>${crest}</i></div>
+            <div class="sm-goal-band"><em>${tr('BUT !')}</em><small>${esc(minute)} · ${esc(score)}</small></div>`;
         el.classList.remove('is-on'); void el.offsetWidth; el.classList.add('is-on');
         clearTimeout(showGoalCard._t); showGoalCard._t = setTimeout(() => el.classList.remove('is-on'), 4200);
     }
 
+    // Carte de remplacement : flèche montante pour l'entrant, descendante pour le sortant.
+    function subCard(pIn, pOut, club) {
+        const a = window.app, lm = a && a.liveMatch;
+        let el = document.getElementById('sm-subcard');
+        if (!el) { el = document.createElement('div'); el.id = 'sm-subcard'; el.className = 'sm-subcard'; document.body.appendChild(el); }
+        let crest = ''; try { crest = club ? clubCrestSVG(club.name) : ''; } catch (e) {}
+        let minute = ''; try { minute = lm ? ((a.matchClock && a.matchClock()) || (lm.minute + "'")) : ''; } catch (e) {}
+        const up = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M9 6h9v9"/></svg>';
+        const down = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M15 18H6V9"/></svg>';
+        el.innerHTML = `
+            <div class="sm-sub-rows">
+                <div class="is-in">${up}<b>${esc(String((pIn && pIn.name) || '').split(' ').pop())}</b></div>
+                <div class="is-out">${down}<b>${esc(String((pOut && pOut.name) || '').split(' ').pop())}</b></div>
+            </div>
+            <div class="sm-sub-side"><i>${crest}</i><small>${esc(minute)}</small></div>`;
+        el.classList.remove('is-on'); void el.offsetWidth; el.classList.add('is-on');
+        clearTimeout(subCard._t); subCard._t = setTimeout(() => el.classList.remove('is-on'), 3600);
+    }
+
+    // Tableau de score : chaque nom d'équipe sur la couleur de son maillot (comme à la télé)
+    function paintScorebug() {
+        const a = window.app, lm = a && a.liveMatch, h = document.getElementById('match-header');
+        if (!lm || !h) return;
+        const lum = hex => { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return 0; const n = parseInt(m[1], 16);
+            return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
+        const kit = (t, away) => { try { return clubKit(t.name, away).base || '#1f2937'; } catch (e) { return '#1f2937'; } };
+        const hc = kit(lm.home, false), ac = kit(lm.away, true);
+        h.style.setProperty('--hc', hc); h.style.setProperty('--ht', lum(hc) > .6 ? '#0a0e17' : '#fff');
+        h.style.setProperty('--ac', ac); h.style.setProperty('--at', lum(ac) > .6 ? '#0a0e17' : '#fff');
+    }
+
     function setInMatch(on) {
+        if (on) try { paintScorebug(); } catch (e) {}
         const root = document.documentElement, was = root.classList.contains('in-match');
         root.classList.toggle('in-match', !!on);
         if (on && !was) lastGoalEv = (typeof MATCHSIM !== "undefined" && MATCHSIM.evSeq) || 0;   // pas de carte pour les buts d'un match précédent
@@ -316,13 +377,7 @@
                 kpi('Budget', money(a.budget))
             ];
         },
-        awards(a) {
-            return [
-                kpi('Points de carrière', a.careerPoints || 0),
-                kpi('Réputation', (() => { try { return a.getReputationLabel(); } catch (e) { return '—'; } })()),
-                kpi('Saison', a.currentSeason || 1)
-            ];
-        },
+        // (Distinctions : pas de bandeau de chiffres, l'écran a été épuré)
         manager(a) {
             let conf = null; try { conf = a.boardConfidence(); } catch (e) {}
             return [
@@ -345,7 +400,8 @@
     const TABS = {
         market: [['search', 'Recherche', ['market-filter-bar', 'market-grid']],
                  ['packs', 'Packs de joueurs', ['market-packs-panel']],
-                 ['loans', 'Prêts', ['loans-panel']]]
+                 ['loans', 'Prêts', ['loans-panel']],
+                 ['feed', 'Transferts', ['transfer-feed-panel']]]
     };
     const hubTab = {};
     const isPanel = el => el && el.nodeType === 1 && (el.matches('.panel-glass, .card, .ss-block') || /rounded-2xl/.test(el.className || '')) && el.offsetHeight > 40;
@@ -426,11 +482,121 @@
             if (cur !== 'dashboard') { a.switchView('dashboard'); return; }
             if (typeof a.startSimulationSequence === 'function') a.startSimulationSequence();
         },
-        sync, back: goBack
+        sync, back: goBack, subCard, goalCard: showGoalCard,
+        // Paramètres : cinématique de lancement
+        toggleIntro() { try { localStorage.setItem('AECM_INTRO', localStorage.getItem('AECM_INTRO') === '0' ? '1' : '0'); } catch (e) {} },
+        replayIntro() { try { sessionStorage.removeItem('AECM_INTRO_DONE'); localStorage.removeItem('AECM_INTRO'); } catch (e) {} playIntro(); }
     };
+
+    // ---- Cinématique de lancement (une fois par ouverture de l'application) ----
+    function introData() {
+        const a = window.app || {};
+        const home = a.userClubName || null;
+        let away = null, comp = '';
+        try {
+            const f = (a.fixtures || []).filter(x => !x.played && x.home && x.away && (x.home.isUser || x.away.isUser) && x.matchday >= a.matchday)
+                .sort((x, y) => x.matchday - y.matchday)[0];
+            if (f) { away = f.home.isUser ? f.away.name : f.home.name; comp = (document.getElementById('dash-match-competition') || {}).textContent || ''; }
+        } catch (e) {}
+        let st = { name: '', capacity: 12000 };
+        try { if (home && a.stadiumOf) st = a.stadiumOf(home); } catch (e) {}
+        // le match de la cinématique est joué avec les VRAIES formations et tactiques des deux clubs
+        let sim = null, coach = [], coachName = '';
+        try {
+            const FM = typeof FORMATIONS_MAP !== 'undefined' ? FORMATIONS_MAP : null, M = typeof MATCHSIM !== 'undefined' ? MATCHSIM : null;
+            if (FM && M) {
+                const ut = a.userTactics || {};
+                const hc = (a.clubByName && home && a.clubByName(home)) || { name: home || 'H', force: 75 };
+                const ac = (a.clubByName && away && a.clubByName(away)) || { name: away || 'A', force: 72 };
+                const af = (a.aiFormationFor && ac) ? a.aiFormationFor(ac) : '4-4-2';
+                const last = p => p ? String(p.name || '').split(' ').pop() : '';
+                sim = {
+                    homeForm: FM[ut.formation] || FM['4-4-2'], awayForm: FM[af] || FM['4-4-2'],
+                    homeTac: M.styleFor(hc, true, ut), awayTac: M.styleFor(ac, false, null),
+                    homeForce: hc.force || 75, awayForce: ac.force || 72,
+                    homeNames: (a.userSquad || []).slice(0, 11).map(last), awayNames: [],
+                    homeRoles: null, awayRoles: null
+                };
+                // consignes criées depuis le banc : celles que vous avez réglées dans la Tactique
+                const ment = { offensive: 'On attaque ! Tout le monde vers l\'avant !', defensive: 'On reste bas, on ferme les espaces !', balanced: 'Restez compacts, gardez vos distances !' };
+                const pres = { all: 'Pressez partout, ne les laissez pas respirer !', half: 'On presse à partir du rond central !', area: 'Laissez-les venir, on attend devant la surface !' };
+                const sty = { possession: 'Gardez le ballon, faites-le tourner !', direct: 'Vite vers l\'avant, cherchez la profondeur !', counter: 'On récupère et on part en contre !' };
+                coach = [ment[ut.mentality] || ment.balanced, pres[ut.pressing] || pres.half, sty[ut.style] || sty.possession];
+                coachName = a.managerName || a.coachName || '';
+            }
+        } catch (e) { sim = null; }
+        return { home, away, comp, stadium: st.name, capacity: st.capacity, sim, coach, coachName };
+    }
+    function crest(name) { try { return typeof clubCrestSVG === 'function' && name ? clubCrestSVG(name) : ''; } catch (e) { return ''; } }
+    async function playIntro() {
+        try {
+            if (sessionStorage.getItem('AECM_INTRO_DONE')) return;
+            sessionStorage.setItem('AECM_INTRO_DONE', '1');
+            if (localStorage.getItem('AECM_INTRO') === '0') return;
+        } catch (e) {}
+        if (!window.Match3D || !Match3D.intro) return;
+        const d = introData();
+        const ov = document.createElement('div');
+        ov.id = 'sm-intro';
+        ov.innerHTML = `
+            <div class="smi-stage"></div>
+            <div class="smi-flash"></div>
+            <div class="smi-bar is-top"></div><div class="smi-bar is-bot"></div>
+            <div class="smi-load"><i></i></div>
+            <div class="smi-cap smi-stadium">
+                <i class="smi-st-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5C6.5 5 2 6.8 2 9v6c0 2.2 4.5 4 10 4s10-1.8 10-4V9c0-2.2-4.5-4-10-4zm0 2c4.4 0 7.6 1.3 7.9 2-.3.7-3.5 2-7.9 2S4.4 9.7 4.1 9c.3-.7 3.5-2 7.9-2zM4 11.6c.6.3 1.3.6 2 .8V16c-1.3-.4-2-.9-2-1zm4 1.3c.6.1 1.3.2 2 .2V17l-2-.3zm4 .3c.7 0 1.4-.1 2-.2v4l-2 .1zm4-.6c.7-.2 1.4-.5 2-.8V15c0 .2-.7.6-2 1z"/></svg></i>
+                <div class="smi-st-txt">
+                    <b>${esc(d.stadium || 'Soir de match')}</b>
+                    <span>${d.capacity ? esc(Number(d.capacity).toLocaleString('fr-FR')) + ' places · ' : ''}${esc(d.comp || 'Ce soir')}</span>
+                </div>
+            </div>
+            <div class="smi-cap smi-teams">
+                <div class="smi-team"><span class="smi-crest">${crest(d.home)}</span><b>${esc(d.home || 'Votre club')}</b></div>
+                <div class="smi-vs"><b>VS</b>${d.comp ? `<small>${esc(d.comp)}</small>` : ''}</div>
+                <div class="smi-team is-away"><b>${esc(d.away || 'Adversaire')}</b><span class="smi-crest">${crest(d.away)}</span></div>
+            </div>
+            <div class="smi-black"></div>
+            <div class="smi-cap smi-coach"><small>${esc(d.coachName ? 'Coach ' + d.coachName : 'L\'entraîneur')}</small><b></b></div>
+            <div class="smi-cap smi-goal"><b>But !</b><span></span></div>
+            <div class="smi-cap smi-slow">Ralenti</div>
+            <div class="smi-logo">
+                <div class="smi-mark">AECM<em>26</em></div>
+                <div class="smi-sweep"></div>
+                <div class="smi-tag">African Elite Clubs Manager</div>
+            </div>
+            <div class="smi-tap">Touchez pour jouer</div>
+            <button type="button" class="smi-skip">Passer <span>›</span></button>`;
+        document.body.appendChild(ov);
+        document.documentElement.classList.add('sm-intro-on');
+        const stage = ov.querySelector('.smi-stage');
+        let canTap = false;
+        const close = () => { ov.classList.add('is-out'); document.documentElement.classList.remove('sm-intro-on'); setTimeout(() => ov.remove(), 700); };
+        ov.querySelector('.smi-skip').onclick = e => { e.stopPropagation(); Match3D.introSkip(); };
+        ov.addEventListener('click', () => { if (canTap) Match3D.introSkip(); });
+        const onCue = (n, x) => {
+            if (n === 'start') ov.classList.add('is-run');
+            else if (n === 'light') { ov.classList.remove('is-flash'); void ov.offsetWidth; ov.classList.add('is-flash'); }
+            else if (n === 'stadium') ov.classList.add('cap-stadium');
+            else if (n === 'teams') { ov.classList.remove('cap-stadium'); ov.classList.add('cap-teams'); }
+            else if (n === 'black') { ov.classList.remove('cap-teams'); ov.classList.add('is-black'); }
+            else if (n === 'match') ov.classList.remove('is-black');
+            else if (n === 'coach') { const b = ov.querySelector('.smi-coach b'); b.textContent = '« ' + x + ' »'; ov.classList.remove('cap-coach'); void ov.offsetWidth; ov.classList.add('cap-coach'); }
+            else if (n === 'coachoff') ov.classList.remove('cap-coach');
+            else if (n === 'slowmo') ov.classList.add('cap-slow');
+            else if (n === 'goal') { ov.classList.remove('cap-slow'); ov.querySelector('.smi-goal span').textContent = x || ''; ov.classList.add('cap-goal'); }
+            else if (n === 'coachjoy') ov.classList.remove('cap-goal');
+            else if (n === 'logo') { ov.classList.remove('cap-teams', 'cap-goal', 'cap-slow', 'cap-coach'); ov.classList.add('cap-logo'); }
+            else if (n === 'tap') { canTap = true; ov.classList.add('cap-tap'); }
+            else if (n === 'end') close();
+        };
+        const ok = await Match3D.intro(stage, { home: d.home, away: d.away, stadium: d.stadium, capacity: d.capacity, sim: d.sim, coach: d.coach, onCue }).catch(() => false);
+        if (!ok) close();                       // pas de WebGL / chargement impossible : on passe directement au jeu
+    }
 
     function boot() {
         buildSide(); buildHeader(); buildMatchHud();
+        // la cinématique attend que la partie soit chargée (nom du club, prochain match)
+        { let n = 0; const id = setInterval(() => { n++; const a = window.app; if ((a && a.userClubName && a.fixtures && a.fixtures.length) || n > 25) { clearInterval(id); playIntro(); } }, 120); }
         watchMain(); queueHub();
         if (!hookApp()) { const id = setInterval(() => { if (hookApp()) { clearInterval(id); sync(); } }, 200); }
         sync();

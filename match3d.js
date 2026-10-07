@@ -29,14 +29,20 @@
     const BACK_SPEED = 2.0, STRAFE_SPEED = 2.1;  // m/s estimés des clips jog_backward / jog_strafe_*
     const CELEBRATIONS = ['cel_bboy_hip_hop_move', 'cel_chapa-giratoria', 'cel_swing_dancing',
         'cel_stepping_backward', 'cel_shuffling', 'cel_capoeira'];   // volontairement sans les 3 clips violents
-    const OUTFIELD_MODELS = ['perso_03', 'perso_05', 'perso_07'];
+    const OUTFIELD_MODELS = ['perso_03', 'perso_05', 'perso_07', 'joueur_bleu'];
     const GK_MODEL = 'perso_08', REF_MODEL = 'perso_10';
+    // gardiens : chacun garde ses propres couleurs (violet à domicile, vert à l'extérieur)
+    const GK_FOR = { H: 'perso_08', A: 'gardien_vert' }, GK_SUB = { H: 'gardien_violet', A: 'gardien_vert' };
+    const GK_MODELS = ['perso_08', 'gardien_vert', 'gardien_violet'];
     // Réglage de recoloration : quelle zone du fichier de texture est le maillot.
     const KIT_MASK = {
         perso_03: { kind: 'hue', h: 225 },
         perso_05: { kind: 'hue', h: 150 },
         perso_07: { kind: 'gray', h: 215 },
-        perso_08: { kind: 'hue', h: 285 }
+        perso_08: { kind: 'hue', h: 285 },
+        joueur_bleu: { kind: 'hue', h: 225 },
+        gardien_vert: { kind: 'hue', h: 140 },
+        gardien_violet: { kind: 'hue', h: 290 }
     };
 
     const S = {
@@ -52,7 +58,8 @@
 
     // ---- Utilitaires --------------------------------------------------
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    // horloge : celle de la page, sauf pendant la cinématique (ralentis) qui fournit la sienne
+    const now = () => (S.nowFn ? S.nowFn() : (typeof performance !== 'undefined' ? performance.now() : Date.now()));
     const wx = (x) => (x - 50) * M_X;
     const wz = (y) => (50 - y) * M_Z;            // y du jeu vers le bas = vers la caméra (z négatif)
     const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
@@ -64,6 +71,38 @@
             s.onload = res; s.onerror = () => rej(new Error('script ' + src));
             document.head.appendChild(s);
         });
+    }
+
+    // Décrit une erreur lisiblement : un échec de chargement arrive souvent sous forme d'« Event »
+    // brut (affiché « [object Event] ») — on en tire le type et le fichier concerné.
+    function describeErr(e) {
+        try {
+            if (!e) return 'erreur inconnue';
+            if (typeof e === 'string') return e.slice(0, 140);
+            if (e.message) return String(e.message).slice(0, 140);
+            if (e.type && (e.target || e.srcElement)) {
+                const t = e.target || e.srcElement;
+                const src = (t && (t.src || t.currentSrc || t.responseURL || t.url)) || S.lastUrl || '';
+                return 'échec « ' + e.type + ' »' + (t && t.tagName ? ' (' + t.tagName.toLowerCase() + ')' : '') + (src ? ' sur ' + String(src).split('/').slice(-2).join('/') : '');
+            }
+            return String(e).slice(0, 140) + (S.lastUrl ? ' — ' + S.lastUrl.split('/').slice(-2).join('/') : '');
+        } catch (x) { return 'erreur inconnue'; }
+    }
+
+    // Charge le moteur 3D et règle le décodeur des modèles compressés sur la copie LOCALE.
+    // Ce décodeur est créé une seule fois pour toute la session : s'il est créé sans ce réglage
+    // (cinématique de lancement), Babylon va le chercher sur son serveur Internet ; sans réseau,
+    // l'échec restait en mémoire et la 3D des matchs ne démarrait plus (« [object Event] »).
+    async function ensureBabylon() {
+        if (!window.BABYLON_AECM) await loadScript(VENDOR + 'babylon-aecm.js');
+        const B = window.BABYLON_AECM;
+        const url = VENDOR + 'meshopt_decoder.js';
+        const cfg = B.MeshoptCompression.Configuration;
+        if (!cfg || !cfg.decoder || cfg.decoder.url !== url) {
+            B.MeshoptCompression.Configuration = { decoder: { url } };
+            try { if (B.MeshoptCompression._Default) { B.MeshoptCompression._Default.dispose(); B.MeshoptCompression._Default = null; } } catch (e) {}
+        }
+        return B;
     }
 
     function webglOK() {
@@ -82,9 +121,11 @@
         try {
             const v = localStorage.getItem('AECM_3D');
             if (v === '1') return true;
-            if (v === '0') return false;
+            // un « 0 » ne compte que s'il a été choisi au bouton : les anciennes versions l'écrivaient
+            // toutes seules après un démarrage lent, ce qui coupait la 3D pour toujours
+            if (v === '0' && localStorage.getItem('AECM_3D_USER') === '1') return false;
         } catch (e) {}
-        return !detectLowEnd();      // par défaut : 3D sauf téléphone très faible
+        return true;                 // par défaut : 3D (les téléphones modestes passent en réglages allégés)
     }
 
     // ---- Maillots : recoloration des textures --------------------------
@@ -104,6 +145,21 @@
         const img = j.images[src], bv = j.bufferViews[img.bufferView];
         const bytes = new Uint8Array(glbBuf, g.bin + (bv.byteOffset || 0), bv.byteLength);
         return createImageBitmap(new Blob([bytes], { type: img.mimeType || 'image/webp' }));
+    }
+
+    // Couleur de tenue lisible en 3D : même teinte, mais une couleur très sombre est relevée (sinon un
+    // maillot bleu nuit ou vert sapin se lit comme du gris foncé à 40 m, sous les projecteurs ou la pluie).
+    function kitRgb(hex) {
+        const [r, g, b] = hexToRgb(hex).map(v => v / 255);
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+        if (l >= 0.3) return [r * 255, g * 255, b * 255];
+        let h = 0, sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+        if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+        h *= 60; if (h < 0) h += 360;
+        const L = sat < 0.12 ? Math.max(l, 0.22) : 0.3, Sa = sat < 0.12 ? sat : Math.max(sat, 0.55);   // noir/gris : à peine relevé
+        const C = (1 - Math.abs(2 * L - 1)) * Sa, X = C * (1 - Math.abs((h / 60) % 2 - 1)), m0 = L - C / 2;
+        const [a1, b1, c1] = h < 60 ? [C, X, 0] : h < 120 ? [X, C, 0] : h < 180 ? [0, C, X] : h < 240 ? [0, X, C] : h < 300 ? [X, 0, C] : [C, 0, X];
+        return [(a1 + m0) * 255, (b1 + m0) * 255, (c1 + m0) * 255];
     }
 
     function hexToRgb(hex) {
@@ -139,14 +195,222 @@
         }
     }
 
-    // Matériau d'un modèle pour une équipe (mis en cache). hex = couleur du maillot.
-    function teamMaterial(modelKey, hex) {
-        const key = modelKey + '|' + hex;
-        if (!S.matCache.has(key)) S.matCache.set(key, buildTeamMaterial(modelKey, hex, key));
-        return S.matCache.get(key);       // promesse partagée : un seul calcul par (modèle, couleur)
+    // Zone du SHORT dans la texture d'un modèle. Les fichiers ne la séparent pas : certains modèles ont le
+    // short de la couleur du maillot, un autre l'a noir. On la retrouve sur le corps lui-même : les
+    // triangles situés entre le genou et la taille (pose de référence, bras écartés) sont dessinés dans
+    // l'espace UV, ce qui donne un masque de la texture. Calculé une fois par modèle.
+    const SHORTS_BAND = [0.355, 0.535];          // hauteur relative (0 = pieds, 1 = tête)
+    function shortsMask(modelKey, W, H) {
+        const ck = modelKey + '|' + W + 'x' + H;
+        S.shortsMasks = S.shortsMasks || {};
+        if (S.shortsMasks[ck]) return S.shortsMasks[ck];
+        const cont = S.containers[modelKey];
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const c = cv.getContext('2d', { willReadFrequently: true });
+        c.fillStyle = '#fff';
+        (cont.meshes || []).forEach(m => {
+            if (!m.getTotalVertices || !m.getTotalVertices()) return;
+            const pos = m.getVerticesData('position'), uv = m.getVerticesData('uv'), idx = m.getIndices();
+            if (!pos || !uv || !idx) return;
+            // axe vertical : Y (norme glTF). Pas « la plus grande étendue » : en pose bras écartés,
+            // l'envergure de certains modèles dépasse leur taille.
+            const up = 1;
+            let h0 = 1e9, h1 = -1e9;
+            for (let i = up; i < pos.length; i += 3) { const v = pos[i]; if (v < h0) h0 = v; if (v > h1) h1 = v; }
+            const hs = (h1 - h0) || 1;
+            for (let t = 0; t < idx.length; t += 3) {
+                const a = idx[t], b = idx[t + 1], d = idx[t + 2];
+                const hc = ((pos[a * 3 + up] + pos[b * 3 + up] + pos[d * 3 + up]) / 3 - h0) / hs;
+                if (hc < SHORTS_BAND[0] || hc > SHORTS_BAND[1]) continue;
+                c.beginPath();
+                c.moveTo(uv[a * 2] * W, uv[a * 2 + 1] * H); c.lineTo(uv[b * 2] * W, uv[b * 2 + 1] * H); c.lineTo(uv[d * 2] * W, uv[d * 2 + 1] * H);
+                c.closePath(); c.fill();
+            }
+        });
+        const px = c.getImageData(0, 0, W, H).data, mask = new Uint8Array(W * H);
+        for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4 + 3] > 40 ? 1 : 0;
+        return (S.shortsMasks[ck] = mask);
     }
 
-    async function buildTeamMaterial(modelKey, hex, key) {
+    // Peint le short : dans le masque, les pixels « tissu » (couleur du maillot d'origine, ou noir pour
+    // le modèle au short noir) prennent la couleur du short du club, en gardant l'ombrage du fichier.
+    function recolorShorts(data, mask, rule, target) {
+        const n = mask.length;
+        let sum = 0, cnt = 0;
+        const pick = new Uint8Array(n);
+        for (let i = 0, p = 0; i < n; i++, p += 4) {
+            if (!mask[i]) continue;
+            const r = data[p] / 255, g = data[p + 1] / 255, b = data[p + 2] / 255;
+            const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            let ok = mx < 0.24 && d < 0.09;                       // tissu noir
+            if (!ok && d > 1e-4) {                                // ou tissu de la couleur d'origine du maillot
+                const s = d / mx;
+                let hh = mx === r ? ((g - b) / d) : mx === g ? (2 + (b - r) / d) : (4 + (r - g) / d);
+                hh = ((hh * 60) + 360) % 360;
+                const dh = Math.abs(((hh - rule.h) + 540) % 360 - 180);
+                ok = rule.kind === 'hue' ? (s > 0.25 && dh < 35) : (s > 0.06 && s < 0.34 && dh < 28 && mx > 0.2);
+            }
+            if (ok) { pick[i] = 1; sum += lum; cnt++; }
+        }
+        const mean = cnt ? sum / cnt : 0.3;
+        for (let i = 0, p = 0; i < n; i++, p += 4) {
+            if (!pick[i]) continue;
+            const lum = 0.299 * data[p] / 255 + 0.587 * data[p + 1] / 255 + 0.114 * data[p + 2] / 255;
+            const k = Math.max(0.55, Math.min(1.45, lum / (mean || 0.3)));
+            data[p] = Math.min(255, target[0] * k); data[p + 1] = Math.min(255, target[1] * k); data[p + 2] = Math.min(255, target[2] * k);
+        }
+    }
+
+    // ── Masques de tenue PAR TRIANGLE ──────────────────────────────────────
+    // Les textures des modèles sont découpées en centaines d'îlots. Un tri pixel par pixel (à la teinte)
+    // laissait des trous (plis sombres, reflets) et des bords d'îlots à la couleur d'origine : maillot
+    // « déchiré », short à moitié repeint. Ici on décide pour CHAQUE TRIANGLE du corps : on dessine son
+    // numéro dans l'espace de la texture, on regarde la couleur de ses pixels et sa hauteur sur le
+    // corps (pose de référence) ; un triangle de maillot ou de short est repeint EN ENTIER. Les marges
+    // entre îlots sont ensuite étendues pour que les coutures ne ressortent pas au filtrage.
+        function isKitColor(rule, r, g, b) {
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+        if (d < 1e-4 || mx < 0.06) return false;
+        const s = d / mx;
+        let h = mx === r ? ((g - b) / d) : mx === g ? (2 + (b - r) / d) : (4 + (r - g) / d);
+        h = ((h * 60) + 360) % 360;
+        const dh = Math.abs(((h - rule.h) + 540) % 360 - 180);
+        return rule.kind === 'hue' ? (s > 0.18 && dh < 40) : (s > 0.04 && s < 0.38 && dh < 34 && mx > 0.14);
+    }
+    function kitMasks(modelKey, data, W, H) {
+        const ck = modelKey + '|' + W + 'x' + H;
+        S.kitMasks = S.kitMasks || {};
+        if (S.kitMasks[ck]) return S.kitMasks[ck];
+        const rule = KIT_MASK[modelKey], cont = S.containers[modelKey];
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const c = cv.getContext('2d', { willReadFrequently: true });
+        const tris = [];                                  // hauteur relative de chaque triangle
+        const tuv = [];                                   // coins du triangle dans la texture (px)
+        (cont.meshes || []).forEach(m => {
+            if (!m.getTotalVertices || !m.getTotalVertices()) return;
+            const pos = m.getVerticesData('position'), uv = m.getVerticesData('uv'), idx = m.getIndices();
+            if (!pos || !uv || !idx) return;
+            let h0 = 1e9, h1 = -1e9;
+            for (let i = 1; i < pos.length; i += 3) { const v = pos[i]; if (v < h0) h0 = v; if (v > h1) h1 = v; }
+            const hs = (h1 - h0) || 1;
+            for (let t = 0; t < idx.length; t += 3) {
+                const a = idx[t], b = idx[t + 1], d = idx[t + 2];
+                const id = tris.length + 1;
+                tris.push(((pos[a * 3 + 1] + pos[b * 3 + 1] + pos[d * 3 + 1]) / 3 - h0) / hs);
+                tuv.push(uv[a * 2] * W, uv[a * 2 + 1] * H, uv[b * 2] * W, uv[b * 2 + 1] * H, uv[d * 2] * W, uv[d * 2 + 1] * H);
+                c.fillStyle = 'rgb(' + ((id >> 16) & 255) + ',' + ((id >> 8) & 255) + ',' + (id & 255) + ')';
+                c.beginPath();
+                c.moveTo(uv[a * 2] * W, uv[a * 2 + 1] * H); c.lineTo(uv[b * 2] * W, uv[b * 2 + 1] * H); c.lineTo(uv[d * 2] * W, uv[d * 2 + 1] * H);
+                c.closePath(); c.fill();
+            }
+        });
+        const px = c.getImageData(0, 0, W, H).data, n = W * H, T = tris.length;
+        const ids = new Int32Array(n);
+        const tot = new Uint32Array(T + 1), kit = new Uint32Array(T + 1), dark = new Uint32Array(T + 1);
+        for (let i = 0, p = 0; i < n; i++, p += 4) {
+            if (px[p + 3] < 250) continue;                 // bord anti-crénelé : ignoré pour le comptage
+            const id = (px[p] << 16) | (px[p + 1] << 8) | px[p + 2];
+            if (id < 1 || id > T) continue;
+            // sur une arête commune, l'anticrénelage mélange deux numéros et en fabrique un troisième :
+            // on ne garde le numéro que si le centre du pixel est bien DANS ce triangle
+            {
+                const q = (id - 1) * 6, X = (i % W) + 0.5, Y = ((i / W) | 0) + 0.5;
+                const x0 = tuv[q], y0 = tuv[q + 1], x1 = tuv[q + 2], y1 = tuv[q + 3], x2 = tuv[q + 4], y2 = tuv[q + 5];
+                const den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+                if (Math.abs(den) < 1e-9) continue;
+                const l0 = ((y1 - y2) * (X - x2) + (x2 - x1) * (Y - y2)) / den;
+                const l1 = ((y2 - y0) * (X - x2) + (x0 - x2) * (Y - y2)) / den;
+                const tol = 1.2 / Math.sqrt(Math.abs(den));       // ≈ un pixel de marge
+                if (l0 < -tol || l1 < -tol || 1 - l0 - l1 < -tol) continue;
+            }
+            ids[i] = id; tot[id]++;
+            const r = data[p] / 255, g = data[p + 1] / 255, b = data[p + 2] / 255;
+            if (isKitColor(rule, r, g, b)) kit[id]++;
+            else if (Math.max(r, g, b) < 0.24 && Math.max(r, g, b) - Math.min(r, g, b) < 0.09) dark[id]++;
+        }
+        // classe de chaque triangle : 1 maillot, 2 short
+        const cls = new Uint8Array(T + 1);
+        for (let id = 1; id <= T; id++) {
+            if (!tot[id]) continue;
+            const hc = tris[id - 1], fk = kit[id] / tot[id], fd = dark[id] / tot[id];
+            const inShorts = hc >= SHORTS_BAND[0] && hc < SHORTS_BAND[1];
+            if (inShorts && (fk >= 0.4 || fd >= 0.5)) cls[id] = 2;
+            else if (fk >= 0.4) cls[id] = 1;              // manches, col, chaussettes : couleur du maillot
+        }
+        let m = new Uint8Array(n);
+        for (let i = 0; i < n; i++) if (ids[i]) m[i] = cls[ids[i]];
+        // petits trous (minuscules triangles, reflets) : un pixel entouré par la tenue en prend la classe
+        for (let pass = 0; pass < 2; pass++) {
+            const m2 = m.slice();
+            for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+                const i = y * W + x;
+                if (m[i]) continue;
+                const a = m[i - 1], b = m[i + 1], u = m[i - W], d = m[i + W];
+                const v = a || b || u || d;
+                if (v && (a === v) + (b === v) + (u === v) + (d === v) >= 3) m2[i] = v;
+            }
+            m = m2;
+        }
+        return (S.kitMasks[ck] = { zone: m, ids });
+    }
+
+    // Bords des îlots : les pixels hors triangle (marges, bords anti-crénelés) prennent la couleur de
+    // l'îlot VOISIN, quel qu'il soit (tissu ou peau). Sans cela, le filtrage de la texture mélangeait la
+    // couleur d'origine des marges : fines lignes sur le maillot, points clairs sur les bras.
+    function padIslands(data, ids, W, H) {
+        const n = W * H;
+        let ok = new Uint8Array(n);
+        for (let i = 0; i < n; i++) ok[i] = ids[i] ? 1 : 0;
+        for (let pass = 0; pass < 6; pass++) {
+            const ok2 = ok.slice();
+            let changed = 0;
+            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                const i = y * W + x;
+                if (ok[i]) continue;
+                let r = 0, g = 0, b = 0, c = 0;
+                if (x > 0 && ok[i - 1]) { const q = (i - 1) * 4; r += data[q]; g += data[q + 1]; b += data[q + 2]; c++; }
+                if (x < W - 1 && ok[i + 1]) { const q = (i + 1) * 4; r += data[q]; g += data[q + 1]; b += data[q + 2]; c++; }
+                if (y > 0 && ok[i - W]) { const q = (i - W) * 4; r += data[q]; g += data[q + 1]; b += data[q + 2]; c++; }
+                if (y < H - 1 && ok[i + W]) { const q = (i + W) * 4; r += data[q]; g += data[q + 1]; b += data[q + 2]; c++; }
+                if (!c) continue;
+                const p = i * 4;
+                data[p] = r / c; data[p + 1] = g / c; data[p + 2] = b / c;
+                ok2[i] = 1; changed++;
+            }
+            ok = ok2;
+            if (!changed) break;
+        }
+    }
+
+    // Repeint une zone (1 maillot, 2 short) en gardant un ombrage ADOUCI du fichier : les plis restent
+    // lisibles mais ne font plus de taches sombres (surtout sur un maillot clair).
+    function paintZone(data, mask, zone, target) {
+        let sum = 0, cnt = 0;
+        for (let i = 0, p = 0; i < mask.length; i++, p += 4) {
+            if (mask[i] !== zone) continue;
+            sum += 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]; cnt++;
+        }
+        const mean = cnt ? sum / cnt : 100;
+        const light = (0.299 * target[0] + 0.587 * target[1] + 0.114 * target[2]) / 255;
+        const amp = light > 0.7 ? 0.35 : 0.55;           // un maillot blanc supporte moins de contraste
+        for (let i = 0, p = 0; i < mask.length; i++, p += 4) {
+            if (mask[i] !== zone) continue;
+            const lum = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+            const k = Math.max(0.62, Math.min(1.22, 1 + (lum / (mean || 1) - 1) * amp));
+            data[p] = Math.min(255, target[0] * k);
+            data[p + 1] = Math.min(255, target[1] * k);
+            data[p + 2] = Math.min(255, target[2] * k);
+        }
+    }
+
+    // Matériau d'un modèle pour une équipe (mis en cache). hex = maillot, shorts = short (optionnel).
+    function teamMaterial(modelKey, hex, shorts) {
+        const key = modelKey + '|' + hex + '|' + (shorts || '');
+        if (!S.matCache.has(key)) S.matCache.set(key, buildTeamMaterial(modelKey, hex, key, shorts));
+        return S.matCache.get(key);       // promesse partagée : un seul calcul par (modèle, couleurs)
+    }
+
+    async function buildTeamMaterial(modelKey, hex, key, shorts) {
         const B = S.B, cont = S.containers[modelKey];
         const base = cont.materials[0];
         const bmp = await baseColorBitmap(S.glbBytes[modelKey]);
@@ -155,7 +419,17 @@
         const ctx = cv.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(bmp, 0, 0);
         const im = ctx.getImageData(0, 0, cv.width, cv.height);
-        recolor(im.data, KIT_MASK[modelKey], hexToRgb(hex));
+        // masques par triangle (calculés sur la texture d'ORIGINE), puis short et maillot
+        let masks = null;
+        try { masks = kitMasks(modelKey, im.data, cv.width, cv.height); } catch (e) { console.warn('[3D] masque', e); }
+        if (masks) {
+            paintZone(im.data, masks.zone, 2, kitRgb(shorts || hex));
+            paintZone(im.data, masks.zone, 1, kitRgb(hex));
+            padIslands(im.data, masks.ids, cv.width, cv.height);
+        } else {                                          // repli : ancien tri à la couleur
+            if (shorts) { try { recolorShorts(im.data, shortsMask(modelKey, cv.width, cv.height), KIT_MASK[modelKey], kitRgb(shorts)); } catch (e) {} }
+            recolor(im.data, KIT_MASK[modelKey], kitRgb(hex));
+        }
         const tex = new B.DynamicTexture('kit_' + key, { width: cv.width, height: cv.height }, S.scene, true, B.Texture.TRILINEAR_SAMPLINGMODE, undefined, false);
         tex.getContext().putImageData(im, 0, 0);
         tex.update(false);
@@ -168,8 +442,14 @@
     function kitHex(name, away, isGK) {
         let base = away ? '#e8edf5' : '#1e3a8a';
         try { if (typeof clubKit === 'function') base = clubKit(name, away).base || base; } catch (e) {}
-        if (isGK) return away ? '#f97316' : null;     // gardien visiteur orange, gardien local : violet d'origine
+        if (isGK) return null;                         // gardiens : violet (domicile) et vert (extérieur) d'origine
         return base;
+    }
+
+    // Couleur du short d'un club (même source que le maillot ; à défaut, celle du maillot).
+    function shortsHex(name, away) {
+        try { if (typeof clubKit === 'function') { const k = clubKit(name, away); return k.shorts || k.base || null; } } catch (e) {}
+        return null;
     }
 
     async function applyKits() {
@@ -178,11 +458,13 @@
         ['H', 'A'].forEach(side => {
             const away = side === 'A';
             const club = away ? S.teams.away : S.teams.home;
-            S.players[side].forEach(P => {
+            const sb = S.bench && S.bench[side] ? S.bench[side].subs.map(b => b.P) : [];
+            S.players[side].concat(sb).forEach(P => {
                 jobs.push((async () => {
                     const hex = kitHex(club, away, P.isGK);
+                    const sh = P.isGK ? null : shortsHex(club, away);
                     let mat = S.containers[P.model].materials[0];
-                    if (hex) { try { mat = (await teamMaterial(P.model, hex)).mat; } catch (e) { console.warn('[3D] kit', e); } }
+                    if (hex) { try { mat = (await teamMaterial(P.model, hex, sh)).mat; } catch (e) { console.warn('[3D] kit', e); } }
                     P.meshes.forEach(m => { m.material = mat; });
                 })());
             });
@@ -196,10 +478,17 @@
     // émissif, réglé par l'ambiance (plus fort en nocturne, sous les projecteurs).
     function tunePlayerMats() {
         const th = S.theme || {}, seen = new Set();
-        S.players.H.concat(S.players.A).concat(S.ref ? [S.ref] : []).forEach(P => P.meshes.forEach(m => {
+        S.players.H.concat(S.players.A).concat(S.ref ? [S.ref] : []).concat(S.bench ? S.bench.all.map(b => b.P) : []).forEach(P => P.meshes.forEach(m => {
             const mat = m.material; if (!mat || seen.has(mat) || mat.getClassName() !== 'PBRMaterial') return; seen.add(mat);
+            // Tissu et peau, pas du métal : les fichiers arrivent avec metallic = 1, ce qui rend un corps gris
+            // et délavé (un métal sans reflets d'environnement n'a presque plus de couleur propre).
+            mat.metallic = 0; mat.roughness = 0.78;
+            mat.transparencyMode = 0; mat.alpha = 1;                // opaque
             mat.directIntensity = th.flood ? 1.7 : 1.35;
-            const e = th.flood ? 0.1 : 0.05; mat.emissiveColor = new S.B.Color3(e, e, e);
+            // léger éclairage propre tiré de la texture : maillots et peau gardent leurs vraies couleurs même
+            // sous une lumière faible (pluie, nuit), au lieu de virer au gris
+            const e = th.flood ? 0.3 : 0.2;
+            mat.emissiveTexture = mat.albedoTexture || null; mat.emissiveColor = new S.B.Color3(e, e, e);
         }));
     }
 
@@ -817,6 +1106,23 @@
         dmesh('boards', gBd, track(texMat('boardsMat', boardsTex, th.flood ? 1.55 : 1.35)));
         D.boardsTex = boardsTex;
 
+        // écran géant au-dessus de la tribune derrière le but (score en direct, « BUT ! »)
+        try {
+            const W = 15, Hh = 7.5;
+            let sx, y0;
+            if (sp.tier === 'small') { sx = -(HX + 11); y0 = 4.5; }
+            else if (sp.tier === 'medium') { sx = -(BX + 15.6); y0 = 10.6; }
+            else { sx = -(BX + 16.4); y0 = 14.6; }
+            const gSc = geo(), gFr = geo();
+            gQuad(gSc, [sx, y0, W / 2], [sx, y0, -W / 2], [sx, y0 + Hh, -W / 2], [sx, y0 + Hh, W / 2], [1, 1], [0, 1], [0, 0], [1, 0]);
+            gBox(gFr, sx - 0.35, y0 + Hh / 2, 0, 0.5, Hh + 0.8, W + 0.8);
+            if (y0 > 1) { gTube(gFr, [sx - 0.4, 0, -W / 3], [sx - 0.4, y0, -W / 3], 0.25, 6); gTube(gFr, [sx - 0.4, 0, W / 3], [sx - 0.4, y0, W / 3], 0.25, 6); }
+            const tex = dtex('screenTex', 768, 384, false);
+            dmesh('bigScreen', gSc, track(texMat('screenMat', tex, th.flood ? 1.25 : 1.1)));
+            dmesh('bigScreenFrame', gFr, litMat('screenFrame', null, [0.12, 0.13, 0.16]));
+            D.screen = { tex, key: '' };
+        } catch (e) { console.warn('[3D] écran', e); }
+
         // piquets de corner
         const gPo = geo(), gFl = geo();
         [-1, 1].forEach(s => [-1, 1].forEach(t => {
@@ -853,15 +1159,14 @@
         dmesh('mastPoles', gMs, litMat('mastMat', null, [0.42, 0.44, 0.48]));
         dmesh('mastHeads', gHd, headLit ? dflat('headMat', 1, 0.97, 0.88) : litMat('headOff', null, [0.62, 0.64, 0.66], 0.2));
 
-        if (lo) return;                                       // mobile faible : décor essentiel
-        // bancs de touche (côté tribune principale)
+        // bancs de touche (côté tribune principale) : sur tous les appareils (le staff y est assis)
         const gGl = geo(), gBn = geo(), gFr = geo();
         [-1, 1].forEach(s => {
             const x0 = s > 0 ? 6 : -17, x1 = x0 + 11, z0 = HZ + 1.6, z1 = HZ + 3.8, hh = 2.1;
             gQuad(gGl, [x0, 0, z1], [x1, 0, z1], [x1, hh, z1], [x0, hh, z1]);
             gQuad(gGl, [x0, 0, z0], [x0, 0, z1], [x0, hh, z1], [x0, hh, z0]); gQuad(gGl, [x1, 0, z0], [x1, 0, z1], [x1, hh, z1], [x1, hh, z0]);
             gQuad(gGl, [x0, hh, z0], [x1, hh, z0], [x1, hh, z1], [x0, hh, z1]);
-            gBox(gBn, (x0 + x1) / 2, 0.3, z1 - 0.6, 10, 0.6, 0.5);
+            gBox(gBn, (x0 + x1) / 2, SEAT_TOP / 2, z1 - 0.6, 10.4, SEAT_TOP, 0.5);
             [[x0, z0], [x1, z0], [x0, z1], [x1, z1]].forEach(p => gTube(gFr, [p[0], 0, p[1]], [p[0], hh, p[1]], 0.05, 5));
         });
         dmesh('dugoutGlass', gGl, dflat('glassMat', 0.45, 0.65, 0.8, 0.22));
@@ -874,6 +1179,7 @@
             gQuad(gTa, [x0, 0.015, z], [x0 + 0.1, 0.015, z], [x0 + 0.1, 0.015, z + 1.6], [x0, 0.015, z + 1.6]);
             gQuad(gTa, [x1, 0.015, z], [x1 + 0.1, 0.015, z], [x1 + 0.1, 0.015, z + 1.6], [x1, 0.015, z + 1.6]); });
         dmesh('techArea', gTa, dflat('taMat', 0.92, 0.92, 0.92));
+        if (lo) return;                                       // mobile faible : reste du décor allégé
     }
 
     // ---- Ombres portées (une instance par joueur et par source de lumière) --
@@ -934,7 +1240,7 @@
         if (!document.getElementById('aecm-rain-style')) {
             const st = document.createElement('style'); st.id = 'aecm-rain-style';
             st.textContent = '@keyframes aecmRain{from{background-position:0 0,0 0}to{background-position:-60px 420px,-30px 300px}}' +
-                '.aecm-rain{position:absolute;inset:0;pointer-events:none;z-index:12;opacity:.32;' +
+                '.aecm-rain{position:absolute;inset:0;pointer-events:none;z-index:12;opacity:.2;' +
                 'background-image:repeating-linear-gradient(105deg,rgba(255,255,255,0) 0 9px,rgba(220,230,255,.55) 9px 10px,rgba(255,255,255,0) 10px 23px),' +
                 'repeating-linear-gradient(100deg,rgba(255,255,255,0) 0 15px,rgba(200,215,240,.35) 15px 16px,rgba(255,255,255,0) 16px 37px);' +
                 'background-size:140px 140px,90px 90px;animation:aecmRain .55s linear infinite}';
@@ -986,6 +1292,46 @@
             if (net) S.decor.pulse = { net, t0: now() };
         });
     }
+    function drawScreen(sc, t) {
+        const a = window.app, lm = a && a.liveMatch;
+        const goalOn = sc.goalUntil && t < sc.goalUntil;
+        const home = (lm && lm.home && lm.home.name) || S.teams.home || 'AECM', away = (lm && lm.away && lm.away.name) || S.teams.away || '';
+        const score = lm ? (lm.homeScore || 0) + ' - ' + (lm.awayScore || 0) : '';
+        const minute = lm ? (lm.minute || 0) + "'" : '';
+        const key = [home, away, score, minute, goalOn ? Math.floor(t / 250) : 0].join('|');
+        if (key === sc.key) return;
+        sc.key = key;
+        const c = sc.tex.getContext(), W = 768, H = 384;
+        c.fillStyle = '#0a0e17'; c.fillRect(0, 0, W, H);
+        if (goalOn) {
+            // bandes orange qui défilent + « BUT ! »
+            const off = (t / 6) % 80;
+            for (let x = -H - 80 + off; x < W + 80; x += 80) {
+                c.fillStyle = '#f97316'; c.beginPath(); c.moveTo(x, H); c.lineTo(x + 40, H); c.lineTo(x + 40 + H * 0.5, 0); c.lineTo(x + H * 0.5, 0); c.closePath(); c.fill();
+                c.fillStyle = '#ea580c'; c.beginPath(); c.moveTo(x + 40, H); c.lineTo(x + 80, H); c.lineTo(x + 80 + H * 0.5, 0); c.lineTo(x + 40 + H * 0.5, 0); c.closePath(); c.fill();
+            }
+            c.fillStyle = '#0a0e17'; c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.font = 'italic 700 170px Teko, Impact, sans-serif'; c.fillText('BUT !', W / 2, H * 0.5);
+            c.font = '600 46px Teko, Impact, sans-serif'; c.fillText(score, W / 2, H * 0.86);
+        } else {
+            let hc = '#1f2937', ac = '#1f2937';
+            try { hc = clubKit(home, false).base || hc; ac = clubKit(away, true).base || ac; } catch (e) {}
+            const lum = h => { const n = parseInt(String(h).replace('#', ''), 16); return ((n >> 16) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) / 255; };
+            c.fillStyle = '#f97316'; c.fillRect(0, 0, W, 48);
+            c.fillStyle = '#0a0e17'; c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.font = '600 40px Teko, Impact, sans-serif'; c.fillText(lm ? 'EN DIRECT' : 'AECM', W / 2, 26);
+            c.fillStyle = hc; c.fillRect(24, 92, 300, 150); c.fillStyle = ac; c.fillRect(W - 324, 92, 300, 150);
+            const nm = (n, x, col) => { c.fillStyle = lum(col) > 0.6 ? '#0a0e17' : '#ffffff'; c.font = '600 52px Teko, Impact, sans-serif';
+                const words = String(n).toUpperCase().split(' '); const l1 = words.slice(0, Math.ceil(words.length / 2)).join(' '), l2 = words.slice(Math.ceil(words.length / 2)).join(' ');
+                if (l2) { c.fillText(l1, x, 142); c.fillText(l2, x, 192); } else c.fillText(l1, x, 167); };
+            nm(home, 174, hc); nm(away, W - 174, ac);
+            c.fillStyle = '#ffffff'; c.font = '700 120px Teko, Impact, sans-serif'; c.fillText(score || 'VS', W / 2, 172);
+            c.fillStyle = '#111827'; c.fillRect(W / 2 - 80, 268, 160, 64);
+            c.fillStyle = '#f97316'; c.font = '600 54px Teko, Impact, sans-serif'; c.fillText(minute, W / 2, 302);
+        }
+        sc.tex.update(false);
+    }
+
     function updateDecor() {
         const D = S.decor; if (!D) return;
         const t = now();
@@ -1002,6 +1348,7 @@
             D.crowdMats.forEach(m => { m.emissiveColor.set(k, k, k); });
             if (amp <= 0) D.cheer = null;
         }
+        if (D.screen) drawScreen(D.screen, t);
         // panneaux LED : les publicités défilent lentement
         if (D.boardsTex) { const dt = Math.min(0.1, (t - (D.lastT || t)) / 1000); D.boardsTex.uOffset = (D.boardsTex.uOffset + dt * 0.035) % 1; }
         D.lastT = t;
@@ -1046,6 +1393,11 @@
         const root = inst.rootNodes[0];
         const holder = new B.TransformNode('holder_' + tag, scene);
         root.parent = holder;
+        if (!/^staff:/.test(modelKey) && modelKey !== REF_MODEL) {
+            let h = 0; for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+            const tall = 0.95 + (h % 11) / 100, broad = 0.96 + ((h >>> 4) % 9) / 100;   // ±5 % de taille, ±4 % de carrure
+            holder.scaling.set(broad, tall, broad);
+        }
         const meshes = root.getChildMeshes(false);
         meshes.forEach(m => { m.alwaysSelectAsActiveMesh = true; m.isPickable = false; });
         const bones = new Map(root.getChildTransformNodes(false).map(n => [n.name, n]));
@@ -1074,6 +1426,13 @@
         }
         P.groups.set(clip, g);
         return g;
+    }
+
+    const has = clip => S.clips.has(clip);
+    // un des clips disponibles, au hasard (variété des gestes)
+    function pickClip(list) {
+        const ok = list.filter(has);
+        return ok.length ? ok[Math.floor(Math.random() * ok.length)] : list[0];
     }
 
     function clipSeconds(g) {
@@ -1118,6 +1477,292 @@
         }
     }
 
+    // ═══ BANCS DE TOUCHE : staff et remplaçants ══════════════════════════════
+    // Modèles du staff : personnages statiques auxquels on a greffé le squelette des joueurs
+    // (3d/staff/*.glb) — ils jouent donc les mêmes animations. Les poses qui n'existent dans aucune
+    // animation (assis, bras levés, mains sur la tête) sont obtenues en orientant les os à la main,
+    // à partir de l'image 5 de « soccer_idle ».
+    const STAFF_KEYS = ['coach_costume', 'coach_survet', 'adjoint_polo', 'adjoint_survet', 'medecin', 'kine', 'prepa_physique'];
+    const BENCH_CREW = {
+        H: { coach: 'coach_costume', seated: ['adjoint_polo', 'medecin', 'kine'] },
+        A: { coach: 'coach_survet', seated: ['adjoint_survet', 'kine', 'medecin'] }
+    };
+    const SEAT_TOP = 0.45, SIT_DROP = 0.87;          // assise du banc ; hauteur du bassin debout
+    const HZB = PITCH_H / 2;
+    function benchGeo(side) {                         // mêmes coordonnées que le décor (buildStadium)
+        const x0 = side === 'H' ? -17 : 6;
+        return { x0, x1: x0 + 11, seatZ: HZB + 3.2, areaZ: HZB + 2.3, mid: x0 + 5.5,
+                 near: side === 'H' ? x0 + 11 : x0 };   // bout du banc côté ligne médiane
+    }
+    function seatPos(side, k) { const g = benchGeo(side); return { x: g.x0 + 0.8 + k * 0.94, z: g.seatZ - 0.03 }; }
+
+    function clearPose(P) {
+        if (P.poseG) { try { P.poseG.stop(); } catch (e) {} P.poseG = null; }
+        P.posed = null;
+    }
+    // pose = 'sit' | 'up' | 'head' | 'clap' | 'stand', ou une liste ('sit' + 'clap' = applaudir assis)
+    const CLAP = [75, -20, 40, 70, 40];            // épaule x, y, z, avant-bras x, z (trouvés par recherche : mains jointes devant la poitrine)
+    const qAx = (ax, deg) => S.B.Quaternion.RotationAxis(ax === 'x' ? new S.B.Vector3(1, 0, 0) : ax === 'y' ? new S.B.Vector3(0, 1, 0) : new S.B.Vector3(0, 0, 1), deg * Math.PI / 180);
+    function setPose(P, pose) {
+        const poses = Array.isArray(pose) ? pose : [pose];
+        P.groups.forEach(g => { try { g.stop(); } catch (e) {} });
+        P.cur = null; P.prev = null; P.fade = 1; P.once = null;
+        const g = getGroup(P, 'soccer_idle');
+        if (!g) return;
+        g.start(false, 1, g.from, g.to); g.goToFrame(g.from + 5); g.pause();
+        P.poseG = g; P.posed = poses.join('+');
+        const bone = n => P.bones.get('mixamorig:' + n);
+        // bases (pose de départ) pour les mouvements recalculés à chaque image
+        P.baseQ = {};
+        ['Head', 'Spine1', 'LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm'].forEach(n => { const t = bone(n); if (t && t.rotationQuaternion) P.baseQ[n] = t.rotationQuaternion.clone(); });
+        const r = (n, ax, deg) => { const t = bone(n); if (t && t.rotationQuaternion) t.rotationQuaternion = t.rotationQuaternion.multiply(qAx(ax, deg)); };
+        poses.forEach(ps => {
+            if (ps === 'sit') { r('LeftUpLeg', 'x', 80); r('RightUpLeg', 'x', 80); r('LeftLeg', 'x', -85); r('RightLeg', 'x', -85); }
+            else if (ps === 'up') { r('LeftArm', 'x', -120); r('RightArm', 'x', -120); }
+            else if (ps === 'head') { r('LeftArm', 'x', -150); r('RightArm', 'x', -150); r('LeftForeArm', 'x', -90); r('RightForeArm', 'x', -90); }
+        });
+        P.clapping = poses.indexOf('clap') >= 0;
+        P.liveHead = poses.indexOf('sit') >= 0 || poses.indexOf('clap') >= 0;
+        if (P.clapping) clapFrame(P, 0);
+    }
+    // applaudissements : les bras s'ouvrent et se referment (~4 battements par seconde)
+    function clapFrame(P, t) {
+        const B = P.baseQ; if (!B.LeftArm || !B.RightArm) return;
+        const o = Math.sin(t * 0.026) * 13;
+        const set = (n, q) => { const b = P.bones.get('mixamorig:' + n); if (b) b.rotationQuaternion = q; };
+        set('LeftArm', B.LeftArm.multiply(qAx('x', CLAP[0])).multiply(qAx('y', CLAP[1])).multiply(qAx('z', CLAP[2] + o)));
+        set('RightArm', B.RightArm.multiply(qAx('x', CLAP[0])).multiply(qAx('y', -CLAP[1])).multiply(qAx('z', -CLAP[2] - o)));
+        if (B.LeftForeArm) set('LeftForeArm', B.LeftForeArm.multiply(qAx('x', CLAP[3])).multiply(qAx('z', CLAP[4])));
+        if (B.RightForeArm) set('RightForeArm', B.RightForeArm.multiply(qAx('x', CLAP[3])).multiply(qAx('z', -CLAP[4])));
+    }
+    // vivant : la tête suit le ballon, le buste respire
+    function liveFrame(P, t, bx, bz) {
+        const B = P.baseQ; if (!B) return;
+        if (B.Head) {
+            const rel = clamp(angDiff(P.yaw, Math.atan2(bx - P.x, bz - P.z)), -1, 1);
+            P.headYaw = (P.headYaw || 0) + (-rel * 57.3 - (P.headYaw || 0)) * 0.08;
+            const h = P.bones.get('mixamorig:Head'); if (h) h.rotationQuaternion = B.Head.multiply(qAx('y', P.headYaw));
+        }
+        if (B.Spine1) {
+            const sp = P.bones.get('mixamorig:Spine1');
+            if (sp) sp.rotationQuaternion = B.Spine1.multiply(qAx('x', Math.sin(t * 0.0021 + (P.phase || 0)) * 1.6));
+        }
+        if (P.clapping) clapFrame(P, t);
+    }
+    function placeSit(b) {
+        const P = b.P;
+        setPose(P, 'sit');
+        P.holder.position.set(b.seat.x, SEAT_TOP - SIT_DROP * P.holder.scaling.y, b.seat.z);
+        P.holder.rotation.set(0, Math.PI, 0);
+        P.x = b.seat.x; P.z = b.seat.z; P.yaw = Math.PI;
+        b.st = 'sit';
+    }
+    function standAt(b, x, z) {
+        const P = b.P;
+        clearPose(P);
+        P.holder.position.set(x, 0, z); P.holder.rotation.x = 0;
+        P.x = x; P.z = z;
+        play(P, 'soccer_idle', true, 1, 0.2);
+        b.st = 'stand';
+    }
+
+    async function buildBench() {
+        if (S.bench) return;                          // tous les appareils, sans exception
+        try {
+            await Promise.all(STAFF_KEYS.map(async k => {
+                if (!S.containers['staff:' + k]) S.containers['staff:' + k] = await loadContainer(ROOT + 'staff/' + k + '.glb');
+            }));
+        } catch (e) { console.warn('[3D] staff indisponible', e); return; }
+        const nSubs = 7;
+        const bench = { H: null, A: null, all: [] };
+        ['H', 'A'].forEach(side => {
+            const g = benchGeo(side), crew = BENCH_CREW[side];
+            const mk = (role, P, seat) => { const b = { P, side, role, seat, st: 'sit', path: [], until: 0, next: 0 }; P.side = side; P.phase = Math.random() * 6.28; bench.all.push(b); return b; };
+            // sièges : le staff au bout côté ligne médiane, les remplaçants ensuite
+            const order = []; for (let k = 0; k < 11; k++) order.push(k);
+            if (side === 'H') order.reverse();
+            const coach = mk('coach', makePlayer('co' + side, 'staff:' + crew.coach, false), null);
+            const staff = crew.seated.map((m, i) => mk('staff', makePlayer('st' + side + i, 'staff:' + m, false), seatPos(side, order[i])));
+            const subs = [];
+            for (let i = 0; i < nSubs; i++) {
+                const gk = i === nSubs - 1;
+                subs.push(mk('sub', makePlayer('sb' + side + i, gk ? GK_SUB[side] : OUTFIELD_MODELS[(i + 1) % OUTFIELD_MODELS.length], gk), seatPos(side, order[crew.seated.length + i])));
+            }
+            const prepa = mk('prepa', makePlayer('pp' + side, 'staff:prepa_physique', false), null);
+            coach.home = { x: g.mid + (side === 'H' ? 2 : -2), z: g.areaZ };
+            prepa.home = { x: side === 'H' ? g.x0 - 1.3 : g.x1 + 1.3, z: g.seatZ - 0.9 };
+            bench[side] = { coach, staff, subs, prepa };
+        });
+        S.bench = bench;
+        resetBench();
+    }
+
+    // Tout le monde à sa place (début de match)
+    function resetBench() {
+        const bench = S.bench; if (!bench) return;
+        bench.all.forEach(b => {
+            b.path = []; b.until = 0; b.react = null; b.P.enter = null; b.P.holder.setEnabled(true);
+            if (b.seat) placeSit(b);
+            else { standAt(b, b.home.x, b.home.z); b.P.yaw = Math.PI; b.P.holder.rotation.y = Math.PI; }
+            b.next = now() + 4000 + Math.random() * 8000;
+        });
+    }
+
+    // Réactions : but marqué / encaissé, grosse occasion manquée
+    function benchReact(side, kind, delay) {
+        const bench = S.bench; if (!bench) return;
+        const mine = bench[side], other = bench[side === 'H' ? 'A' : 'H'];
+        schedule(delay || 0, () => {
+            const t = now();
+            if (kind === 'goal') {
+                // ceux qui marquent : debout, bras levés
+                [mine.coach, mine.prepa].forEach(b => { if (b.st === 'stand') { setPose(b.P, 'up'); b.react = { kind: 'up', until: t + 2600, bounce: true }; } });
+                mine.staff.concat(mine.subs).forEach((b, i) => {
+                    if (b.st !== 'sit') return;
+                    schedule(i * 90, () => {
+                        if (b.st !== 'sit') return;
+                        clearPose(b.P);
+                        b.P.holder.position.set(b.seat.x, 0, b.seat.z - 0.45);
+                        setPose(b.P, 'up');
+                        b.st = 'cheer'; b.until = now() + 2400 + Math.random() * 900;
+                    });
+                });
+                // ceux qui encaissent : l'entraîneur met les mains sur la tête, puis recadre son équipe
+                if (other.coach.st === 'stand') { setPose(other.coach.P, 'head'); other.coach.react = { kind: 'head', until: t + 1800, then: 'directing' }; }
+            } else if (kind === 'chance') {
+                if (mine.coach.st === 'stand' && !mine.coach.react) { setPose(mine.coach.P, 'head'); mine.coach.react = { kind: 'head', until: t + 1300 }; }
+                // le banc applaudit l'occasion (assis)
+                mine.staff.concat(mine.subs).forEach((b, i) => {
+                    if (b.st !== 'sit' || Math.random() < 0.3) return;
+                    schedule(i * 70, () => { if (b.st !== 'sit') return; setPose(b.P, ['sit', 'clap']); b.clapUntil = now() + 1400 + Math.random() * 700; });
+                });
+                if (mine.prepa.st === 'stand' && !mine.prepa.react) { setPose(mine.prepa.P, 'clap'); mine.prepa.react = { kind: 'clap', until: t + 1800 }; }
+            }
+        });
+    }
+
+    // Remplacement en direct : le remplaçant se lève, rejoint la ligne médiane et entre ; le joueur
+    // remplacé sort par le même endroit et va s'asseoir à sa place sur le banc.
+    function substitute(side, idx) {
+        const bench = S.bench && S.bench[side];
+        if (!bench || !S.players[side] || !S.players[side][idx]) return;
+        const wantGK = idx === 0;
+        const cand = bench.subs.find(b => b.st === 'sit' && !!b.P.isGK === wantGK) || bench.subs.find(b => b.st === 'sit');
+        if (!cand) return;
+        const inP = cand.P, outP = S.players[side][idx];
+        const s = side === 'H' ? -1 : 1, lineZ = HZB + 0.35;
+        // entrant
+        clearPose(inP);
+        inP.holder.position.y = 0; inP.holder.setEnabled(true);
+        inP.x = inP.px = cand.seat.x; inP.z = inP.pz = cand.seat.z - 0.45;
+        inP.once = null; inP.gone = false; inP.off[0] = inP.off[1] = 0; inP.side = side;
+        inP.enter = { pts: [{ x: s * 0.9, z: lineZ + 0.6 }, { x: s * 0.4, z: lineZ - 0.8 }] };
+        S.players[side][idx] = inP;
+        // sortant
+        cand.P = outP; outP.enter = null; outP.once = null; outP.side = side;
+        outP.holder.rotation.x = 0;
+        cand.st = 'walk'; cand.spd = 3.2;
+        cand.path = [{ x: s * 1.6, z: lineZ - 0.4 }, { x: s * 1.8, z: lineZ + 0.9 }, { x: cand.seat.x, z: cand.seat.z - 0.6 }];
+        cand.arrive = 'sit';
+        // le coach accueille le sortant d'un geste
+        if (bench.coach.st === 'stand' && !bench.coach.react) { play(bench.coach.P, 'gk_directing', true, 1, 0.25); bench.coach.react = { kind: 'anim', until: now() + 2500 }; }
+    }
+
+    // Entrée d'un remplaçant : il marche vers la ligne puis rejoint sa place dans le jeu.
+    // Renvoie true tant qu'il est piloté ici (sinon la boucle normale reprend la main).
+    function enterStep(P, dt) {
+        const E = P.enter;
+        const tgt = E.pts.length ? E.pts[0] : { x: P.sx + P.off[0], z: P.sz + P.off[1] };
+        const dx = tgt.x - P.x, dz = tgt.z - P.z, d = Math.hypot(dx, dz);
+        if (!E.pts.length && d < 1.2) {
+            P.enter = null; P.smx = P.x; P.smz = P.z; P.px = P.x; P.pz = P.z; P.vx = P.vz = 0;
+            P.off[0] = P.x - P.sx; P.off[1] = P.z - P.sz;        // le reste du chemin se résorbe en douceur
+            return false;
+        }
+        if (E.pts.length && d < 0.35) { E.pts.shift(); return true; }
+        const sp = Math.min(d / dt, 4.4);
+        P.x += dx / d * sp * dt; P.z += dz / d * sp * dt; P.px = P.x; P.pz = P.z;
+        const yaw = Math.atan2(dx, dz);
+        P.yaw += angDiff(P.yaw, yaw) * Math.min(1, dt * 8);
+        P.holder.position.set(P.x, 0, P.z); P.holder.rotation.y = P.yaw; P.holder.rotation.x = 0;
+        P.shadow.position.x = P.x; P.shadow.position.z = P.z;
+        play(P, 'jog_forward', true, clamp(sp / JOG_SPEED, 0.7, 1.6), 0.2);
+        stepFade(P, dt);
+        return true;
+    }
+
+    function updateBench(dt, t, bx, bz) {
+        const bench = S.bench; if (!bench) return;
+        bench.all.forEach(b => {
+            const P = b.P;
+            if (b.st === 'walk') {
+                const tgt = b.path[0];
+                if (!tgt) {
+                    if (b.arrive === 'sit') placeSit(b); else standAt(b, P.x, P.z);
+                    return;
+                }
+                const dx = tgt.x - P.x, dz = tgt.z - P.z, d = Math.hypot(dx, dz);
+                if (d < 0.3) { b.path.shift(); return; }
+                const sp = Math.min(d / dt, b.spd || 3);
+                P.x += dx / d * sp * dt; P.z += dz / d * sp * dt;
+                P.yaw += angDiff(P.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 8);
+                P.holder.position.set(P.x, 0, P.z); P.holder.rotation.y = P.yaw;
+                play(P, 'jog_forward', true, clamp(sp / JOG_SPEED, 0.6, 1.5), 0.2);
+                stepFade(P, dt);
+                return;
+            }
+            if (b.st === 'cheer') {                                 // debout devant le banc, bras levés
+                const k = Math.max(0, Math.sin((b.until - t) / 140)) * 0.09;
+                P.holder.position.y = k;
+                if (t > b.until) placeSit(b);
+                return;
+            }
+            if (b.st === 'sit') {
+                if (b.clapUntil && t > b.clapUntil) { b.clapUntil = 0; setPose(P, 'sit'); }
+                liveFrame(P, t, bx, bz);
+                return;
+            }
+            if (b.st !== 'stand') return;
+            if (P.posed && P.clapping) liveFrame(P, t, bx, bz);
+            // debout (entraîneur, préparateur) : il suit le ballon du regard
+            const R = b.react;
+            if (R) {
+                if (R.bounce) P.holder.position.y = Math.max(0, Math.sin((R.until - t) / 150)) * 0.12;
+                if (t > R.until) {
+                    P.holder.position.y = 0;
+                    b.react = null;
+                    clearPose(P);
+                    if (R.then === 'directing' && has('gk_directing')) { play(P, 'gk_directing', true, 1, 0.25); b.react = { kind: 'anim', until: t + 3000 }; }
+                    else play(P, 'soccer_idle', true, 1, 0.3);
+                }
+            } else if (b.role === 'coach' && t > b.next) {            // consignes régulières
+                b.next = t + 9000 + Math.random() * 12000;
+                if (has('gk_directing')) { play(P, 'gk_directing', true, 1, 0.3); b.react = { kind: 'anim', until: t + 3500 + Math.random() * 2000 }; }
+            }
+            // l'entraîneur longe sa zone technique pour suivre le jeu (pas pendant un geste)
+            if (b.role === 'coach' && !b.react && !P.posed) {
+                const g = benchGeo(b.side);
+                const tx = clamp(b.home.x + (bx - b.home.x) * 0.12, g.x0 + 0.6, g.x1 - 0.6);
+                const dx = tx - P.x;
+                if (Math.abs(dx) > (b.walking ? 0.15 : 1.1)) {
+                    b.walking = true;
+                    const sp = Math.sign(dx) * Math.min(Math.abs(dx) * 2, 1.1);
+                    P.x += sp * dt; P.holder.position.x = P.x;
+                    // pas chassés : il garde les yeux sur le jeu
+                    // vecteur droit du personnage = (cos yaw, -sin yaw) : composante x = cos yaw
+                    play(P, has('jog_strafe_right') ? (sp * Math.cos(P.yaw) > 0 ? 'jog_strafe_right' : 'jog_strafe_left') : 'jog_forward', true, 0.55, 0.3);
+                } else if (b.walking) { b.walking = false; play(P, 'soccer_idle', true, 1, 0.35); }
+            }
+            if (!P.posed) {
+                const want = Math.atan2(bx - P.x, bz - P.z);
+                P.yaw += angDiff(P.yaw, want) * Math.min(1, dt * 2.5);
+                P.holder.rotation.y = P.yaw;
+                // le geste de consignes déplace le bassin : on garde les pieds dans la zone technique
+                stepFade(P, dt);
+            }
+        });
+    }
+
     // ---- Événements du moteur (passe, tir, tacle, but, arrêt) -----------
     function schedule(ms, fn) { S.timers.push({ at: now() + ms, fn }); }
 
@@ -1142,21 +1787,55 @@
         if (ev.type === 'pass' && P) {
             const R = S.players[ev.side][ev.to];
             if (R) lookAt(P, R.x, R.z, 450);
-            playOnce(P, 'kick_soccerball', 1.25, { fade: 0.08 });
+            const act = ev.action || 'short';
+            // le geste dépend de la passe : intérieur du pied au sol, frappe pour un ballon long ou un centre,
+            // relance à la main / dégagement pour le gardien
+            if (P.isGK) playOnce(P, act === 'long' && has('gk_drop_kick') ? 'gk_drop_kick' : has('gk_pass') ? 'gk_pass' : 'kick_soccerball', 1.3, { fade: 0.08, max: 1300 });
+            else if ((act === 'short' || act === 'through' || act === 'recycle') && has('soccer_pass')) playOnce(P, 'soccer_pass', 1.35, { fade: 0.08, max: 1000 });
+            else playOnce(P, act === 'cross' && has('kick_soccerball_1') ? 'kick_soccerball_1' : 'kick_soccerball', 1.25, { fade: 0.08 });
+            // le receveur se retourne et contrôle à l'arrivée du ballon (poitrine/tête si le ballon est haut)
+            const fly = (typeof MATCHSIM !== 'undefined' && MATCHSIM.ball) ? MATCHSIM.ball.fly : null;
+            if (R && fly && fly.dur && ev.to >= 0) {
+                const arrive = fly.t0 + fly.dur - now();
+                schedule(Math.max(0, arrive - 900), () => { if (R.spd < 3.2) lookAt(R, P.x, P.z, 1100); });
+                schedule(Math.max(0, arrive - 260), () => {
+                    if (!MATCHSIM.ball || MATCHSIM.ball.fly !== fly || R.once || R.spd > 3.4) return;      // ballon coupé, ou il court : pas de contrôle figé
+                    const high = (fly.peak || 0) > 2;
+                    const clip = high ? (has('soccer_header') && Math.random() < 0.5 ? 'soccer_header' : 'receive_soccerball')
+                        : 'receive_soccerball';
+                    if (has(clip)) playOnce(R, clip, 1.45, { fade: 0.1, max: 900 });
+                });
+            }
         } else if (ev.type === 'shot' && P) {
             const gx = ev.side === 'H' ? PITCH_W / 2 : -PITCH_W / 2;
             lookAt(P, gx, 0, 600);
-            // Sur un centre (corner), la reprise se fait de la tête.
-            if (ev.head && S.clips.has('header_soccerball')) playOnce(P, 'header_soccerball', 1.5, { fade: 0.08, max: 1100 });
+            // Sur un centre (corner), la reprise se fait de la tête ; lancé dans sa course, il frappe sans s'arrêter.
+            if (ev.head && has('header_soccerball')) playOnce(P, 'header_soccerball', 1.5, { fade: 0.08, max: 1100 });
+            else if (P.spd > 3.2 && has('strike_forward_jog')) playOnce(P, 'strike_forward_jog', 1.2, { fade: 0.08, max: 1300 });
             else playOnce(P, Math.random() < 0.5 ? 'kick_soccerball_1' : 'kick_soccerball_2', 1.1, { fade: 0.08 });
-            // le gardien se tourne vers le tireur
+            // le gardien se tourne vers le tireur et se met en appui
             const gk = S.players[ev.side === 'H' ? 'A' : 'H'][0];
             if (gk) lookAt(gk, P.x, P.z, 1400);
         } else if (ev.type === 'tackle' && P) {
             const L = S.players[ev.loserSide] && S.players[ev.loserSide][ev.loser];
             if (L) lookAt(P, L.x, L.z, 500);
-            playOnce(P, 'soccer_tackle_2', 2.0, { fade: 0.08 });
+            if (ev.intercept) {
+                // interception : il coupe la trajectoire et contrôle
+                playOnce(P, has('receive_soccerball') ? 'receive_soccerball' : 'soccer_tackle_2', 1.6, { fade: 0.08, max: 800 });
+                return;
+            }
+            // tacle : debout ou glissé selon la vitesse ; l'adversaire est parfois déséquilibré, tombe et se relève
+            const slide = P.spd > 3 && Math.random() < 0.55;
+            const tk = slide ? pickClip(['soccer_tackle', 'soccer_tackle_3', 'soccer_tackle_2']) : pickClip(['soccer_tackle_2', 'soccer_tackle_1', 'soccer_tackle']);
+            playOnce(P, tk, slide ? 1.5 : 2.0, { fade: 0.08, freeze: slide, max: slide ? 1400 : 900 });
+            if (L && !L.isGK && Math.random() < (slide ? 0.5 : 0.15) && has('soccer_trip')) {
+                schedule(120, () => {
+                    playOnce(L, 'soccer_trip', 1.6, { fade: 0.08, freeze: true, max: 2000 });       // chute complète (~2 s)…
+                    if (has('standing_up')) schedule(1900, () => playOnce(L, 'standing_up', 2.0, { fade: 0.15, freeze: true, max: 1400 }));   // …puis il se relève
+                });
+            }
         } else if (ev.type === 'save' && P) {
+            benchReact(ev.side === 'H' ? 'A' : 'H', 'chance', 250);   // l'attaquant voit son occasion arrêtée
             // Le plongeon part du côté où arrive le ballon (mesuré sur les clips : « gk_diving_save »
             // part vers la gauche du gardien, « _2 » vers sa droite). Dans l'axe, il capte.
             const sh = (typeof MATCHSIM !== 'undefined') ? MATCHSIM.shotFly : null;
@@ -1184,6 +1863,8 @@
             const sh = (typeof MATCHSIM !== 'undefined') ? MATCHSIM.shotFly : null;
             const delay = sh ? Math.max(0, sh.t0 + sh.dur - now()) : 0;
             decorCheer(ev.side, delay);
+            benchReact(ev.side, 'goal', delay + 150);
+            if (S.decor && S.decor.screen) schedule(delay, () => { if (S.decor.screen) S.decor.screen.goalUntil = now() + 6000; });
             // gardien battu : il plonge pendant que le ballon arrive, pas avant
             const other = ev.side === 'H' ? 'A' : 'H';
             const gk = S.players[other][0];
@@ -1270,7 +1951,7 @@
         // exponentiel court (~0,1 s) arrondit ces angles ; joueurs et ballon utilisent le MÊME filtre,
         // le ballon reste donc collé au pied du porteur.
         const sk = 1 - Math.exp(-dt * SMOOTH_K);
-        const rbx = wx(f.ball.x), rbz = wz(f.ball.y), by = 0.17 + Math.max(0, f.ball.z || 0);
+        const rbx = wx(f.ball.x), rbz = wz(f.ball.y), by = (S.ballY0 || 0.17) + Math.max(0, f.ball.z || 0);
         if (S.bsx == null || Math.hypot(rbx - S.lbx, rbz - S.lbz) > 25) { S.bsx = rbx; S.bsz = rbz; }   // vraie téléportation (remise en jeu) : on suit sans glisser
         else { S.bsx += (rbx - S.bsx) * sk; S.bsz += (rbz - S.bsz) * sk; }
         S.lbx = rbx; S.lbz = rbz;
@@ -1289,6 +1970,7 @@
         let carrier = null;
         ['H', 'A'].forEach(side => f[side].forEach((d, i) => {
             const P = S.players[side][i]; if (!P) return;
+            if (P.enter && enterStep(P, dt)) return;                // remplaçant qui entre en jeu
             // position effective = simulation + décalage résiduel (après un geste figé)
             if (P.once && P.once.freeze && t < P.once.until) {
                 P.off[0] = P.once.x - P.sx; P.off[1] = P.once.z - P.sz;
@@ -1338,6 +2020,11 @@
             P.yaw += angDiff(P.yaw, target) * Math.min(1, dt * (P.spd > 0.6 ? 9 : 6));
             P.holder.position.set(x, 0, z);
             P.holder.rotation.y = P.yaw;
+            // Sprint : au-delà du trot, le corps se penche vers l'avant au lieu d'accélérer les jambes
+            // à l'infini (un trot passé en accéléré donnait des « petits pas » de dessin animé).
+            const lean = (!P.once && P.moving && g8 === 'fwd') ? clamp((P.spd - 3.2) * 0.045, 0, 0.16) : 0;
+            P.lean = (P.lean || 0) + (lean - (P.lean || 0)) * Math.min(1, dt * 6);
+            P.holder.rotation.x = P.lean;
             P.shadow.position.x = x; P.shadow.position.z = z;
             if (d.carrier) carrier = P;
 
@@ -1345,12 +2032,19 @@
             if (P.once && t >= P.once.until) P.once = null;
             if (!P.once) {
                 P.moving = P.moving ? P.spd > 0.30 : P.spd > 0.55;       // hystérésis : seuils différents pour partir et s'arrêter
-                if (P.moving) {
+                // gardien : pas chassés pour suivre le ballon latéralement, sans lui tourner le dos
+                const gkSide = P.isGK && P.moving && P.spd < 3 && has('gk_sidestep') && Math.abs(angDiff(toBall, velYaw)) > 1.0;
+                if (gkSide) {
+                    play(P, 'gk_sidestep', true, clamp(P.spd / 1.6, 0.7, 1.6), 0.25);
+                } else if (P.moving) {
                     const clip = g8 === 'back' ? 'jog_backward' : g8 === 'right' ? 'jog_strafe_right' : g8 === 'left' ? 'jog_strafe_left' : 'jog_forward';
                     const ref = g8 === 'fwd' ? JOG_SPEED : g8 === 'back' ? BACK_SPEED : STRAFE_SPEED;
-                    play(P, S.clips.has(clip) ? clip : 'jog_forward', true, clamp(P.spd / ref, 0.6, g8 === 'fwd' ? 2.2 : 1.7), 0.25);
+                    play(P, S.clips.has(clip) ? clip : 'jog_forward', true, clamp(P.spd / ref, 0.6, g8 === 'fwd' ? 1.75 : 1.6), 0.25);
                 }
-                else play(P, P.isGK ? 'gk_idle' : (d.carrier ? 'offensive_idle' : 'soccer_idle'), true, 1, 0.3);
+                // à l'arrêt : près du ballon on reste en appui, loin du jeu on souffle ; le gardien
+                // place sa défense quand le jeu est loin
+                else if (P.isGK) play(P, (Math.hypot(bx - x, bz - z) > 40 && has('gk_directing')) ? 'gk_directing' : 'gk_idle', true, 1, 0.35);
+                else play(P, (d.carrier || Math.hypot(bx - x, bz - z) < 22) ? 'offensive_idle' : 'soccer_idle', true, 1, 0.3);
             }
             stepFade(P, dt);
         }));
@@ -1372,34 +2066,43 @@
             stepFade(R, dt);
         }
 
-        if (carrier) { S.ring.isVisible = true; S.ring.position.x = carrier.x; S.ring.position.z = carrier.z; }
+        updateBench(dt, t, bx, bz);
+
+        if (carrier && !S.camHook) { S.ring.isVisible = true; S.ring.position.x = carrier.x; S.ring.position.z = carrier.z; }
         else S.ring.isVisible = false;
 
         updateShadows();
-        updateCamera(dt, bx, bz);
+        // la cinématique pilote sa propre caméra (et n'a pas de garde-fou de fluidité)
+        if (S.camHook) S.camHook(dt, bx, bz, carrier); else updateCamera(dt, bx, bz);
         S.scene.render();
-        guardFps(t);
+        if (!S.camHook) guardFps(t);
     }
 
-    // Filet de sécurité : si le téléphone n'arrive pas à tenir un rythme correct
-    // pendant plusieurs secondes, on revient à la vue 2D (choix mémorisé).
+    // Filet de sécurité : si le téléphone n'arrive vraiment pas à suivre, on allège d'abord
+    // (résolution en deux paliers), et seulement en dernier recours on passe en 2D — pour CE match
+    // uniquement : ce n'est jamais mémorisé (avant, un démarrage lent coupait la 3D pour toujours).
     function guardFps(t) {
         if (window.__AECM_NO_FPS_GUARD) return;
+        if (document.hidden) { S.guardT0 = 0; return; }                   // appli en arrière-plan : on ne mesure rien
         if (!S.guardT0) { S.guardT0 = t; S.guardLast = t; S.slowCount = 0; return; }
-        if (t - S.guardT0 < 5000 || t - S.guardLast < 1000) return;      // 5 s de chauffe, puis 1 mesure/s
+        if (t - S.guardT0 < 8000 || t - S.guardLast < 1000) return;      // 8 s de chauffe (chargement, shaders), puis 1 mesure/s
         S.guardLast = t;
         const fps = S.engine.getFps();
-        S.slowCount = fps < (S.lowEnd ? 14 : 20) ? S.slowCount + 1 : 0;
-        // 1re réaction à la lenteur : baisser la résolution (retour à 1 px CSS) avant d'abandonner la 3D
-        if (S.slowCount >= 3 && S.resTarget > 1) {
+        S.slowCount = fps < (S.lowEnd ? 10 : 12) ? S.slowCount + 1 : 0;
+        if (S.slowCount >= 4 && S.resTarget > 1) {                       // palier 1 : 1 pixel CSS
             S.resTarget = 1; S.engine.setHardwareScalingLevel(1);
             S.slowCount = 0; S.guardT0 = t; S.guardLast = t;
             return;
         }
-        if (S.slowCount >= 5) {
-            console.warn('[Match3D] trop lent (' + fps.toFixed(0) + ' i/s) : retour à la 2D');
-            setEnabled(false);
-            try { if (window.app && app.showNotification) app.showNotification('Vue 3D désactivée (appareil trop lent). Bouton 2D/3D pour réessayer.', 'info'); } catch (e) {}
+        if (S.slowCount >= 4 && S.resTarget > 0.7) {                     // palier 2 : 3/4 de la définition
+            S.resTarget = 0.7; S.engine.setHardwareScalingLevel(1 / 0.7);
+            S.slowCount = 0; S.guardT0 = t; S.guardLast = t;
+            return;
+        }
+        if (S.slowCount >= 6) {
+            console.warn('[Match3D] trop lent (' + fps.toFixed(0) + ' i/s) : 2D pour ce match');
+            setEnabled(false, { temp: true });
+            try { if (window.app && app.showNotification) app.showNotification('Vue 3D mise en pause pour ce match (appareil trop sollicité). Bouton 2D/3D pour la relancer.', 'info'); } catch (e) {}
         }
     }
 
@@ -1411,6 +2114,7 @@
     }
 
     async function loadContainer(url, key) {
+        S.lastUrl = url;
         const buf = await fetchBytes(url);
         if (key) S.glbBytes[key] = buf.slice(0);          // copie : sert à recolorer les textures
         return S.B.LoadAssetContainerAsync(new Uint8Array(buf), S.scene, { pluginExtension: '.glb' });
@@ -1441,14 +2145,16 @@
     async function boot() {
         if (S.booting || S.ready || S.failed) return;
         S.booting = true;
+        S.step = 'démarrage'; S.lastUrl = '';
         try {
             if (!webglOK()) throw new Error('WebGL indisponible');
-            if (!window.BABYLON_AECM) await loadScript(VENDOR + 'babylon-aecm.js');
+            S.step = 'chargement du moteur 3D';
+            await ensureBabylon();
+            S.step = 'création du rendu WebGL';
             const B = S.B = window.BABYLON_AECM;
             S.lowEnd = detectLowEnd();
             // À 22 px de haut sur un téléphone, 'far' (1 500-2 700 triangles) est quasi identique à 'match' (5 000) et bien moins lourd.
-            S.quality = (S.lowEnd || Math.min(screen.width, window.innerWidth) < 700) ? 'far' : 'match';
-            B.MeshoptCompression.Configuration = { decoder: { url: VENDOR + 'meshopt_decoder.js' } };
+            S.quality = 'match';                          // modèles détaillés sur tous les appareils
 
             const dpr = window.devicePixelRatio || 1;
             const engine = S.engine = new B.Engine(S.canvas, !S.lowEnd, { alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false, stencil: false }, false);
@@ -1470,6 +2176,7 @@
             S.sun = new B.DirectionalLight('sun', new B.Vector3(-0.4, -1, 0.5), scene);
             S.sun.intensity = 0.8;
 
+            S.step = 'terrain et ballon';
             buildBall();
             S.decor = {};
             try { buildGoals(); } catch (e) { console.warn('[3D] buts', e); }
@@ -1477,25 +2184,34 @@
             S.theme = THEMES.clear;
 
             // Modèles (un fichier par apparence) + bibliothèques d'animations
+            S.step = 'modèles des joueurs';
             const q = S.quality;
-            const models = OUTFIELD_MODELS.concat([GK_MODEL, REF_MODEL]);
+            const models = OUTFIELD_MODELS.concat(GK_MODELS, [REF_MODEL]);
             await Promise.all(models.map(async k => {
                 S.containers[k] = await loadContainer(ROOT + 'personnages/' + (k === REF_MODEL ? 'far' : q) + '/' + k + '.glb', k);
             }));
+            S.step = 'animations';
             await Promise.all([loadLib('anim_football'), loadLib('anim_goalkeeper')]);
+            S.step = 'création des joueurs';
 
             for (const side of ['H', 'A']) {
                 for (let i = 0; i < 11; i++) {
                     const gk = i === 0;
-                    const P = makePlayer(side + i, gk ? GK_MODEL : OUTFIELD_MODELS[i % OUTFIELD_MODELS.length], gk);
+                    const P = makePlayer(side + i, gk ? GK_FOR[side] : OUTFIELD_MODELS[i % OUTFIELD_MODELS.length], gk);
                     S.players[side].push(P);
                 }
             }
-            S.ref = makePlayer('ref', REF_MODEL, false);
+            // arbitre : nouveau modèle (repli sur l'ancien s'il manque)
+            try { S.containers['staff:arbitre'] = await loadContainer(ROOT + 'staff/arbitre.glb'); S.ref = makePlayer('ref', 'staff:arbitre', false); }
+            catch (e) { S.ref = makePlayer('ref', REF_MODEL, false); }
             S.ref.x = 0; S.ref.z = 0;
+            S.step = 'bancs de touche';
+            await buildBench();
 
             S.ready = true;
+            S.step = 'stade';
             rebuildDecor();
+            S.step = 'maillots';
             await applyKits();
             loadLib('anim_celebration').catch(() => {});       // en arrière-plan : utile seulement au premier but
             S.booting = false;
@@ -1509,14 +2225,21 @@
             try { S.engine && S.engine.dispose(); } catch (e2) {}
             S.engine = null;
             showLayers(false);
-            if (S.btn) { S.btn.textContent = '2D'; S.btn.disabled = true; S.btn.style.opacity = '.5'; }
+            if (S.btn) { S.btn.textContent = '2D'; S.btn.style.opacity = '.6'; }
+            // On dit POURQUOI (avant : repli silencieux, impossible de savoir ce qui bloquait).
+            // Le bouton 2D/3D reste actif : un nouvel appui retente le chargement.
+            const why = describeErr(e);
+            console.warn('[Match3D] étape « ' + S.step + ' » :', why);
+            try { if (window.app && app.showNotification) app.showNotification('3D indisponible (' + S.step + ') : ' + why + '. Bouton 2D/3D pour réessayer.', 'warning'); } catch (e3) {}
         }
     }
 
     // ---- API publique ---------------------------------------------------
-    function setEnabled(on) {
+    function setEnabled(on, opts) {
         S.enabled = !!on;
-        try { localStorage.setItem('AECM_3D', on ? '1' : '0'); } catch (e) {}
+        // le choix n'est mémorisé que s'il vient du joueur (bouton 2D/3D)
+        if (opts && opts.user) { try { localStorage.setItem('AECM_3D', on ? '1' : '0'); localStorage.setItem('AECM_3D_USER', '1'); } catch (e) {} }
+        if (on) { S.resTarget = S.resTarget || 1; S.guardT0 = 0; }
         if (S.veil) { S.veil.style.transition = 'none'; S.veil.style.opacity = '0'; }
         if (S.rainEl) S.rainEl.style.display = on && S.theme && S.theme.rain ? '' : 'none';
         if (on && !S.ready && !S.failed) { showLayers(false); boot(); }
@@ -1533,7 +2256,7 @@
             if (S.rainEl) { try { S.rainEl.remove(); } catch (e) {} S.rainEl = null; }
             S.decorObjs = []; S.decorKey = null; S.sh = null;
             Object.assign(S, { engine: null, scene: null, camera: null, ready: false, booting: false, running: false,
-                containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, matCache: new Map(), lastEvId: 0, decor: {} });
+                containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null, matCache: new Map(), lastEvId: 0, decor: {} });
             S.canvas = null; S.btn = null;
         }
         if (!S.canvas) {
@@ -1549,7 +2272,13 @@
             btn.type = 'button'; btn.id = 'pitch-3d-btn';
             btn.className = 'absolute top-2 start-2 z-40 bg-black/50 hover:bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-white/10 backdrop-blur-sm transition-colors';
             btn.title = 'Vue 3D / 2D';
-            btn.onclick = () => setEnabled(!S.enabled);
+            btn.onclick = () => {
+                if (S.failed) {                                  // échec précédent : on retente le chargement
+                    Object.assign(S, { failed: false, booting: false, ready: false, containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null, matCache: new Map() });
+                    setEnabled(true, { user: true }); return;
+                }
+                setEnabled(!S.enabled, { user: true });
+            };
             container.appendChild(btn);
             S.btn = btn;
         }
@@ -1571,7 +2300,8 @@
             if (key !== S.decorKey) { try { rebuildDecor(); } catch (e) { console.warn('[3D] décor', e); } }
             const old = Array.from(S.matCache.values());
             S.matCache.clear();
-            S.players.H.concat(S.players.A).forEach(P => { P.init = false; P.once = null; });
+            S.players.H.concat(S.players.A).forEach(P => { P.init = false; P.once = null; P.enter = null; });
+            resetBench();
             applyKits().then(() => old.forEach(pr => pr.then(e => { try { e.tex.dispose(); e.mat.dispose(); } catch (x) {} }).catch(() => {})));
         }
     }
@@ -1614,7 +2344,7 @@
         stopStadiumPreview();
         if (!container || !webglOK()) return false;
         try {
-            if (!window.BABYLON_AECM) await loadScript(VENDOR + 'babylon-aecm.js');
+            await ensureBabylon();
         } catch (e) { return false; }
         if (!container.isConnected) return false;
         const B = window.BABYLON_AECM;
@@ -1694,5 +2424,356 @@
         return true;
     }
 
-    window.Match3D = { attach, setTeams, setConditions, preview, start, pause, setEnabled, stadiumPreview, stopStadiumPreview, _S: S };
+
+    // =====================================================================
+    // CINÉMATIQUE DE LANCEMENT — façon générique des anciens PES : un VRAI match
+    // joué par le moteur (non jouable), filmé comme une retransmission de prestige.
+    //   1. les projecteurs s'allument, drone qui plonge dans le stade du club ;
+    //   2. les équipes sortent du tunnel en deux files ;
+    //   3. l'entraîneur, au bord du terrain, donne ses consignes (celles de VOS tactiques) ;
+    //   4. coup d'envoi, attaque, frappe au ralenti filmée derrière le but, filet, célébration ;
+    //   5. grue qui s'élève, logo.
+    // Moteur et scène séparés ; l'état du match (S) et le moteur de simulation (MATCHSIM)
+    // sont prêtés pendant la séquence puis rendus intacts.
+    // info : { home, away, stadium, capacity, sim: {...}, coach: [phrases], onCue(name, data) }
+    // =====================================================================
+    const IN = { engine: null, skip: null };
+    function introSkip() { if (IN.skip) IN.skip(); }
+    // Débogage : fait avancer la cinématique de ms millisecondes, image par image (30 i/s).
+    function introStep(ms) {
+        if (!IN.loop) return false;
+        if (IN.fakeNow == null) IN.fakeNow = performance.now();
+        for (let t = 0; t < ms && IN.loop; t += 33) { IN.fakeNow += 33; try { IN.loop(); } catch (e) { console.warn(e); return false; } }
+        return true;
+    }
+
+    async function intro(container, info) {
+        info = info || {};
+        if (!container || !webglOK() || IN.engine) return false;
+        const simOK = typeof MATCHSIM !== 'undefined' && !MATCHSIM.active && info.sim;
+        try { await ensureBabylon(); } catch (e) { return false; }
+        if (!container.isConnected) return false;
+        const B = window.BABYLON_AECM;
+        const lowEnd = detectLowEnd();
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;outline:none;touch-action:none';
+        container.appendChild(canvas);
+        const engine = new B.Engine(canvas, !lowEnd, { alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false, stencil: false }, false);
+        const dpr = window.devicePixelRatio || 1;
+        engine.setHardwareScalingLevel(1 / Math.max(1, lowEnd ? Math.min(dpr, 1.25) : Math.min(dpr, 2)));
+        IN.engine = engine;
+        const scene = new B.Scene(engine);
+        scene.skipPointerMovePicking = true;
+        const cam = new B.FreeCamera('inCam', new B.Vector3(-24, 1.4, -10), scene);
+        cam.fov = 0.72; cam.minZ = 0.3; cam.maxZ = 1400;
+        const hemi = new B.HemisphericLight('inHemi', new B.Vector3(0.2, 1, -0.3), scene);
+        const sun = new B.DirectionalLight('inSun', new B.Vector3(-0.4, -1, 0.5), scene);
+
+        // --- horloge virtuelle (ralentis) : partagée par le rendu ET le moteur de simulation ---
+        let vt = performance.now(), scale = 1;
+        const vclock = () => vt;
+
+        // --- prêt de l'état du match et du moteur de simulation ---
+        const saved = {}; Object.keys(S).forEach(k => { saved[k] = S[k]; });
+        const keepHalo = haloMatCache;
+        const simKeep = simOK ? { now: MATCHSIM.now, onCut: MATCHSIM.onCut, cond: MATCHSIM.cond, TICK: MATCHSIM.TICK } : null;
+        Object.assign(S, {
+            B, engine, scene, camera: cam, hemi, sun, container: null, canvas, rainEl: null, veil: null, sh: null,
+            containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null,
+            matCache: new Map(), decorObjs: [], decor: {}, lights: [], timers: [], ready: false, enabled: true,
+            teams: { home: info.home || null, away: info.away || null }, lowEnd, quality: 'far',
+            condInfo: { weather: 'night', capacity: info.capacity || 12000, name: info.stadium || '', fill: 0.97 },
+            nowFn: vclock, camMode: 'follow', camX: 0, camZ: 0, lastEvId: 0, lastT: 0
+        });
+        haloMatCache = null;
+        let ro = null, simOn = false;
+        const restore = () => {
+            try { ro && ro.disconnect(); } catch (e) {}
+            try { engine.stopRenderLoop(); engine.dispose(); } catch (e) {}
+            try { canvas.remove(); } catch (e) {}
+            if (simKeep) {
+                try { if (simOn) MATCHSIM.stop(); } catch (e) {}
+                MATCHSIM.now = simKeep.now; MATCHSIM.onCut = simKeep.onCut; MATCHSIM.cond = simKeep.cond; MATCHSIM.TICK = simKeep.TICK;
+            }
+            Object.keys(S).forEach(k => { if (!(k in saved)) delete S[k]; });
+            Object.assign(S, saved);
+            haloMatCache = keepHalo;
+            IN.engine = null; IN.skip = null; IN.loop = null; IN.fakeNow = null;
+        };
+
+        const cue = (n, d) => { try { info.onCue && info.onCue(n, d); } catch (e) {} };
+        const sfx = (n, ...a) => { try { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](...a); } catch (e) {} };
+        let coach = null, extraLibs = null;
+        try {
+            rebuildDecor();
+            try { buildSurroundings(); } catch (e) {}
+            try { buildGoals(); } catch (e) {}
+            // vu du ciel, la nuit : toits et parvis éclairés par la ville, pas par le soleil
+            const seen = new Set();
+            scene.meshes.forEach(m => { const mt = m.material; if (!/^(roof\d|plaza)/.test(m.name) || !mt || seen.has(mt) || !mt.diffuseColor) return; seen.add(mt); mt.diffuseColor.scaleInPlace(0.4); });
+            buildBall();
+            S.ball.scaling.setAll(0.68); S.ballY0 = 0.116;    // taille réelle : ici la caméra est au ras des joueurs
+            S.ball.position.set(0, 0.17, 0); S.ring.isVisible = false; S.ballShadow.position.set(0, 0.02, 0);
+            const models = OUTFIELD_MODELS.concat(GK_MODELS, [REF_MODEL]);
+            await Promise.all(models.map(async k => {
+                S.containers[k] = await loadContainer(ROOT + 'personnages/far/' + k + '.glb', k);
+            }));
+            await loadLib('anim_football');
+            // gardiens, gestes de l'entraîneur et célébrations : chargés pendant le début de la séquence
+            extraLibs = Promise.all([loadLib('anim_goalkeeper'), loadLib('anim_celebration')]).catch(() => null);
+            ['H', 'A'].forEach(side => {
+                for (let i = 0; i < 11; i++) {
+                    const P = makePlayer('in' + side + i, i === 0 ? GK_FOR[side] : OUTFIELD_MODELS[i % OUTFIELD_MODELS.length], i === 0);
+                    S.players[side].push(P);
+                }
+            });
+            S.ready = true;
+            await applyKits();
+            // l'entraîneur : le vrai modèle en costume (repli : gardien recoloré en sombre)
+            try {
+                S.containers['staff:coach_costume'] = await loadContainer(ROOT + 'staff/coach_costume.glb');
+                coach = makePlayer('coach', 'staff:coach_costume', false);
+            } catch (e) {
+                coach = makePlayer('coach', GK_MODEL, false);
+                try { const m = (await teamMaterial(GK_MODEL, '#111827')).mat; coach.meshes.forEach(x => { x.material = m; }); } catch (e2) {}
+            }
+            coach.holder.setEnabled(false);
+            // l'arbitre
+            if (simOK) {
+                try { S.containers['staff:arbitre'] = await loadContainer(ROOT + 'staff/arbitre.glb'); S.ref = makePlayer('ref', 'staff:arbitre', false); }
+                catch (e) { S.ref = makePlayer('ref', REF_MODEL, false); }
+                S.ref.holder.setEnabled(false);
+            }
+            tunePlayerMats();
+        } catch (e) {
+            console.warn('[Intro 3D]', e);
+            restore();
+            return false;
+        }
+        if (!container.isConnected) { restore(); return false; }
+
+        // --- projecteurs : éteints au départ, allumés un groupe après l'autre ---
+        const th = S.theme;
+        const halos = scene.meshes.filter(m => m.name.indexOf('halo') === 0);
+        const groups = [[], [], [], []];
+        halos.forEach(m => { groups[(m.position.x < 0 ? 0 : 2) + (m.position.z < 0 ? 0 : 1)].push(m); });
+        const ORDER = [1, 3, 0, 2];
+        halos.forEach(m => { m._k = m.visibility; m.visibility = 0; });
+        const ip = scene.imageProcessingConfiguration;
+        const EXPO = th.exposure, H0 = hemi.intensity, S0 = sun.intensity;
+
+        // --- sortie du tunnel : deux files vers la caméra ---
+        const HZt = PITCH_H / 2, HXt = PITCH_W / 2;
+        const WALK_T0 = 1.5, WALK_SPD = 2.9, STOP_Z = 12, GAP = 1.55;
+        ['H', 'A'].forEach((side, s) => S.players[side].forEach((P, k) => {
+            P.lane = s ? 1.25 : -1.25; P.k = k;
+            P.z0 = HZt + 4 + k * GAP; P.zStop = STOP_Z + k * GAP;
+            P.x = P.lane; P.z = P.z0; P.yaw = Math.PI;
+            P.holder.position.set(P.x, 0, P.z); P.holder.rotation.y = P.yaw;
+            play(P, 'soccer_idle', true, 1, 0.01);
+        }));
+        const ease = u => u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u);
+        const lerp = (a, b, u) => a + (b - a) * u;
+        const V = (x, y, z) => new B.Vector3(x, y, z);
+        const lead = () => S.players.H[0].z;
+        const WALK_SHOTS = [
+            [0.0, 1.9, u => V(lerp(-24, -20, u), lerp(1.4, 2.0, u), lerp(-10, -6, u)), u => V(lerp(-62, -40, ease(u)), lerp(17, 13, u), 48)],
+            [1.9, 4.6, u => { const a = lerp(-2.25, -1.62, ease(u)); const r = lerp(170, 58, ease(u)); return V(Math.cos(a) * r * 0.55, lerp(150, 24, ease(u)), Math.sin(a) * r); },
+                       u => V(0, lerp(0, 2, u), lerp(4, 22, u))],
+            [4.6, 7.4, u => V(lerp(-5.5, -4.2, u), 1.7, lead() - lerp(3.5, 1.5, u)), u => V(lerp(-1.2, 0.6, u), 1.55, lead() + lerp(3, 7, u))]
+        ];
+        const CUT_T = 7.4;                 // fondu au noir : on passe au match
+
+        // --- entraîneur au bord du terrain, devant son banc ---
+        const CX = -11.5, CZ = HZt + 0.9;
+        // cadrage sur le BASSIN du squelette : ses gestes d'indication déplacent tout le corps (mouvement inclus dans le clip)
+        const coachAt = () => { const h = coach && coach.bones && (coach.bones.get('mixamorig:Hips') || [...coach.bones.values()].find(n => /hips/i.test(n.name))); if (!h) return { x: CX, z: CZ }; const p = h.getAbsolutePosition(); return { x: p.x, z: p.z }; };
+        const cc = { x: CX, z: CZ };
+        const coachCam = (u) => { const a = coachAt(); if (!cc.init) { cc.init = true; cc.x = a.x; cc.z = a.z; } cc.x += (a.x - cc.x) * 0.12; cc.z += (a.z - cc.z) * 0.12; cam.position.set(cc.x + lerp(2.6, 2.1, u), 1.58, cc.z - lerp(3.0, 2.5, u)); cam.setTarget(V(cc.x - 0.2, 1.38, cc.z)); };
+        const coachLines = (info.coach && info.coach.length ? info.coach : ['Restez compacts !', 'On joue simple, on joue vite !']).slice(0, 3);
+
+        // --- scénario du match (temps virtuel en ms depuis le coup d'envoi) ---
+        let G0 = 0, nextTick = 0, step = 0, shotSeen = 0, goalAt = 0, slowUntil = 0, celebAt = 0;
+        function startSim() {
+            if (!simOK) return false;
+            try {
+                MATCHSIM.now = vclock; MATCHSIM.onCut = null; MATCHSIM.cond = null;
+                MATCHSIM.TICK = 2600;
+                MATCHSIM.init(info.sim);
+                simOn = true;
+                S.lastEvId = MATCHSIM.evSeq || 0;
+                ['H', 'A'].forEach(k => S.players[k].forEach(P => { P.init = false; P.smx = null; P.once = null; P.moving = false; P.holder.rotation.x = 0; }));
+                if (S.ref) S.ref.holder.setEnabled(true);
+                MATCHSIM.director('center'); MATCHSIM.hold(MATCHSIM.TICK * 1.1);
+                G0 = vt; nextTick = vt + MATCHSIM.TICK * 1.1;
+                return true;
+            } catch (e) { console.warn('[Intro 3D] simulation', e); simOn = false; return false; }
+        }
+        const order = (st, opts, dur) => {
+            try { MATCHSIM.director(st, opts); const d = dur || MATCHSIM.TICK; if (!(MATCHSIM.holdUntil && MATCHSIM.holdUntil > MATCHSIM.now() + d)) MATCHSIM.hold(d); nextTick = vt + d; } catch (e) {}
+        };
+        // caméras du match
+        const cs = { x: 0, y: 8, z: -20, tx: 0, ty: 1, tz: 0 };
+        const glide = (dt, p, l, k) => {
+            const a = 1 - Math.exp(-dt * (k || 4));
+            cs.x += (p.x - cs.x) * a; cs.y += (p.y - cs.y) * a; cs.z += (p.z - cs.z) * a;
+            cs.tx += (l.x - cs.tx) * a; cs.ty += (l.y - cs.ty) * a; cs.tz += (l.z - cs.tz) * a;
+            cam.position.set(cs.x, cs.y, cs.z); cam.setTarget(V(cs.tx, cs.ty, cs.tz));
+        };
+        const snapCam = (p, l) => { cs.x = p.x; cs.y = p.y; cs.z = p.z; cs.tx = l.x; cs.ty = l.y; cs.tz = l.z; cam.position.copyFrom(p); cam.setTarget(l); };
+        let camShot = '', camShotT = 0;
+        const cutTo = (name) => { if (camShot !== name) { camShot = name; camShotT = vt; return true; } return false; };
+
+        return new Promise(resolve => {
+            let t0 = 0, done = false, last = 0, ci = 0, lit = 0, phase = 'walk', blackAt = 0, endAt = 0, coachLine = -1, libsReady = false, libsHooked = false;
+            const finish = () => { if (done) return; done = true; cue('end'); setTimeout(() => { restore(); resolve(true); }, 650); };
+            IN.skip = finish;
+            const WALK_CUES = [[0.25, 'start'], [2.0, 'stadium'], [4.7, 'teams']];
+
+            // l'entraîneur : gestes d'indication (gardien « qui dirige »), tourné vers le jeu
+            const coachStep = (dt) => {
+                if (!coach || !coach.holder.isEnabled()) return;
+                const t = vt;
+                if (!coach.once) {
+                    const busy = (t / 1000) % 4.2;
+                    const clip = celebAt && t - celebAt < 3000 ? null
+                        : busy < 2.6 ? (has('gk_directing') ? 'gk_directing' : 'offensive_idle') : (has('gk_directing_2') ? 'gk_directing_2' : 'soccer_idle');
+                    if (clip) play(coach, clip, true, 1, 0.3);
+                }
+                const bx = S.ball ? S.ball.position.x : 0, bz = S.ball ? S.ball.position.z : 0;
+                // face à la caméra de trois quarts (tourné vers son équipe) pendant ses consignes, sinon vers le ballon
+                const want = (camShot === 'coach' || camShot === 'coachjoy') ? Math.atan2(cam.position.x - CX, cam.position.z - CZ) - 0.55 : Math.atan2(bx - CX, bz - CZ);
+                coach.yaw = (coach.yaw == null ? Math.PI : coach.yaw) + angDiff(coach.yaw == null ? Math.PI : coach.yaw, want) * Math.min(1, dt * 3);
+                coach.holder.position.set(CX + Math.sin(t / 1700) * 0.25, 0, CZ); coach.holder.rotation.y = coach.yaw;
+                stepFade(coach, dt);
+            };
+
+            // caméra pendant le match (appelée par frame() à la place de la caméra de retransmission)
+            S.camHook = (dt, bx, bz, carrier) => {
+                const G = vt - G0;
+                if (goalAt && vt > goalAt + 3600 && celebAt === 0) { celebAt = vt; }
+                if (endAt && vt >= endAt) {                                  // grue finale + logo
+                    const u = clamp((vt - endAt) / 4200, 0, 1);
+                    if (cutTo('crane')) snapCam(V(0, 2.2, -16), V(0, 1.6, 4));
+                    cam.position.set(lerp(0, 2, u), lerp(2.2, 36, ease(u)), lerp(-16, -84, ease(u))); cam.setTarget(V(0, lerp(1.6, 3, u), lerp(4, 10, u)));
+                    return;
+                }
+                if (celebAt && vt - celebAt < 2200) {                       // l'entraîneur exulte
+                    if (cutTo('coachjoy')) { cue('coachjoy'); const c = CELEBRATIONS.find(has) || (has('gk_directing_2') ? 'gk_directing_2' : null); if (coach && c) playOnce(coach, c, 1, { fade: 0.15, max: 2200 }); }
+                    coachCam(0.5); return;
+                }
+                if (goalAt && vt >= goalAt) {                                // célébration : caméra serrée sur le buteur
+                    const P = S.players.H[MATCHSIM.lastShooter != null ? MATCHSIM.lastShooter : 9] || carrier;
+                    if (P) {
+                        const ang = (vt - goalAt) / 2600;
+                        const p = V(P.x + Math.cos(ang) * 4.2, 1.5, P.z - 3.6 + Math.sin(ang) * 1.2), l = V(P.x, 1.15, P.z);
+                        if (cutTo('celeb')) snapCam(p, l); else glide(dt, p, l, 3);
+                    }
+                    return;
+                }
+                if (shotSeen) {                                              // frappe : derrière le but, au ralenti
+                    const gx = HXt + 3.3;                          // juste derrière le filet, devant les panneaux
+                    const p = V(gx, 1.85, clamp(bz * 0.4, -5, 5)), l = V(bx, 0.9, bz);
+                    if (cutTo('goalcam')) snapCam(p, l); else glide(dt, p, l, 6);
+                    return;
+                }
+                if (G < 2600) { coachCam(clamp(G / 2600, 0, 1)); cutTo('coach'); return; }          // consignes de l'entraîneur
+                if (G < 6200) {                                              // plan large de retransmission
+                    if (cutTo('tv')) { S.camX = bx; S.camZ = 0; S.camSnap = true; }
+                    updateCamera(dt, bx, bz); return;
+                }
+                // travelling au ras de la pelouse, le long de la touche, à hauteur du porteur
+                const tx = carrier ? carrier.x : bx, tz = carrier ? carrier.z : bz;
+                const p = V(tx - 7.5, 1.35, tz - 8.5), l = V(tx + 2.5, 1.0, tz);
+                if (cutTo('low')) snapCam(p, l); else glide(dt, p, l, 3.5);
+            };
+
+            const loopFn = () => {
+                const nowT = IN.fakeNow != null ? IN.fakeNow : performance.now();       // débogage : temps simulé (introStep)
+                if (!t0) { t0 = nowT; last = nowT; vt = nowT; }
+                const rdt = Math.min(0.05, (nowT - last) / 1000); last = nowT;
+                vt += rdt * 1000 * scale;
+                scene.animationTimeScale = scale;
+                const T = (nowT - t0) / 1000, dt = rdt * scale;
+
+                if (phase === 'walk') {
+                    while (ci < WALK_CUES.length && T >= WALK_CUES[ci][0]) { cue(WALK_CUES[ci][1]); ci++; }
+                    const want = Math.min(4, Math.floor((T - 0.35) / 0.32) + 1);
+                    while (lit < want && lit < 4) { groups[ORDER[lit]].forEach(m => { m.visibility = m._k * 1.6; m._flash = nowT; }); cue('light', lit); lit++; }
+                    halos.forEach(m => { if (m._flash) { const e = (nowT - m._flash) / 300; if (e >= 1) { m.visibility = m._k; m._flash = 0; } else m.visibility = m._k * (1 + 0.6 * (1 - e)); } });
+                    const on = Math.min(1, Math.max(0, (T - 0.3) / 1.4));
+                    if (ip) ip.exposure = lerp(0.12, EXPO, ease(on));
+                    hemi.intensity = lerp(H0 * 0.25, H0, on); sun.intensity = lerp(0, S0, on);
+                    ['H', 'A'].forEach(side => S.players[side].forEach(P => {
+                        P.z = Math.max(P.zStop, P.z0 - WALK_SPD * Math.max(0, T - WALK_T0));
+                        const walking = T >= WALK_T0 && P.z > P.zStop + 0.02;
+                        if (walking) { P.x = P.lane + Math.sin((T + P.k) * 1.7) * 0.05; play(P, 'jog_forward', true, WALK_SPD / JOG_SPEED * 0.92, 0.25); }
+                        else if (T >= WALK_T0) play(P, P.isGK && has('gk_idle') ? 'gk_idle' : 'soccer_idle', true, 1, 0.35);
+                        P.holder.position.set(P.x, 0, P.z); P.holder.rotation.y = P.yaw;
+                        stepFade(P, dt);
+                    }));
+                    let sh = WALK_SHOTS[WALK_SHOTS.length - 1];
+                    for (const s of WALK_SHOTS) { if (T < s[1]) { sh = s; break; } }
+                    const u = clamp((T - sh[0]) / (sh[1] - sh[0]), 0, 1), p = sh[2](u), l = sh[3](u);
+                    const wob = 0.05 * Math.sin(T * 1.3) + 0.03 * Math.sin(T * 2.7);
+                    cam.position.set(p.x + wob, p.y + wob * 0.6, p.z); cam.setTarget(l);
+                    if (canvas.clientWidth && canvas.clientHeight) scene.render();
+                    if (T >= CUT_T) { phase = 'black'; blackAt = nowT; cue('black'); }
+                    return;
+                }
+
+                if (phase === 'black') {
+                    // sous le noir : placement des équipes pour le coup d'envoi, entraîneur au bord du terrain
+                    if (nowT - blackAt < 380) { if (canvas.clientWidth) scene.render(); return; }
+                    if (extraLibs && !libsReady) { if (!libsHooked) { libsHooked = true; extraLibs.then(() => { libsReady = true; }); } if (nowT - blackAt < 4000) return; }
+                    if (coach) { coach.holder.setEnabled(true); coach.yaw = Math.PI; }
+                    if (!startSim()) { phase = 'end'; endAt = vt; cue('logo'); return; }
+                    sfx('whistle');
+                    phase = 'match'; cue('match');
+                    coachLine = -1;
+                    return;
+                }
+
+                if (phase === 'match' || phase === 'end') {
+                    const G = vt - G0;
+                    // consignes : une phrase après l'autre pendant le plan sur l'entraîneur
+                    const li = Math.floor((G + 200) / 1300);
+                    if (G < 2600 && li !== coachLine && li < coachLines.length) { coachLine = li; cue('coach', coachLines[li]); }
+                    if (G >= 2600 && coachLine !== 99) { coachLine = 99; cue('coachoff'); }
+                    // ordres au moteur, comme le ferait le match : engagement, attaque, frappe
+                    if (step === 0 && G > 1400) { step = 1; order('home_attack'); }
+                    else if (step === 1 && G > 1400 + MATCHSIM.TICK) { step = 2; order('home_attack'); }
+                    else if (step === 2 && G > 1400 + MATCHSIM.TICK * 2.1) {
+                        step = 3; order('home_shot', { shooterIdx: 9 });
+                        try { MATCHSIM.setShotOutcome('goal'); } catch (e) {}
+                        const eta = Math.max(0, MATCHSIM.shotEta());
+                        goalAt = vt + Math.max(400, eta - 200);
+                    }
+                    if (simOn && vt >= nextTick && step < 4) { try { MATCHSIM.tick(); } catch (e) {} nextTick = vt + MATCHSIM.TICK; }
+                    // frappe repérée : ralenti jusqu'au fond des filets
+                    if (step === 3 && !shotSeen && (MATCHSIM.evq || []).some(e => e.type === 'shot' && e.id > (G0 ? 0 : 0) && e.t >= G0)) { shotSeen = vt; scale = 0.32; sfx('kick'); cue('slowmo'); }
+                    if (step === 3 && goalAt && vt >= goalAt) {
+                        step = 4; scale = 1;
+                        try { MATCHSIM.note('goal', 'H', MATCHSIM.lastShooter != null ? MATCHSIM.lastShooter : 9); MATCHSIM.celebrate('H', MATCHSIM.lastShooter != null ? MATCHSIM.lastShooter : 9, 3800); } catch (e) {}
+                        sfx('goal');
+                        let scorer = ''; try { scorer = (MATCHSIM.team('H').names || [])[MATCHSIM.lastShooter != null ? MATCHSIM.lastShooter : 9] || ''; } catch (e) {}
+                        cue('goal', scorer);
+                    }
+                    if (step === 4 && !endAt && celebAt && vt - celebAt > 2200) { endAt = vt; cue('logo'); }
+                    if (endAt && vt - endAt > 3000 && ci < 99) { ci = 99; cue('tap'); }
+                    if (endAt && vt - endAt > 8000) finish();
+                    // le moteur de simulation continue après le but (retour au rond central)
+                    if (step === 4 && vt >= nextTick) { try { MATCHSIM.tick(); } catch (e) {} nextTick = vt + MATCHSIM.TICK; }
+                    coachStep(dt);
+                    if (simOn) { try { frame(); } catch (e) { console.warn('[Intro 3D] image', e); } }
+                    else { S.camHook(dt, 0, 0, null); if (canvas.clientWidth) scene.render(); }       // sans simulation : grue + logo seuls
+                }
+            };
+            IN.loop = loopFn;
+            engine.runRenderLoop(loopFn);
+            if (window.ResizeObserver) { ro = new ResizeObserver(() => engine.resize()); ro.observe(container); }
+        });
+    }
+
+    window.Match3D = { attach, setTeams, substitute, setConditions, preview, start, pause, setEnabled, stadiumPreview, stopStadiumPreview, intro, introSkip, introStep, _S: S };
 })();

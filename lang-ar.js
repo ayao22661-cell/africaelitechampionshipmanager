@@ -388,6 +388,10 @@ window.I18N_AR = {
     'Ambiance sonore': 'الأجواء الصوتية',
     'Revoir le tutoriel': 'إعادة مشاهدة الدرس التعليمي',
     'Revoir le tutoriel de la boutique': 'إعادة مشاهدة درس المتجر',
+    'Cinématique au lancement': 'المشهد الافتتاحي',
+    'Revoir la cinématique': 'إعادة المشهد الافتتاحي',
+    'Oui': 'نعم',
+    'Non': 'لا',
 
     // ── مفاوضات الانتقالات والعقود ─────────────────────────────────────
     'Renouvellement de contrat': 'تجديد العقد',
