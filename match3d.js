@@ -1600,8 +1600,9 @@
     // Tout le monde à sa place (début de match)
     function resetBench() {
         const bench = S.bench; if (!bench) return;
+        S.subQ = []; S.subbing = null;
         bench.all.forEach(b => {
-            b.path = []; b.until = 0; b.react = null; b.crossed = true; b.P.enter = null; b.P.holder.setEnabled(true);
+            b.path = []; b.until = 0; b.react = null; b.crossed = true; b.called = false; b.P.enter = null; b.P.holder.setEnabled(true);
             if (b.seat) placeSit(b);
             else { standAt(b, b.home.x, b.home.z); b.P.yaw = Math.PI; b.P.holder.rotation.y = Math.PI; }
             b.next = now() + 4000 + Math.random() * 8000;
@@ -1644,12 +1645,59 @@
     // Remplacement, comme au football : le jeu est ARRÊTÉ. Le remplaçant se lève et attend sur la
     // ligne de touche à hauteur de la ligne médiane ; le joueur remplacé quitte d'abord la pelouse, puis
     // seulement le remplaçant entre, rejoint sa place, et le jeu reprend.
+    // Le remplacement est validé tout de suite (le moteur de match compte déjà le nouveau joueur),
+    // mais en 3D il attend un BALLON MORT : sortie de but, corner, coup franc ou engagement. D'ici là,
+    // le joueur remplacé continue de jouer — pas d'arrêt de jeu inventé.
     function substitute(side, idx) {
+        if (!S.bench || !S.bench[side]) return;
+        const t0 = (typeof MATCHSIM !== 'undefined' && MATCHSIM.now) ? MATCHSIM.now() : now();
+        (S.subQ || (S.subQ = [])).push({ side, idx, t0 });
+        // le remplaçant se lève déjà et s'échauffe au bord du banc : on sait qu'il va entrer
+        const bench = S.bench[side], wantGK = idx === 0;
+        const cand = bench.subs.find(b => b.st === 'sit' && !b.called && !!b.P.isGK === wantGK) || bench.subs.find(b => b.st === 'sit' && !b.called);
+        if (cand) { cand.called = true; cand.st = 'ready'; clearPose(cand.P); cand.P.holder.position.set(cand.seat.x, 0, cand.seat.z - 0.6); play(cand.P, 'soccer_idle', true, 1, 0.3); }
+    }
+    function deadBallNow(q) {
+        if (typeof MATCHSIM === 'undefined' || !MATCHSIM.active) return true;
+        return (MATCHSIM.deadBall || 0) > q.t0;
+    }
+    function runSubQueue() {
+        if (!S.subQ || !S.subQ.length) return;
+        if (!deadBallNow(S.subQ[0])) return;
+        const list = S.subQ.splice(0);
+        let any = false;
+        list.forEach(q => { if (doSubstitute(q.side, q.idx)) any = true; });
+        if (any) { const m = MATCHSIM.now(); S.subbing = { since: m, lastM: m }; }
+    }
+    // Tant que l'échange n'est pas terminé (sortant hors de la pelouse, entrant à sa place), le jeu reste
+    // arrêté : ordres, minuteries du moteur et chrono figés. Filet de sécurité : 25 s au plus.
+    function holdWhileSubbing() {
+        const sb = S.subbing; if (!sb || typeof MATCHSIM === 'undefined') return;
+        const M = MATCHSIM, m = M.now();
+        const entering = ['H', 'A'].some(k => S.players[k].some(P => P && P.enter));
+        const leaving = S.bench && S.bench.all.some(b => b.st === 'walk' && !b.crossed);
+        if (!entering && !leaving) { S.subbing = null; return; }
+        if (m - sb.since > 25000) {                            // appareil très lent : on termine l'échange d'un coup
+            ['H', 'A'].forEach(k => S.players[k].forEach(P => { if (P && P.enter) { P.enter = null; P.init = false; } }));
+            if (S.bench) S.bench.all.forEach(b => { if (b.st === 'walk') { b.path = []; b.crossed = true; } });
+            S.subbing = null; return;
+        }
+        const d = Math.max(0, m - sb.lastM); sb.lastM = m;
+        try {
+            M.holdUntil = Math.max(M.holdUntil || 0, m + 400);
+            (M._later || []).forEach(e => { e.at += d; });
+            M.holdScene(700);
+        } catch (e) {}
+    }
+
+    function doSubstitute(side, idx) {
         const bench = S.bench && S.bench[side];
         if (!bench || !S.players[side] || !S.players[side][idx]) return;
         const wantGK = idx === 0;
-        const cand = bench.subs.find(b => b.st === 'sit' && !!b.P.isGK === wantGK) || bench.subs.find(b => b.st === 'sit');
-        if (!cand) return;
+        const cand = bench.subs.find(b => b.called && b.st === 'ready' && !!b.P.isGK === wantGK) || bench.subs.find(b => b.called && b.st === 'ready')
+            || bench.subs.find(b => b.st === 'sit' && !!b.P.isGK === wantGK) || bench.subs.find(b => b.st === 'sit');
+        if (!cand) return 0;
+        cand.called = false;
         const inP = cand.P, outP = S.players[side][idx];
         const s = side === 'H' ? -1 : 1, lineZ = HZB;
         // durée de l'arrêt : sortie du joueur (à pied, en trottinant) + entrée du remplaçant
@@ -1657,7 +1705,6 @@
         const dOut = Math.hypot(outP.x - exitPt.x, outP.z - exitPt.z);
         const dIn = Math.hypot(outP.x - s * 0.6, outP.z - lineZ);
         const ms = clamp((dOut / 3.4 + dIn / 4.2) * 1000 + 2200, 5000, 22000);
-        try { MATCHSIM.hold(ms); MATCHSIM.holdScene(ms); } catch (e) {}
         // entrant : se lève, va attendre sur la ligne, puis entre quand le sortant a quitté la pelouse
         clearPose(inP);
         inP.holder.position.y = 0; inP.holder.setEnabled(true);
@@ -1673,6 +1720,7 @@
         cand.arrive = 'sit';
         // le coach accueille le sortant d'un geste
         if (bench.coach.st === 'stand' && !bench.coach.react) { play(bench.coach.P, 'gk_directing', true, 1, 0.25); bench.coach.react = { kind: 'anim', until: now() + 2500 }; }
+        return ms;
     }
 
     // Entrée d'un remplaçant. Renvoie true tant qu'il est piloté ici (sinon la boucle normale reprend la main).
@@ -1710,6 +1758,7 @@
         bench.all.forEach(b => {
             const P = b.P;
             if (b.st === 'walk') {
+                dt = S.rdt || dt;                                   // temps réel : la sortie ne dépend pas de la fluidité
                 const tgt = b.path[0];
                 if (!tgt) {
                     if (b.arrive === 'sit') placeSit(b); else standAt(b, P.x, P.z);
@@ -1723,6 +1772,12 @@
                 P.yaw += angDiff(P.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 8);
                 P.holder.position.set(P.x, 0, P.z); P.holder.rotation.y = P.yaw;
                 play(P, 'jog_forward', true, clamp(sp / JOG_SPEED, 0.6, 1.5), 0.2);
+                stepFade(P, dt);
+                return;
+            }
+            if (b.st === 'ready') {                                 // remplaçant appelé : il s'échauffe en attendant le ballon mort
+                P.yaw += angDiff(P.yaw, Math.PI) * Math.min(1, dt * 4); P.holder.rotation.y = P.yaw;
+                P.holder.position.y = Math.abs(Math.sin(t / 260)) * 0.05;   // petits sauts sur place
                 stepFade(P, dt);
                 return;
             }
@@ -1944,7 +1999,7 @@
         const t = now();
         let dt = (t - S.lastT) / 1000;
         if (S.lastT && dt < (S.lowEnd ? 0.030 : 0.0)) return;                // 30 i/s sur téléphone faible
-        S.lastT = t; dt = clamp(dt || 0.016, 0.001, 0.1);
+        S.lastT = t; S.rdt = clamp(dt || 0.016, 0.001, 0.5); dt = clamp(dt || 0.016, 0.001, 0.1);
 
         const f = MATCHSIM.frame();
         S.lastFrame = f;
@@ -1985,7 +2040,7 @@
         let carrier = null;
         ['H', 'A'].forEach(side => f[side].forEach((d, i) => {
             const P = S.players[side][i]; if (!P) return;
-            if (P.enter && enterStep(P, dt)) return;                // remplaçant qui entre en jeu
+            if (P.enter && enterStep(P, S.rdt || dt)) return;       // remplaçant qui entre en jeu (temps réel)
             // position effective = simulation + décalage résiduel (après un geste figé)
             if (P.once && P.once.freeze && t < P.once.until) {
                 P.off[0] = P.once.x - P.sx; P.off[1] = P.once.z - P.sz;
@@ -2081,6 +2136,8 @@
             stepFade(R, dt);
         }
 
+        runSubQueue();
+        holdWhileSubbing();
         updateBench(dt, t, bx, bz);
 
         if (carrier && !S.camHook) { S.ring.isVisible = true; S.ring.position.x = carrier.x; S.ring.position.z = carrier.z; }

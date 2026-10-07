@@ -1,3 +1,9 @@
+# Remplacements uniquement quand le ballon est mort (07/10/2026)
+
+Trop d'arrêts de jeu : un remplacement ne crée plus d'arrêt. Il est validé tout de suite (le moteur compte déjà le nouveau joueur), mais en 3D il **attend un ballon mort** : sortie de but ou engagement (après un but, à la mi-temps). Pendant l'attente, le joueur remplacé continue de jouer et le remplaçant s'échauffe debout devant le banc.
+Au ballon mort : le jeu reste arrêté **exactement** le temps de l'échange (le sortant quitte la pelouse, puis l'entrant rejoint sa place), puis repart. Les déplacements suivent le temps réel (indépendants de la fluidité du téléphone) ; filet de sécurité de 25 s.
+Corners et coups francs ne servent pas de moment de remplacement : le moteur les joue sur des minuteries qu'on ne peut pas suspendre proprement.
+
 # Remplacements selon les règles du football (07/10/2026)
 
 Avant, le joueur remplacé sortait et le remplaçant entrait pendant que le jeu continuait. Désormais (`Match3D.substitute`) :

@@ -5290,7 +5290,7 @@ const MATCHSIM = {
         this.H = mk(opts.homeForm, 1, opts.homeTac, opts.homeForce, opts.homeNames, opts.homeRoles);
         this.A = mk(opts.awayForm, -1, opts.awayTac, opts.awayForce, opts.awayNames, opts.awayRoles);
         this.ball = { x: 50, y: 50, z: 0, side: 'H', idx: 9, fly: null };
-        this.phase = 'kickoff';
+        this.phase = 'kickoff'; this.deadBall = this.now();
         this.t0 = this.now();
         this.sceneUntil = 0; this.holdUntil = 0; this._later = []; this.spot = null; this.eta = 0; this.curDur = 0;
         this.locked = 0;        // ticks pendant lesquels le moteur de match impose la scène
@@ -6029,6 +6029,7 @@ const MATCHSIM = {
     // Relance : le gardien de l'équipe `key` récupère le ballon, les deux
     // blocs se remettent en place. C'est la respiration naturelle du match.
     goalKick(key) {
+        this.deadBall = this.now();          // ballon sorti : sortie de but (moment des remplacements)
         const T = this.team(key);
         this.ball.side = key;
         this.ball.idx = 0;
@@ -6218,7 +6219,7 @@ const MATCHSIM = {
             this.ball.idx = (att[0] || this.nearestTo(T, { x: 50, y: 50 }, p => p.role !== 'GK')).i;
             const c = T.p[this.ball.idx];
             c.tx = 50 - T.dir * 1.5; c.ty = 50;
-            this.phase = 'kickoff'; this.locked = 1;
+            this.phase = 'kickoff'; this.deadBall = this.now(); this.locked = 1;
             this.commit(this.TICK * 1.1, 1.6);   // replacement à l'engagement : on trottine plus vite qu'en jeu
             // Le ballon retourne au point central en roulant (plus de téléportation)
             const dc = Math.hypot(50 - cur.x, 50 - cur.y);
