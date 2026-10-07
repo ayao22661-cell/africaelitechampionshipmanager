@@ -1,3 +1,13 @@
+# Remplacements selon les règles du football (07/10/2026)
+
+Avant, le joueur remplacé sortait et le remplaçant entrait pendant que le jeu continuait. Désormais (`Match3D.substitute`) :
+1. le jeu s'ARRÊTE (ordres figés et chrono arrêté : `MATCHSIM.hold` + `holdScene`) ;
+2. le remplaçant se lève et attend sur la ligne de touche, à hauteur de la ligne médiane ;
+3. le joueur remplacé quitte la pelouse par la ligne médiane ;
+4. seulement alors le remplaçant entre et rejoint sa place ;
+5. le jeu reprend ; le joueur sorti va s'asseoir sur le banc.
+Durée de l'arrêt calculée sur la distance à parcourir (5 à 22 s).
+
 # Match plus vivant : silhouettes, banc animé, tambours, écran géant (07/10/2026)
 
 | Élément | Détail |

@@ -1601,7 +1601,7 @@
     function resetBench() {
         const bench = S.bench; if (!bench) return;
         bench.all.forEach(b => {
-            b.path = []; b.until = 0; b.react = null; b.P.enter = null; b.P.holder.setEnabled(true);
+            b.path = []; b.until = 0; b.react = null; b.crossed = true; b.P.enter = null; b.P.holder.setEnabled(true);
             if (b.seat) placeSit(b);
             else { standAt(b, b.home.x, b.home.z); b.P.yaw = Math.PI; b.P.holder.rotation.y = Math.PI; }
             b.next = now() + 4000 + Math.random() * 8000;
@@ -1641,8 +1641,9 @@
         });
     }
 
-    // Remplacement en direct : le remplaçant se lève, rejoint la ligne médiane et entre ; le joueur
-    // remplacé sort par le même endroit et va s'asseoir à sa place sur le banc.
+    // Remplacement, comme au football : le jeu est ARRÊTÉ. Le remplaçant se lève et attend sur la
+    // ligne de touche à hauteur de la ligne médiane ; le joueur remplacé quitte d'abord la pelouse, puis
+    // seulement le remplaçant entre, rejoint sa place, et le jeu reprend.
     function substitute(side, idx) {
         const bench = S.bench && S.bench[side];
         if (!bench || !S.players[side] || !S.players[side][idx]) return;
@@ -1650,28 +1651,41 @@
         const cand = bench.subs.find(b => b.st === 'sit' && !!b.P.isGK === wantGK) || bench.subs.find(b => b.st === 'sit');
         if (!cand) return;
         const inP = cand.P, outP = S.players[side][idx];
-        const s = side === 'H' ? -1 : 1, lineZ = HZB + 0.35;
-        // entrant
+        const s = side === 'H' ? -1 : 1, lineZ = HZB;
+        // durée de l'arrêt : sortie du joueur (à pied, en trottinant) + entrée du remplaçant
+        const exitPt = { x: s * 1.4, z: lineZ - 0.3 };
+        const dOut = Math.hypot(outP.x - exitPt.x, outP.z - exitPt.z);
+        const dIn = Math.hypot(outP.x - s * 0.6, outP.z - lineZ);
+        const ms = clamp((dOut / 3.4 + dIn / 4.2) * 1000 + 2200, 5000, 22000);
+        try { MATCHSIM.hold(ms); MATCHSIM.holdScene(ms); } catch (e) {}
+        // entrant : se lève, va attendre sur la ligne, puis entre quand le sortant a quitté la pelouse
         clearPose(inP);
         inP.holder.position.y = 0; inP.holder.setEnabled(true);
         inP.x = inP.px = cand.seat.x; inP.z = inP.pz = cand.seat.z - 0.45;
         inP.once = null; inP.gone = false; inP.off[0] = inP.off[1] = 0; inP.side = side;
-        inP.enter = { pts: [{ x: s * 0.9, z: lineZ + 0.6 }, { x: s * 0.4, z: lineZ - 0.8 }] };
+        inP.enter = { pts: [{ x: s * 0.6, z: lineZ + 0.7 }], wait: cand, inPts: [{ x: s * 0.6, z: lineZ - 1.2 }] };
         S.players[side][idx] = inP;
-        // sortant
+        // sortant : quitte la pelouse par la ligne médiane, puis va s'asseoir sur le banc
         cand.P = outP; outP.enter = null; outP.once = null; outP.side = side;
         outP.holder.rotation.x = 0;
-        cand.st = 'walk'; cand.spd = 3.2;
-        cand.path = [{ x: s * 1.6, z: lineZ - 0.4 }, { x: s * 1.8, z: lineZ + 0.9 }, { x: cand.seat.x, z: cand.seat.z - 0.6 }];
+        cand.st = 'walk'; cand.spd = 3.4; cand.crossed = false;
+        cand.path = [exitPt, { x: s * 1.9, z: lineZ + 1.0 }, { x: cand.seat.x, z: cand.seat.z - 0.6 }];
         cand.arrive = 'sit';
         // le coach accueille le sortant d'un geste
         if (bench.coach.st === 'stand' && !bench.coach.react) { play(bench.coach.P, 'gk_directing', true, 1, 0.25); bench.coach.react = { kind: 'anim', until: now() + 2500 }; }
     }
 
-    // Entrée d'un remplaçant : il marche vers la ligne puis rejoint sa place dans le jeu.
-    // Renvoie true tant qu'il est piloté ici (sinon la boucle normale reprend la main).
+    // Entrée d'un remplaçant. Renvoie true tant qu'il est piloté ici (sinon la boucle normale reprend la main).
     function enterStep(P, dt) {
         const E = P.enter;
+        // sur la ligne : il attend que le joueur remplacé soit sorti
+        if (!E.pts.length && E.wait && !E.wait.crossed) {
+            P.yaw += angDiff(P.yaw, Math.PI) * Math.min(1, dt * 5);          // face au terrain
+            P.holder.rotation.y = P.yaw;
+            play(P, 'soccer_idle', true, 1, 0.3); stepFade(P, dt);
+            return true;
+        }
+        if (!E.pts.length && E.inPts) { E.pts = E.inPts; E.inPts = null; E.wait = null; }
         const tgt = E.pts.length ? E.pts[0] : { x: P.sx + P.off[0], z: P.sz + P.off[1] };
         const dx = tgt.x - P.x, dz = tgt.z - P.z, d = Math.hypot(dx, dz);
         if (!E.pts.length && d < 1.2) {
@@ -1680,7 +1694,7 @@
             return false;
         }
         if (E.pts.length && d < 0.35) { E.pts.shift(); return true; }
-        const sp = Math.min(d / dt, 4.4);
+        const sp = Math.min(d / dt, 4.2);
         P.x += dx / d * sp * dt; P.z += dz / d * sp * dt; P.px = P.x; P.pz = P.z;
         const yaw = Math.atan2(dx, dz);
         P.yaw += angDiff(P.yaw, yaw) * Math.min(1, dt * 8);
@@ -1702,6 +1716,7 @@
                     return;
                 }
                 const dx = tgt.x - P.x, dz = tgt.z - P.z, d = Math.hypot(dx, dz);
+                if (!b.crossed && P.z > HZB + 0.15) b.crossed = true;          // il a quitté la pelouse
                 if (d < 0.3) { b.path.shift(); return; }
                 const sp = Math.min(d / dt, b.spd || 3);
                 P.x += dx / d * sp * dt; P.z += dz / d * sp * dt;
