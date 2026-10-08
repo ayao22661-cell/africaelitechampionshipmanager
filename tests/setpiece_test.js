@@ -1,7 +1,7 @@
 // Test des coups de pied arrêtés : à la fin de l'installation, les joueurs sont-ils en place et marqués ?
 // Usage : node tests/setpiece_test.js [chemin/app.js]
 const fs=require('fs'),vm=require('vm');
-const src=fs.readFileSync((process.argv[2]||require('path').join(__dirname,'..','app.js')),'utf8');
+const src=fs.readFileSync((process.argv[2]||require('path').join(__dirname,'..','app.js')),'utf8').split(String.fromCharCode(13)).join('');
 const fa=src.indexOf('const FORMATIONS_MAP = {'), fb=src.indexOf('\n};\n',fa)+3;
 const a=src.indexOf('const MATCHSIM = {'), b=src.indexOf('\n};\n',a)+3;
 const ctx={console,Math};ctx.globalThis=ctx;vm.createContext(ctx);

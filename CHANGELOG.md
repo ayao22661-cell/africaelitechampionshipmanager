@@ -1,3 +1,33 @@
+# Ralenti du but, comme à la télé (08/10/2026)
+
+Après chaque but (en 3D), l'action est **rejouée au ralenti** : les 4 dernières secondes avant le but, à 45 % de la vitesse (~9 s), caméra au ras de la pelouse sur le côté qui suit le ballon, bandeau « ● RALENTI » orange rayé et bandes noires de cinéma, fondus au noir à l'entrée et à la sortie. Le tireur refait son geste de frappe.
+- Le moteur garde en mémoire les 8 dernières secondes (positions des 22 joueurs, du ballon, frappes) — `recordFrame`.
+- Pendant le ralenti, le match reste figé (ordres, minuteries, chrono) puis reprend là où il en était ; les événements survenus pendant ne sont pas rejoués.
+- Un toucher sur le terrain passe le ralenti.
+
+# Babylon enrichi : effets visuels du stade (08/10/2026)
+
+| Élément | Détail |
+|---|---|
+| Moteur 3D | `vendor/babylon-aecm.js` reconstruit (même Babylon 9.29.0) avec post-traitements, halo, particules et reflets de projecteurs : 3,5 → 3,9 Mo. Recette : `tools/babylon/` |
+| Image | Anticrénelage (FXAA) et netteté sur tous les matchs ; la nuit, halo (bloom) sur les projecteurs et l'écran géant |
+| Projecteurs | Reflets (lens flares) des projecteurs vers la caméra en nocturne |
+| But | Confettis aux couleurs du club au-dessus des deux tribunes latérales, fumigènes colorés dans le public, feux d'artifice au-dessus du toit la nuit |
+| Coup d'envoi | Les supporters des deux équipes allument leurs fumigènes |
+| Fluidité | Si le téléphone peine, les effets se coupent d'abord (avant toute baisse de résolution) |
+| Cinématique | Profite aussi des effets (nuit) |
+Tout est généré par le code (textures des particules dessinées sur un canvas) : aucun fichier image ajouté.
+
+# Touches et fautes dans le jeu (08/10/2026)
+
+| Nouveauté | Détail |
+|---|---|
+| **Touches** | Le ballon sort sur les côtés : porteur pressé le long de la ligne, ballon long / centre / changement d'aile trop appuyé, tacle qui dévie en touche. Le joueur adverse le plus proche va au ballon et remet en jeu **à la main** (geste `throw_in` en 3D, ballon en cloche) — environ 6 par match |
+| **Fautes** | Une partie des tacles est sifflée (coup de sifflet) : l'équipe qui avait le ballon le garde et joue un coup franc court — environ 2 à 3 par match. Les coups francs dangereux restent gérés par le match comme avant |
+| Remplacements | Touches et fautes sont aussi des ballons morts : les remplacements en attente s'y font (en plus des sorties de but et des engagements) |
+| Ballon | Filet de sécurité dans `ballNow` : un ballon libre loin de son porteur le rejoint par un court trajet au lieu d'être recollé d'un coup |
+| Tests | Les tests de la simulation (`tests/*.js`) fonctionnent à nouveau directement (fins de ligne Windows de `app.js`) ; 0 saut de ballon mesuré sur 8 matchs simulés |
+
 # Remplacements uniquement quand le ballon est mort (07/10/2026)
 
 Trop d'arrêts de jeu : un remplacement ne crée plus d'arrêt. Il est validé tout de suite (le moteur compte déjà le nouveau joueur), mais en 3D il **attend un ballon mort** : sortie de but ou engagement (après un but, à la mi-temps). Pendant l'attente, le joueur remplacé continue de jouer et le remplaçant s'échauffe debout devant le banc.

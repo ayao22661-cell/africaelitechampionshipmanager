@@ -2,7 +2,7 @@
 // Distance des tirs dans le jeu, tireur de corner/coup franc au ballon, joueurs dans la surface au corner.
 // Usage : node tests/match_flow_test.js [chemin/app.js]   (TEMPO=slow|normal|fast, GAMES=n)
 const fs=require('fs'),vm=require('vm');
-const src=fs.readFileSync((process.argv[2]||require("path").join(__dirname,"..","app.js")),"utf8");
+const src=fs.readFileSync((process.argv[2]||require("path").join(__dirname,"..","app.js")),"utf8").split(String.fromCharCode(13)).join("");
 const fa=src.indexOf('const FORMATIONS_MAP = {'), fb=src.indexOf('\n};\n',fa)+3;
 const a=src.indexOf('const MATCHSIM = {'), b=src.indexOf('\n};\n',a)+3;
 const ctx={console,Math};ctx.globalThis=ctx;vm.createContext(ctx);

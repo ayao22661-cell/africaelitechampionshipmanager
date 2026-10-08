@@ -5669,6 +5669,7 @@ const MATCHSIM = {
         if (this.ball.fly || this.shotFly) { this.applyTargets(); this.commit(); return; }
 
         if (this.pendingGoalKick) { const k = this.pendingGoalKick; this.pendingGoalKick = null; this.goalKick(k); return; }
+        if (this.pendingRestart) { const r = this.pendingRestart; this.pendingRestart = null; this.restart(r); return; }
 
         const key = this.ball.side, T = this.team(key), O = this.team(this.other(key));
         const carrier = T.p[this.ball.idx] || T.p[9];
@@ -5702,6 +5703,22 @@ const MATCHSIM = {
             if (d < nd) { nd = d; nearest = q; }
             if (d < 10 && q.role !== 'GK') swarm++;
         });
+
+        // TOUCHE : pressé le long de la ligne de côté, le porteur perd le ballon en touche ;
+        // l'adversaire remet en jeu à la main.
+        const edge = Math.min(cpos.y, 100 - cpos.y);                // distance à la ligne de côté (en % de largeur)
+        const ballIn = this.ball.y >= 0 && this.ball.y <= 100 && !this.ball.fixed;
+        if (ballIn && edge < 22 && nd < 9 && Math.random() < (edge < 12 ? 0.16 : 0.07)) {
+            const oy = cpos.y < 50 ? -1 : 101, ox = this.clamp(cpos.x + T.dir * (2 + Math.random() * 4), 4, 96);
+            this.note('pass', key, carrier.i, { to: -1, action: 'short' });
+            this.ball.fixed = false;
+            const slow = this.TICK / 1100, d = Math.hypot(ox - cpos.x, oy - cpos.y);
+            this.ball.fly = { fromX: this.ball.x, fromY: this.ball.y, toX: ox, toY: oy, side: key, idx: carrier.i,
+                t0: this.now(), dur: this.clamp(d * 34 * slow, 350, 1100), peak: 0.4, rest: true, hard: true,
+                then: function () { this.restart({ kind: 'throw', key: this.other(key), x: ox, y: oy }); } };
+            this.applyTargets(); this.commit();
+            return;
+        }
 
         // Perte de balle : d'autant plus probable que l'adversaire est proche,
         // nombreux et fort.
@@ -5937,8 +5954,29 @@ const MATCHSIM = {
         const winner = this.other(key), loserIdx = this.ball.idx, L = this.team(key);
         const b = this.ballNow();
         const bx = b.x, by = b.y;
+        // FAUTE : le tacle est sifflé, l'équipe qui avait le ballon le garde et joue le coup franc
+        // (court, sans mise en scène : les coups francs dangereux restent gérés par le match).
+        const ownHalf = (bx - 50) * L.dir < 0;
+        if (by >= 0 && by <= 100 && Math.random() < (ownHalf ? 0.16 : 0.10)) {
+            this.note('tackle', winner, tackler.i, { loserSide: key, loser: loserIdx, foul: true });
+            try { SFX.whistle(false); } catch (e) {}
+            this.ball.fly = null; this.placeBall(bx, by);
+            this.restart({ kind: 'foul', key, x: bx, y: by, taker: loserIdx });
+            return;
+        }
         this.note('tackle', winner, tackler.i, { loserSide: key, loser: loserIdx });
         this._cut = null;
+        if (by >= 0 && by <= 100 && !this.ball.fixed && Math.min(by, 100 - by) < 32 && Math.random() < 0.18) {
+            // le tacle dévie le ballon en touche : remise en jeu pour l'équipe qui l'avait
+            const oy = by < 50 ? -1 : 101, ox = this.clamp(bx + (Math.random() * 6 - 3), 4, 96);
+            this.ball.fixed = false;
+            this.ball.fly = { fromX: bx, fromY: by, toX: ox, toY: oy, side: key, idx: loserIdx,
+                t0: this.now(), dur: this.clamp(Math.abs(oy - by) * 30 * this.TICK / 1100, 400, 1400), peak: 0.6, rest: true, hard: true,
+                then: function () { this.restart({ kind: 'throw', key, x: ox, y: oy }); } };
+            this.applyTargets(); tackler.tx = bx; tackler.ty = by;
+            this.commit(Math.min(this.TICK, 900), 1.3);
+            return;
+        }
         this.winBall(winner, tackler);
         this.applyTargets();
         tackler.tx = bx; tackler.ty = by;
@@ -6001,6 +6039,18 @@ const MATCHSIM = {
                 return;
             }
         }
+        // Ballon trop appuyé (long ballon, changement d'aile, centre, profondeur) : il file en touche.
+        if (canCut && from.y >= 0 && from.y <= 100 && (action === 'long' || action === 'switch' || action === 'cross' || action === 'through') && Math.random() < 0.09) {
+            const side = to.ty < 50 ? -1 : 1, oy = side < 0 ? -1 : 101;
+            const ox = this.clamp(to.tx + T.dir * (3 + Math.random() * 8), 4, 96);
+            const slow0 = this.TICK / 1100, d0 = Math.hypot(ox - from.x, oy - from.y);
+            this.ball.fly = { fromX: from.x, fromY: from.y, toX: ox, toY: oy, side: key, idx: toIdx,
+                t0: this.now(), dur: this.clamp(d0 * 28 * slow0, 500, 2200), peak: action === 'through' ? 0.4 : 2.4, rest: true, hard: true,
+                then: function () { this.restart({ kind: 'throw', key: this.other(key), x: ox, y: oy }); } };
+            this.ball.idx = toIdx; this.ball.side = key;
+            this.lastAction = action; this.phase = 'buildup';
+            return;
+        }
         // ~30 m/s sur une passe appuyée, un peu plus vite sur un long ballon.
         // Un ballon de 50 m a le droit de voler plus longtemps qu'un tour de
         // simulation : la passe reste lisible au lieu d'être expédiée.
@@ -6015,7 +6065,7 @@ const MATCHSIM = {
             t0: this.now(), dur,
             // Hauteur de balle : un centre et un ballon long survolent, une
             // passe en profondeur reste au sol.
-            peak: action === 'long' ? 3.2 : action === 'cross' ? 2.9
+            peak: action === 'throw' ? 1.5 : action === 'long' ? 3.2 : action === 'cross' ? 2.9
                 : action === 'switch' ? 2.2 : action === 'through' ? 0.15 : 0.35
         };
         this.ball.idx = toIdx;
@@ -6024,6 +6074,39 @@ const MATCHSIM = {
         this.phase = (action === 'long' || action === 'through' || action === 'cross') ? 'attack'
             : action === 'recycle' ? 'buildup'
                 : this.phase === 'transition' ? 'attack' : 'buildup';
+    },
+
+    // Remise en jeu (touche) ou coup franc court après une faute. Ballon mort : c'est
+    // aussi un moment où les remplacements se font (voir Match3D.substitute).
+    restart(r) {
+        this.deadBall = this.now();
+        const T = this.team(r.key);
+        this.ball.fly = null; this.shotFly = null;
+        this.ballNow();
+        const pos = { x: this.ball.x, y: this.ball.y };     // le ballon ne bouge pas : le tireur vient à lui
+        const taker = (r.taker != null && T.p[r.taker] && !T.p[r.taker].off) ? T.p[r.taker]
+            : this.nearestTo(T, pos, q => q.role !== 'GK');
+        this.ball.side = r.key; this.ball.idx = taker.i;
+        this.phase = 'buildup';
+        this.applyTargets();
+        taker.tx = pos.x - (r.kind === 'foul' ? T.dir * 0.8 : 0); taker.ty = pos.y;
+        this.placeBall(pos.x, pos.y);
+        this.commit(1100, 1.3);
+        const wait = r.kind === 'throw' ? 1800 : 1500;
+        this.holdUntil = this.now() + wait;
+        this.later(wait, () => {
+            if (!this.active) return;
+            let best = null, bd = 1e9;
+            T.p.forEach(q => {
+                if (q === taker || q.off || q.role === 'GK') return;
+                const d = this.dist(q, pos);
+                if (d > 5 && d < bd) { bd = d; best = q; }
+            });
+            if (!best) best = T.p[6];
+            this.ball.idx = taker.i; this.ball.side = r.key;
+            this.pass(r.key, best.i, r.kind === 'throw' ? 'throw' : 'short', r.kind !== 'throw');
+            this.applyTargets(); this.commit();
+        });
     },
 
     // Relance : le gardien de l'équipe `key` récupère le ballon, les deux
@@ -6158,6 +6241,15 @@ const MATCHSIM = {
             if (Math.hypot(p.x - this.ball.x, p.y - this.ball.y) < 2.6) { this.rebind(this.ball.side, this.ball.idx, 0.1); return this.ball; }
             else return this.ball;
         }
+        // Filet de sécurité : ballon libre mais loin du porteur (ordre du moteur pendant une touche,
+        // un coup franc…) → il le REJOINT par un court trajet au lieu d'être recollé d'un coup.
+        {
+            const T = this.team(this.ball.side), p = this.playerNow(this.ball.side, this.ball.idx);
+            if (p && Math.hypot(p.x + T.dir * 0.9 - this.ball.x, p.y + 0.4 - this.ball.y) > 2.2) {
+                this.rebind(this.ball.side, this.ball.idx, 0.2);
+                return this.ball;
+            }
+        }
         this.glue();
         return this.ball;
     },
@@ -6175,14 +6267,14 @@ const MATCHSIM = {
         const cur = { x: this.ball.x, y: this.ball.y };
         // Certains ordres ne changent rien (« on attaque déjà ») : dans ce cas on ne
         // doit RIEN annuler — une passe en vol continuerait sinon dans le vide.
-        const keep = { fly: this.ball.fly, shot: this.shotFly, pgk: this.pendingGoalKick, later: this._later,
+        const keep = { fly: this.ball.fly, shot: this.shotFly, pgk: this.pendingGoalKick, prs: this.pendingRestart, later: this._later,
             fixed: this.ball.fixed, hard: this.ball.hard, outcome: this.outcome, spot: this.spot };
         const restore = () => {
-            this.ball.fly = keep.fly; this.shotFly = keep.shot; this.pendingGoalKick = keep.pgk; this._later = keep.later;
+            this.ball.fly = keep.fly; this.shotFly = keep.shot; this.pendingGoalKick = keep.pgk; this.pendingRestart = keep.prs; this._later = keep.later;
             this.ball.fixed = keep.fixed; this.ball.hard = keep.hard; this.outcome = keep.outcome; this.spot = keep.spot;
             this._cut = keepCut;
         };
-        this.pendingGoalKick = null;
+        this.pendingGoalKick = null;      // (une touche en attente, elle, est conservée : le ballon est dehors)
         this.outcome = null; this._later = [];
         if (state !== 'home_shot' && state !== 'away_shot') this.spot = null;
         const keepCut = this._cut; this._cut = null;
@@ -6419,7 +6511,7 @@ const MATCHSIM = {
         if (!this.active) return 0;
         this.ballNow();
         const cur = { x: this.ball.x, y: this.ball.y };
-        this.pendingGoalKick = null; this._later = []; this.outcome = null;
+        this.pendingGoalKick = null; this.pendingRestart = null; this._later = []; this.outcome = null;
         this.ball.fly = null; this.shotFly = null;
         const T = this.team(key), O = this.team(this.other(key)), dir = T.dir, gx = T.atkX;
         const cl = (v, a, b) => this.clamp(v, a, b);

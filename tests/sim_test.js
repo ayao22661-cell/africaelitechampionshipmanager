@@ -1,6 +1,6 @@
 const fs = require('fs'), vm = require('vm');
 const file = process.argv[2] || require('path').join(__dirname, '..', 'app.js');
-const src = fs.readFileSync(file, 'utf8');
+const src = fs.readFileSync(file, 'utf8').split(String.fromCharCode(13)).join('');   // app.js en fins de ligne Windows
 const a = src.indexOf('const MATCHSIM = {');
 const b = src.indexOf('\n};\n', a) + 3;
 const code = src.slice(a, b) + '\n;globalThis.MATCHSIM = MATCHSIM;';

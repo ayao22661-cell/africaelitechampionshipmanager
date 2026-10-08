@@ -1138,6 +1138,7 @@
         if (sp.tier !== 'large') {
             [-1, 1].forEach(s => [-1, 1].forEach(t => {
                 const x = s * (BX + 8), z = t * (BZ + 8), top = sp.tier === 'small' ? 30 : 38;
+                (S.mastHeads || (S.mastHeads = [])).push({ x: x * 0.97, y: top + 1, z: z * 0.97 });
                 gTube(gMs, [x, 0, z], [x, top, z], 0.45, 6);
                 const dx = -x, dz = -z, L = Math.hypot(dx, dz), px = -dz / L, pz = dx / L;
                 gQuad(gHd, [x - px * 3.4, top - 1.8, z - pz * 3.4], [x + px * 3.4, top - 1.8, z + pz * 3.4], [x + px * 3.4, top + 1.8, z + pz * 3.4], [x - px * 3.4, top + 1.8, z - pz * 3.4]);
@@ -1274,14 +1275,168 @@
         const info = S.condInfo || {};
         S.theme = THEMES[info.weather] || THEMES.clear;
         S.spec = stadiumSpec(info);
-        S.lights = [];
+        S.lights = []; S.mastHeads = [];
         clearDecor();
         haloMatCache = null;
         try { buildSky(); } catch (e) { console.warn('[3D] ciel', e); }
         try { paintPitch(S.spec, info.cond); } catch (e) { console.warn('[3D] pelouse', e); }
         try { buildStadium(); } catch (e) { console.warn('[3D] stade', e); }
         applyTheme();
+        try { applyFxTheme(); } catch (e) { console.warn('[3D] effets', e); }
         S.decorKey = JSON.stringify([info.weather, info.pitch, info.capacity, info.name, S.teams.home, S.teams.away]);
+    }
+
+    // ═══ EFFETS VISUELS (Babylon) : image, lumière, particules ═════════════════
+    // Tout est généré par le code (textures de particules dessinées sur un canvas) : aucun fichier.
+    function fxTex(name, draw, size) {
+        const t = new S.B.DynamicTexture(name, { width: size || 64, height: size || 64 }, S.scene, true);
+        const c = t.getContext(); c.clearRect(0, 0, size || 64, size || 64); draw(c, size || 64); t.update(); t.hasAlpha = true;
+        return t;
+    }
+    function fxReady(key) {
+        const fx = S.fx, t = fx[key];
+        if (t && t.getInternalTexture && t.getInternalTexture()) return t;
+        fx[key] = fx.makers[key]();
+        return fx[key];
+    }
+    function buildFx() {
+        const B = S.B, sc = S.scene;
+        if (!B.ParticleSystem || S.fx) return;
+        const fx = S.fx = {};
+        // image : anticrénelage, netteté, halo lumineux (selon l'ambiance, voir applyFxTheme)
+        try {
+            const p = fx.pipe = new B.DefaultRenderingPipeline('aecmPipe', false, sc, [S.camera]);
+            p.imageProcessingEnabled = false;                 // l'étalonnage reste celui de la scène (applyTheme)
+            p.fxaaEnabled = true;
+            p.sharpenEnabled = true; p.sharpen.edgeAmount = 0.22; p.sharpen.colorAmount = 1;
+            p.bloomEnabled = false; p.bloomThreshold = 0.88; p.bloomWeight = 0.28; p.bloomKernel = 40; p.bloomScale = 0.5;
+        } catch (e) { console.warn('[3D] post-traitements', e); fx.pipe = null; }
+        try { fx.glow = new B.GlowLayer('aecmGlow', sc, { mainTextureRatio: 0.35, blurKernelSize: 24 }); fx.glow.intensity = 0; } catch (e) { fx.glow = null; }
+        // textures des particules (fabriques gardées pour pouvoir les recréer)
+        fx.makers = {
+            soft: () => fxTex('fxSoft', (c, n) => { const g = c.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.45, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, n, n); }),
+            square: () => fxTex('fxSquare', (c, n) => { c.fillStyle = '#fff'; c.fillRect(n * 0.2, n * 0.32, n * 0.6, n * 0.36); }, 32),
+            smoke: () => fxTex('fxSmoke', (c, n) => {
+                for (let i = 0; i < 14; i++) { const x = n * (0.3 + Math.random() * 0.4), y = n * (0.3 + Math.random() * 0.4), r = n * (0.18 + Math.random() * 0.16);
+                    const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, n, n); }
+            }, 128)
+        };
+        fx.soft = fxTex('fxSoft', (c, n) => { const g = c.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.45, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, n, n); });
+        fx.square = fxTex('fxSquare', (c, n) => { c.fillStyle = '#fff'; c.fillRect(n * 0.2, n * 0.32, n * 0.6, n * 0.36); }, 32);
+        fx.smoke = fxTex('fxSmoke', (c, n) => {
+            for (let i = 0; i < 14; i++) { const x = n * (0.3 + Math.random() * 0.4), y = n * (0.3 + Math.random() * 0.4), r = n * (0.18 + Math.random() * 0.16);
+                const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, n, n); }
+        }, 128);
+        fx.flare = fxTex('fxFlare', (c, n) => { const g = c.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); g.addColorStop(0, 'rgba(255,250,235,.9)'); g.addColorStop(0.2, 'rgba(255,235,200,.35)'); g.addColorStop(1, 'rgba(255,220,180,0)'); c.fillStyle = g; c.fillRect(0, 0, n, n); }, 128);
+        fx.flareUrl = (() => { try { return fx.flare.getContext().canvas.toDataURL(); } catch (e) { return null; } })();
+        fx.systems = [];
+    }
+    // selon l'ambiance : halo des projecteurs et des écrans la nuit
+    function applyFxTheme() {
+        const fx = S.fx; if (!fx) return;
+        const th = S.theme || {}, night = !!th.flood;
+        if (fx.pipe) { fx.pipe.bloomEnabled = night && !fx.light; fx.pipe.bloomWeight = th.rain ? 0.2 : 0.28; }
+        if (fx.glow) {
+            fx.glow.intensity = night ? 0.5 : 0;
+            const names = /^(mastHeads|bigScreen)/;     // projecteurs et écran géant seulement (les panneaux LED éblouissaient)
+            fx.glow.removeIncludedOnlyMesh && S.scene.meshes.forEach(m => { try { fx.glow.removeIncludedOnlyMesh(m); } catch (e) {} });
+            S.scene.meshes.forEach(m => { if (names.test(m.name)) fx.glow.addIncludedOnlyMesh(m); });
+        }
+        // reflets des projecteurs vers la caméra (nuit)
+        (fx.flares || []).forEach(f => { try { f.dispose(); } catch (e) {} });
+        fx.flares = [];
+        if (night && fx.flareUrl && S.B.LensFlareSystem && !fx.light) {
+            const heads = (S.mastHeads && S.mastHeads.length) ? S.mastHeads : (S.lights || []).filter((l, i) => i % 3 === 0).map(l => ({ x: l.x, y: l.h, z: l.z }));
+            heads.slice(0, 4).forEach((h, i) => {
+                try {
+                    const em = S.B.CreateSphere('flareEm' + i, { diameter: 0.5, segments: 4 }, S.scene);
+                    em.position.set(h.x, h.y, h.z); em.scaling.setAll(0.02); em.isPickable = false; track(em);
+                    const sys = new S.B.LensFlareSystem('flares' + i, em, S.scene);
+                    sys.meshesSelectionPredicate = () => false;   // pas de test d'occultation : aucun coût par image
+                    new S.B.LensFlare(0.32, 0, new S.B.Color3(1, 0.97, 0.9), fx.flareUrl, sys);
+                    new S.B.LensFlare(0.08, 0.5, new S.B.Color3(0.98, 0.6, 0.25), fx.flareUrl, sys);
+                    new S.B.LensFlare(0.05, 0.85, new S.B.Color3(0.7, 0.8, 1), fx.flareUrl, sys);
+                    fx.flares.push(sys);
+                } catch (e) {}
+            });
+        }
+    }
+    // allègement (garde-fou de fluidité) : on coupe d'abord les effets
+    function fxLighten() {
+        const fx = S.fx; if (!fx || fx.light) return false;
+        fx.light = true;
+        try { if (fx.pipe) { fx.pipe.bloomEnabled = false; fx.pipe.sharpenEnabled = false; } } catch (e) {}
+        try { if (fx.glow) fx.glow.intensity = 0; } catch (e) {}
+        (fx.flares || []).forEach(f => { try { f.dispose(); } catch (e) {} }); fx.flares = [];
+        return true;
+    }
+    function hexColor4(hex, a) { const c = hexToRgb(hex || '#ffffff'); return new S.B.Color4(c[0] / 255, c[1] / 255, c[2] / 255, a); }
+    // un système de particules jetable (s'arrête puis se libère tout seul)
+    function burst(o) {
+        const B = S.B, fx = S.fx; if (!fx) return;
+        const ps = new B.ParticleSystem('fx' + (fx.n = (fx.n || 0) + 1), o.cap || 400, S.scene);
+        ps.particleTexture = fxReady(o.tex || 'soft');
+        ps.emitter = new B.Vector3(o.x, o.y, o.z);
+        ps.minEmitBox = new B.Vector3(-(o.w || 1), 0, -(o.d || 1)); ps.maxEmitBox = new B.Vector3(o.w || 1, o.h || 0, o.d || 1);
+        ps.color1 = o.c1; ps.color2 = o.c2 || o.c1; ps.colorDead = o.dead || new B.Color4(o.c1.r, o.c1.g, o.c1.b, 0);
+        ps.minSize = o.s0; ps.maxSize = o.s1;
+        ps.minLifeTime = o.l0; ps.maxLifeTime = o.l1;
+        ps.emitRate = o.rate || 0;
+        if (o.burst) ps.manualEmitCount = o.burst;
+        ps.blendMode = o.add ? B.ParticleSystem.BLENDMODE_ADD : B.ParticleSystem.BLENDMODE_STANDARD;
+        ps.gravity = o.g || new B.Vector3(0, 0, 0);
+        ps.direction1 = o.d1; ps.direction2 = o.d2;
+        ps.minEmitPower = o.p0; ps.maxEmitPower = o.p1;
+        ps.minAngularSpeed = -(o.spin || 0); ps.maxAngularSpeed = o.spin || 0;
+        ps.updateSpeed = 0.016;
+        ps.targetStopDuration = o.dur || 2;
+        // on libère le système à la fin, mais PAS sa texture : elle est partagée par tous les effets
+        ps.disposeOnStop = false;
+        ps.onStoppedObservable.addOnce(() => { setTimeout(() => { try { ps.dispose(false); } catch (e) {} }, 50); });
+        ps.start();
+        return ps;
+    }
+    function teamHex(side) {
+        let base = '#f97316', acc = '#ffffff';
+        try { const k = clubKit(side === 'H' ? S.teams.home : S.teams.away, side === 'A'); base = k.base || base; acc = k.accent || k.trim || acc; } catch (e) {}
+        return [base, acc];
+    }
+    // fumigènes dans la tribune des supporters d'une équipe
+    function fxSmoke(side, n) {
+        const fx = S.fx; if (!fx) return;
+        const [c0, c1] = teamHex(side), BZ = PITCH_H / 2 + 6.5;
+        const zs = side === 'H' ? -1 : 1;                   // tribune « domicile » côté caméra, « extérieur » en face
+        for (let i = 0; i < (n || 3); i++) {
+            const x = (Math.random() * 2 - 1) * 30;
+            const col = i % 2 ? c1 : c0;
+            burst({ x, y: 3 + Math.random() * 2, z: zs * (BZ + 4 + Math.random() * 4), w: 0.6, d: 0.6, h: 0.3, cap: 260, tex: 'smoke',
+                c1: hexColor4(col, 0.55), c2: hexColor4(col, 0.35), s0: 1.6, s1: 3.6, l0: 3, l1: 5.5, rate: 55, dur: 5.5,
+                d1: new S.B.Vector3(-0.3, 1, -0.3), d2: new S.B.Vector3(0.3, 1.6, 0.3), p0: 0.6, p1: 1.4, g: new S.B.Vector3(0.25, 0.1, 0), spin: 0.4 });
+            // la torche elle-même (point rouge vif)
+            burst({ x, y: 3.2, z: zs * (BZ + 6), w: 0.1, d: 0.1, cap: 80, add: true, c1: new S.B.Color4(1, 0.35, 0.15, 1), s0: 0.25, s1: 0.5, l0: 0.2, l1: 0.4, rate: 70, dur: 5.5,
+                d1: new S.B.Vector3(-0.2, 1, -0.2), d2: new S.B.Vector3(0.2, 2, 0.2), p0: 0.5, p1: 1.5 });
+        }
+    }
+    function fxGoal(side) {
+        const fx = S.fx; if (!fx) return;
+        const [c0, c1] = teamHex(side), HZ = PITCH_H / 2;
+        // confettis au-dessus des deux tribunes latérales
+        [-1, 1].forEach(zs => [-24, 0, 24].forEach(x => {
+            burst({ x, y: 16, z: zs * (HZ + 14), w: 9, d: 3, cap: 420, tex: 'square', burst: 320,
+                c1: hexColor4(c0, 1), c2: hexColor4(Math.random() < 0.5 ? c1 : '#f97316', 1), dead: hexColor4(c0, 0.6),
+                s0: 0.45, s1: 0.8, l0: 3.5, l1: 6, dur: 0.4, d1: new S.B.Vector3(-1, 0.4, -1), d2: new S.B.Vector3(1, 1.2, 1), p0: 1.5, p1: 4,
+                g: new S.B.Vector3(0, -1.6, 0), spin: 6 });
+        }));
+        fxSmoke(side, 4);
+        // feux d'artifice la nuit, au-dessus du toit
+        if ((S.theme || {}).flood) {
+            for (let k = 0; k < 5; k++) schedule(250 + k * 420, () => {
+                const col = k % 2 ? c1 : (k % 3 ? '#f97316' : c0);
+                burst({ x: (Math.random() * 2 - 1) * 45, y: 42 + Math.random() * 12, z: 60 + Math.random() * 25, w: 0.2, d: 0.2, cap: 260, burst: 220, add: true,
+                    c1: hexColor4(col, 1), c2: hexColor4('#ffffff', 1), dead: hexColor4(col, 0), s0: 0.5, s1: 1.1, l0: 1.1, l1: 1.9, dur: 0.2,
+                    d1: new S.B.Vector3(-1, -1, -1), d2: new S.B.Vector3(1, 1, 1), p0: 9, p1: 15, g: new S.B.Vector3(0, -4, 0) });
+            });
+        }
     }
 
     // ---- Décor vivant : le public saute et le filet ondule sur un but ----
@@ -1858,6 +2013,10 @@
             const R = S.players[ev.side][ev.to];
             if (R) lookAt(P, R.x, R.z, 450);
             const act = ev.action || 'short';
+            if (act === 'throw' && has('throw_in')) {                 // remise en jeu à la main
+                playOnce(P, 'throw_in', 1.25, { fade: 0.1, max: 1500, freeze: true });
+                return;
+            }
             // le geste dépend de la passe : intérieur du pied au sol, frappe pour un ballon long ou un centre,
             // relance à la main / dégagement pour le gardien
             if (P.isGK) playOnce(P, act === 'long' && has('gk_drop_kick') ? 'gk_drop_kick' : has('gk_pass') ? 'gk_pass' : 'kick_soccerball', 1.3, { fade: 0.08, max: 1300 });
@@ -1877,6 +2036,7 @@
                 });
             }
         } else if (ev.type === 'shot' && P) {
+            if (S.rec) S.rec.shots.push({ t: now(), side: ev.side, idx: ev.idx });     // pour le ralenti
             const gx = ev.side === 'H' ? PITCH_W / 2 : -PITCH_W / 2;
             lookAt(P, gx, 0, 600);
             // Sur un centre (corner), la reprise se fait de la tête ; lancé dans sa course, il frappe sans s'arrêter.
@@ -1934,6 +2094,8 @@
             const delay = sh ? Math.max(0, sh.t0 + sh.dur - now()) : 0;
             decorCheer(ev.side, delay);
             benchReact(ev.side, 'goal', delay + 150);
+            schedule(delay + 100, () => { try { fxGoal(ev.side); } catch (e) {} });
+            if (!S.camHook) schedule(delay + 2900, () => { try { startReplay(ev.side); } catch (e) { console.warn('[3D] ralenti', e); } });
             if (S.decor && S.decor.screen) schedule(delay, () => { if (S.decor.screen) S.decor.screen.goalUntil = now() + 6000; });
             // gardien battu : il plonge pendant que le ballon arrive, pas avant
             const other = ev.side === 'H' ? 'A' : 'H';
@@ -1958,6 +2120,109 @@
                 }));
             }
         }
+    }
+
+    // ═══ RALENTI DU BUT (comme à la télé) ══════════════════════════════════════
+    // Le moteur 3D garde en mémoire les 8 dernières secondes de jeu (positions des joueurs et du
+    // ballon, frappes). Après un but, l'action est rejouée au ralenti avec une caméra au ras de la
+    // pelouse, puis le direct reprend. Pendant ce temps le match reste arrêté (chrono figé).
+    const REC_MS = 8000, RP_WINDOW = 4000, RP_SPEED = 0.45;   // ~9 s de ralenti (un toucher le passe)
+    function recordFrame(f, t) {
+        const R = S.rec || (S.rec = { frames: [], shots: [] });
+        const cp = arr => arr.map(d => ({ x: d.x, y: d.y, carrier: d.carrier, off: d.off }));
+        R.frames.push({ t, H: cp(f.H), A: cp(f.A), ball: { x: f.ball.x, y: f.ball.y, z: f.ball.z || 0 } });
+        while (R.frames.length && t - R.frames[0].t > REC_MS) R.frames.shift();
+        while (R.shots.length && t - R.shots[0].t > REC_MS) R.shots.shift();
+    }
+    function startReplay(side) {
+        const R = S.rec; if (!R || R.frames.length < 30 || S.rp || !S.enabled) return;
+        const end = R.frames[R.frames.length - 1].t, from = Math.max(R.frames[0].t, end - RP_WINDOW);
+        const frames = R.frames.filter(fr => fr.t >= from).map(fr => fr);   // copie figée de la séquence
+        const shots = R.shots.filter(s => s.t >= from);
+        const realMs = (end - from) / RP_SPEED;
+        S.rp = { frames, shots, from, end, i: 0, vt: 0, side, realStart: performance.now(), lastReal: performance.now(), shotDone: {} };
+        // le match attend la fin du ralenti
+        const m = MATCHSIM.now();
+        S.rp.holdLast = m;
+        fadeTo(1, 220);
+        schedule(230, () => {
+            if (!S.rp) return;
+            ['H', 'A'].forEach(k => S.players[k].forEach(P => { if (P) { P.init = false; P.once = null; P.smx = null; } }));
+            S.bsx = null;
+            S.rp.go = true; S.rp.lastReal = performance.now();
+            S.scene.animationTimeScale = RP_SPEED;
+            rpOverlay(true);
+            fadeTo(0, 260);
+        });
+        S.rp.maxReal = realMs + 1200;
+    }
+    // l'image rejouée correspondant au temps virtuel du ralenti
+    function replayFrame() {
+        const rp = S.rp, nowR = performance.now();
+        if (!rp.go) { const fr = rp.frames[0]; return { H: fr.H, A: fr.A, ball: fr.ball, ev: [] }; }
+        rp.vt += (nowR - rp.lastReal) * RP_SPEED; rp.lastReal = nowR;
+        const tr = rp.from + rp.vt;
+        while (rp.i < rp.frames.length - 1 && rp.frames[rp.i + 1].t <= tr) rp.i++;
+        const fr = rp.frames[rp.i];
+        // les frappes rejouées : même geste qu'en direct
+        rp.shots.forEach((s, k) => {
+            if (rp.shotDone[k] || s.t > tr) return;
+            rp.shotDone[k] = true;
+            const P = S.players[s.side] && S.players[s.side][s.idx];
+            if (P) playOnce(P, has('strike_forward_jog') ? 'strike_forward_jog' : 'kick_soccerball', 1.2, { fade: 0.08 });
+        });
+        if (tr >= rp.end || nowR - rp.realStart > rp.maxReal) { endReplay(); return null; }
+        return { H: fr.H, A: fr.A, ball: fr.ball, ev: [] };
+    }
+    function endReplay() {
+        const rp = S.rp; if (!rp) return;
+        rp.ending = true;
+        fadeTo(1, 200);
+        setTimeout(() => {
+            S.rp = null;
+            S.scene.animationTimeScale = 1;
+            rpOverlay(false);
+            ['H', 'A'].forEach(k => S.players[k].forEach(P => { if (P) { P.init = false; P.once = null; P.smx = null; } }));
+            S.bsx = null; S.lastT = 0;
+            S.lastEvId = (typeof MATCHSIM !== 'undefined' && MATCHSIM.evSeq) || S.lastEvId;
+            fadeTo(0, 300);
+        }, 220);
+    }
+    // tant que le ralenti passe, le match reste figé (ordres, minuteries et chrono)
+    function holdWhileReplay() {
+        const rp = S.rp; if (!rp || typeof MATCHSIM === 'undefined') return;
+        const M = MATCHSIM, m = M.now();
+        const d = Math.max(0, m - rp.holdLast); rp.holdLast = m;
+        try { M.holdUntil = Math.max(M.holdUntil || 0, m + 500); (M._later || []).forEach(e => { e.at += d; }); M.holdScene(800); } catch (e) {}
+    }
+    // caméra du ralenti : au ras de la pelouse, de côté, elle suit le ballon
+    function replayCamera(dt, bx, bz) {
+        const cam = S.camera, B = S.B, rp = S.rp;
+        const dir = rp.side === 'H' ? 1 : -1;                     // sens d'attaque de l'équipe qui a marqué
+        const tx = bx - dir * 7, tz = bz - 11, ty = 2.4;
+        const k = 1 - Math.exp(-dt * 3.5);
+        if (!rp.cam) rp.cam = { x: tx, y: ty, z: tz, lx: bx, lz: bz };
+        rp.cam.x += (tx - rp.cam.x) * k; rp.cam.y += (ty - rp.cam.y) * k; rp.cam.z += (tz - rp.cam.z) * k;
+        rp.cam.lx += (bx - rp.cam.lx) * k * 1.4; rp.cam.lz += (bz - rp.cam.lz) * k * 1.4;
+        cam.position.set(rp.cam.x, rp.cam.y, rp.cam.z);
+        cam.setTarget(new B.Vector3(rp.cam.lx, 1.0, rp.cam.lz));
+    }
+    // bandeau « RALENTI » + bandes noires (charte : orange, noir)
+    function rpOverlay(on) {
+        let el = S.rpEl;
+        if (!el && on && S.container) {
+            el = S.rpEl = document.createElement('div');
+            el.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:14;opacity:0;transition:opacity .25s';
+            el.innerHTML = '<i style="position:absolute;left:0;right:0;top:0;height:9%;background:#000"></i>' +
+                '<i style="position:absolute;left:0;right:0;bottom:0;height:9%;background:#000"></i>' +
+                '<b style="position:absolute;left:14px;top:calc(9% + 10px);display:flex;align-items:center;gap:8px;padding:4px 12px 3px;' +
+                'font:italic 700 20px Teko,Impact,sans-serif;letter-spacing:.06em;color:#0a0e17;' +
+                'background:repeating-linear-gradient(115deg,#f97316 0 14px,#ea580c 14px 28px);border-radius:4px">' +
+                '<span style="width:9px;height:9px;border-radius:50%;background:#0a0e17;animation:aecmRpBlink 1s steps(2) infinite"></span>RALENTI</b>';
+            if (!document.getElementById('aecm-rp-style')) { const st = document.createElement('style'); st.id = 'aecm-rp-style'; st.textContent = '@keyframes aecmRpBlink{50%{opacity:0}}'; document.head.appendChild(st); }
+            S.container.appendChild(el);
+        }
+        if (el) el.style.opacity = on ? '1' : '0';
     }
 
     // ---- Caméra ---------------------------------------------------------
@@ -2001,7 +2266,10 @@
         if (S.lastT && dt < (S.lowEnd ? 0.030 : 0.0)) return;                // 30 i/s sur téléphone faible
         S.lastT = t; S.rdt = clamp(dt || 0.016, 0.001, 0.5); dt = clamp(dt || 0.016, 0.001, 0.1);
 
-        const f = MATCHSIM.frame();
+        // ralenti : les déplacements avancent en temps « virtuel » (vitesses réelles, gestes au ralenti)
+        if (S.rp && S.rp.go) dt = Math.max(0.001, dt * RP_SPEED);
+        let f = S.rp ? replayFrame() : null;
+        if (!f) { f = MATCHSIM.frame(); if (!S.rp && !S.camHook) recordFrame(f, t); }
         S.lastFrame = f;
 
         // minuteries (célébrations différées)
@@ -2136,16 +2404,19 @@
             stepFade(R, dt);
         }
 
-        runSubQueue();
+        holdWhileReplay();
+        if (!S.rp) runSubQueue();
         holdWhileSubbing();
         updateBench(dt, t, bx, bz);
 
-        if (carrier && !S.camHook) { S.ring.isVisible = true; S.ring.position.x = carrier.x; S.ring.position.z = carrier.z; }
+        if (carrier && !S.camHook && !S.rp) { S.ring.isVisible = true; S.ring.position.x = carrier.x; S.ring.position.z = carrier.z; }
         else S.ring.isVisible = false;
 
         updateShadows();
         // la cinématique pilote sa propre caméra (et n'a pas de garde-fou de fluidité)
-        if (S.camHook) S.camHook(dt, bx, bz, carrier); else updateCamera(dt, bx, bz);
+        if (S.camHook) S.camHook(dt, bx, bz, carrier);
+        else if (S.rp && S.rp.go) replayCamera(dt, bx, bz);
+        else updateCamera(dt, bx, bz);
         S.scene.render();
         if (!S.camHook) guardFps(t);
     }
@@ -2161,6 +2432,7 @@
         S.guardLast = t;
         const fps = S.engine.getFps();
         S.slowCount = fps < (S.lowEnd ? 10 : 12) ? S.slowCount + 1 : 0;
+        if (S.slowCount >= 3 && fxLighten()) { S.slowCount = 0; S.guardT0 = t; S.guardLast = t; return; }   // palier 0 : effets coupés
         if (S.slowCount >= 4 && S.resTarget > 1) {                       // palier 1 : 1 pixel CSS
             S.resTarget = 1; S.engine.setHardwareScalingLevel(1);
             S.slowCount = 0; S.guardT0 = t; S.guardLast = t;
@@ -2249,6 +2521,7 @@
             S.sun.intensity = 0.8;
 
             S.step = 'terrain et ballon';
+            try { buildFx(); } catch (e) { console.warn('[3D] effets', e); }
             buildBall();
             S.decor = {};
             try { buildGoals(); } catch (e) { console.warn('[3D] buts', e); }
@@ -2328,14 +2601,15 @@
             if (S.rainEl) { try { S.rainEl.remove(); } catch (e) {} S.rainEl = null; }
             S.decorObjs = []; S.decorKey = null; S.sh = null;
             Object.assign(S, { engine: null, scene: null, camera: null, ready: false, booting: false, running: false,
-                containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null, matCache: new Map(), lastEvId: 0, decor: {} });
+                containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null, fx: null, matCache: new Map(), lastEvId: 0, decor: {} });
             S.canvas = null; S.btn = null;
         }
         if (!S.canvas) {
             const cv = document.createElement('canvas');
             cv.id = 'match3d-canvas';
             cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:10;display:none;outline:none;touch-action:manipulation';
-            cv.addEventListener('click', () => {                // tap : vue suivie <-> vue d'ensemble
+            cv.addEventListener('click', () => {                // tap : vue suivie <-> vue d'ensemble (ou passe le ralenti)
+                if (S.rp && S.rp.go && !S.rp.ending) { endReplay(); return; }
                 S.camMode = S.camMode === 'follow' ? 'wide' : 'follow';
             });
             container.insertBefore(cv, container.firstChild);
@@ -2346,7 +2620,7 @@
             btn.title = 'Vue 3D / 2D';
             btn.onclick = () => {
                 if (S.failed) {                                  // échec précédent : on retente le chargement
-                    Object.assign(S, { failed: false, booting: false, ready: false, containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null, matCache: new Map() });
+                    Object.assign(S, { failed: false, booting: false, ready: false, containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null, fx: null, matCache: new Map() });
                     setEnabled(true, { user: true }); return;
                 }
                 setEnabled(!S.enabled, { user: true });
@@ -2374,6 +2648,7 @@
             S.matCache.clear();
             S.players.H.concat(S.players.A).forEach(P => { P.init = false; P.once = null; P.enter = null; });
             resetBench();
+            schedule(1800, () => { try { fxSmoke('H', 3); fxSmoke('A', 2); } catch (e) {} });
             applyKits().then(() => old.forEach(pr => pr.then(e => { try { e.tex.dispose(); e.mat.dispose(); } catch (x) {} }).catch(() => {})));
         }
     }
@@ -2551,7 +2826,7 @@
         const simKeep = simOK ? { now: MATCHSIM.now, onCut: MATCHSIM.onCut, cond: MATCHSIM.cond, TICK: MATCHSIM.TICK } : null;
         Object.assign(S, {
             B, engine, scene, camera: cam, hemi, sun, container: null, canvas, rainEl: null, veil: null, sh: null,
-            containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null,
+            containers: {}, glbBytes: {}, clips: new Map(), libs: {}, players: { H: [], A: [] }, ref: null, bench: null, fx: null, mastHeads: [],
             matCache: new Map(), decorObjs: [], decor: {}, lights: [], timers: [], ready: false, enabled: true,
             teams: { home: info.home || null, away: info.away || null }, lowEnd, quality: 'far',
             condInfo: { weather: 'night', capacity: info.capacity || 12000, name: info.stadium || '', fill: 0.97 },
@@ -2577,6 +2852,7 @@
         const sfx = (n, ...a) => { try { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](...a); } catch (e) {} };
         let coach = null, extraLibs = null;
         try {
+            try { buildFx(); } catch (e) {}                    // halo des projecteurs, fumigènes, feux d'artifice
             rebuildDecor();
             try { buildSurroundings(); } catch (e) {}
             try { buildGoals(); } catch (e) {}
@@ -2847,5 +3123,5 @@
         });
     }
 
-    window.Match3D = { attach, setTeams, substitute, setConditions, preview, start, pause, setEnabled, stadiumPreview, stopStadiumPreview, intro, introSkip, introStep, _S: S };
+    window.Match3D = { _fx: { goal: (s) => fxGoal(s), smoke: (s, n) => fxSmoke(s, n) }, attach, setTeams, substitute, setConditions, preview, start, pause, setEnabled, stadiumPreview, stopStadiumPreview, intro, introSkip, introStep, _S: S };
 })();
