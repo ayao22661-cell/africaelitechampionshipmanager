@@ -1,3 +1,15 @@
+# Gameplay : ballon au pied, têtes à hauteur, tacles au contact, commentaires fidèles (09/10/2026)
+
+Mesures prises dans un vrai match, avant / après :
+- **Ballon au pied** : la simulation le plaçait ~1 m devant le porteur, toujours vers le but adverse, sur la position *calculée* du joueur. À l'écran il flottait à 1 m en moyenne (2,9 m dans 10 % des cas, jusqu'à 24 m). Il est maintenant collé au joueur affiché, **36 cm devant lui dans la direction où il regarde**, avec une transition douce quand il part ou arrive.
+- **Ballons aériens** : un ballon haut retombait au sol en fin de vol (0,8 m à l'arrivée) et la tête se jouait dans le vide. Il arrive désormais **à hauteur de tête**, un ballon mi-haut à hauteur de cuisse. La tête n'est jouée que si le ballon arrive à hauteur de tête, le contrôle du genou à hauteur de cuisse. Le ballon retombe ensuite naturellement au lieu de sauter au sol.
+- **Têtes sur corner** : la frappe part de la tête (1,9 m) et non plus du sol ; le ballon reste à hauteur de tête jusqu'au contact.
+- **Tacles** : le geste n'est joué que si le tacleur est au contact (moins de 2,6 m). Trop loin, c'est une interception. Au contact, il finit son geste sur le ballon au lieu de glisser à côté.
+- **Commentaires** :
+  - « X attaque » et « Y repousse » ne s'affichent que lorsque l'équipe citée a vraiment le ballon à l'écran ; sinon la phrase est abandonnée ;
+  - un tir cadré est toujours raconté comme un arrêt, un tir non cadré comme un tir à côté (avant : tiré au hasard entre les deux) ;
+  - un but ou une occasion sur corner est raconté comme une tête ; « Superbe centre » n'est plus utilisé que sur corner.
+
 # Sélectionneur : candidature et démission corrigées (09/10/2026)
 
 - **Candidature** : elle n'embauche plus immédiatement. La fédération étudie le dossier pendant 2 journées puis répond selon la réputation, les étoiles du coach et le classement du club. Elle peut refuser. La carte de l'écran Manager affiche l'état réel (candidature en attente, refusée…).

@@ -2031,15 +2031,16 @@
                 const arrive = fly.t0 + fly.dur - now();
                 schedule(Math.max(0, arrive - 900), () => { if (R.spd < 3.2) lookAt(R, P.x, P.z, 1100); });
                 schedule(Math.max(0, arrive - 260), () => {
-                    if (!MATCHSIM.ball || MATCHSIM.ball.fly !== fly || R.once || R.spd > 3.4) return;      // ballon coupé, ou il court : pas de contrôle figé
-                    const high = (fly.peak || 0) > 2;
-                    const mid = (fly.peak || 0) > 0.9;
+                    const endZ = MATCHSIM.flyEndZ ? MATCHSIM.flyEndZ(fly) : 0;
+                    // ballon coupé ou déjà en geste : rien ; en pleine course, il ne s'arrête que pour une tête
+                    if (!MATCHSIM.ball || MATCHSIM.ball.fly !== fly || R.once || (R.spd > 3.4 && endZ < 1.2)) return;
+                    const high = endZ >= 1.2, mid = endZ > 0.3 && endZ < 1.2;
                     // un adversaire dans son dos : il contrôle en crochet pour s'en défaire
                     const foes = S.players[ev.side === 'H' ? 'A' : 'H'] || [];
                     const pressed = foes.some(Q => Q && !Q.gone && Math.hypot(Q.x - R.x, Q.z - R.z) < 2.6);
-                    const clip = high ? pickClip(['soccer_header', 'header', 'receive_soccerball'])
+                    const clip = high ? pickClip(['soccer_header', 'header'])
+                        : mid ? pickClip(['kneeing_soccerball', 'kneeing_soccerball_2'])
                         : pressed && has('soccer_spin') && Math.random() < 0.45 ? 'soccer_spin'
-                        : mid && Math.random() < 0.3 ? pickClip(['kneeing_soccerball', 'kneeing_soccerball_2'])
                         : Math.random() < 0.15 ? pickClip(['stall_soccerball', 'stall_soccerball_1', 'stall_soccerball_2', 'stall_soccerball_3', 'stall_soccerball_4'])
                         : 'receive_soccerball';
                     if (has(clip)) playOnce(R, clip, clip === 'soccer_spin' ? 1.3 : 1.45, { fade: 0.1, max: clip === 'soccer_spin' ? 1000 : 900 });
@@ -2066,6 +2067,14 @@
                 playOnce(P, has('receive_soccerball') ? 'receive_soccerball' : 'soccer_tackle_2', 1.6, { fade: 0.08, max: 800 });
                 return;
             }
+            // Trop loin du porteur pour le toucher : pas de tacle dans le vide, il récupère le ballon.
+            const dL = L ? Math.hypot(P.x - L.x, P.z - L.z) : 99;
+            if (dL > 2.6) {
+                playOnce(P, has('receive_soccerball') ? 'receive_soccerball' : 'soccer_tackle_2', 1.6, { fade: 0.08, max: 800 });
+                return;
+            }
+            // au contact : il finit son geste sur le ballon (à ~0,9 m du porteur), sans glisser à côté
+            if (L && dL > 1.1) { const k = (dL - 0.9) / dL; P.off[0] += (L.x - P.x) * k * 0.6; P.off[1] += (L.z - P.z) * k * 0.6; }
             // tacle : debout ou glissé selon la vitesse ; l'adversaire est parfois déséquilibré, tombe et se relève
             const slide = P.spd > 3 && Math.random() < 0.55;
             const tk = slide ? pickClip(['soccer_tackle', 'soccer_tackle_3', 'soccer_tackle_2']) : pickClip(['soccer_tackle_2', 'soccer_tackle_1', 'soccer_tackle']);
@@ -2332,7 +2341,10 @@
         // exponentiel court (~0,1 s) arrondit ces angles ; joueurs et ballon utilisent le MÊME filtre,
         // le ballon reste donc collé au pied du porteur.
         const sk = 1 - Math.exp(-dt * SMOOTH_K);
-        const rbx = wx(f.ball.x), rbz = wz(f.ball.y), by = (S.ballY0 || 0.17) + Math.max(0, f.ball.z || 0);
+        const rbx = wx(f.ball.x), rbz = wz(f.ball.y), byT = (S.ballY0 || 0.17) + Math.max(0, f.ball.z || 0);
+        // en montée on suit exactement ; en descente brutale (tête, contrôle de la poitrine) il retombe
+        if (S.byS == null || byT >= S.byS || S.rp) S.byS = byT; else S.byS = Math.max(byT, S.byS - dt * 6.5);
+        const by = S.byS;
         if (S.bsx == null || Math.hypot(rbx - S.lbx, rbz - S.lbz) > 25) { S.bsx = rbx; S.bsz = rbz; }   // vraie téléportation (remise en jeu) : on suit sans glisser
         else { S.bsx += (rbx - S.bsx) * sk; S.bsz += (rbz - S.bsz) * sk; }
         S.lbx = rbx; S.lbz = rbz;
@@ -2476,6 +2488,24 @@
         holdWhileSubbing();
         updateBench(dt, t, bx, bz);
 
+        // Ballon au pied : la simulation le place ~1 m devant le porteur, toujours vers le but
+        // adverse, sur la position SIMULÉE du joueur — à l'écran il flottait donc à 1-3 m du
+        // corps. On le colle au joueur affiché, devant lui, et on fond la transition.
+        {
+            const M = MATCHSIM, b = M.ball;
+            const loose = !carrier || b.fly || b.fixed || (M.shotFly && (now() >= M.shotFly.t0 || M.shotFly.stay)) || S.rp;
+            const want = loose ? 0 : 1;
+            S.attach = (S.attach || 0) + (want - (S.attach || 0)) * Math.min(1, dt * (want ? 9 : 14));
+            if (S.attach > 0.01 && carrier) {
+                const fy = carrier.yaw, fx = carrier.x + Math.sin(fy) * 0.36, fz = carrier.z + Math.cos(fy) * 0.36;
+                const k = S.attach;
+                const nx = S.ball.position.x + (fx - S.ball.position.x) * k, nz = S.ball.position.z + (fz - S.ball.position.z) * k;
+                S.ball.rotation.x += (nz - S.ball.position.z) / 0.17; S.ball.rotation.z -= (nx - S.ball.position.x) / 0.17;
+                S.ball.position.x = nx; S.ball.position.z = nz;
+                S.ballShadow.position.x = nx; S.ballShadow.position.z = nz;
+                S.bsx = nx; S.bsz = nz;          // le lissage repart d'ici quand le ballon quitte le pied
+            }
+        }
         if (carrier && !S.camHook && !S.rp) { S.ring.isVisible = true; S.ring.position.x = carrier.x; S.ring.position.z = carrier.z; }
         else S.ring.isVisible = false;
 

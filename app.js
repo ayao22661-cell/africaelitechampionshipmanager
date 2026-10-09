@@ -6189,6 +6189,16 @@ const MATCHSIM = {
     sceneBusy() { return this.now() < (this.sceneUntil || 0); },
     shotEta() { return Math.max(0, (this.eta || 0) - this.now()); },
 
+    HEAD_Z: 1.75, THIGH_Z: 0.55,
+    // Hauteur à laquelle un ballon en vol arrive sur son receveur : tête si le ballon est
+    // haut, cuisse s'il est mi-haut, pied sinon. Les ballons qui vont vers un point du
+    // terrain (sortie, coup de pied arrêté posé) retombent toujours au sol.
+    flyEndZ(f) {
+        if (!f || f.toX != null || f.rest || f.endZ === 0) return 0;
+        if (f.endZ != null) return f.endZ;
+        return f.peak > 2 ? this.HEAD_Z : f.peak > 1.2 ? this.THIGH_Z : 0;
+    },
+
     // Position du ballon à l'instant présent (appelée à chaque frame)
     ballNow() {
         this.runLater();
@@ -6204,7 +6214,11 @@ const MATCHSIM = {
             }
             this.ball.x = f.fromX + (ex - f.fromX) * a;
             this.ball.y = f.fromY + (ey - f.fromY) * a;
-            this.ball.z = f.peak * 4 * a * (1 - a);
+            // Hauteur d'arrivée : un ballon haut adressé à un joueur finit à hauteur de tête
+            // (il la reprend de la tête), un ballon mi-haut à hauteur de cuisse. Avant, tout
+            // retombait au sol et la tête se jouait dans le vide.
+            const endZ = this.flyEndZ(f);
+            this.ball.z = f.peak * 4 * a * (1 - a) + endZ * a;
             if (a >= 1) {
                 this.ball.fly = null; this.ball.z = 0;
                 if (f.rest) { this.ball.fixed = true; this.ball.hard = !!f.hard; }
@@ -6217,14 +6231,14 @@ const MATCHSIM = {
             if (t < s.t0) {
                 // course d'élan : le ballon reste sur son point ou collé au pied
                 if (s.stay) { this.ball.x = s.fromX; this.ball.y = s.fromY; this.ball.z = 0; }
-                else this.glue();
+                else { this.glue(); if (s.fromZ) this.ball.z = s.fromZ; }   // tête : le ballon reste à hauteur de tête jusqu'au contact
                 return this.ball;
             }
             if (!s.started) { s.started = true; if (!s.stay) { s.fromX = this.ball.x; s.fromY = this.ball.y; } }
             const a = this.clamp((t - s.t0) / s.dur, 0, 1);
             this.ball.x = s.fromX + (s.toX - s.fromX) * a;
             this.ball.y = s.fromY + (s.toY - s.fromY) * a;
-            this.ball.z = s.peak * 4 * a * (1 - a);
+            this.ball.z = (s.fromZ || 0) * (1 - a) + s.peak * 4 * a * (1 - a);
             if (a >= 1) {
                 this.shotFly = null; this.ball.z = 0;
                 // le ballon reste là où il s'arrête (filet, gardien, hors cadre)
@@ -6787,7 +6801,8 @@ const MATCHSIM = {
         const dur = o.dur || this.clamp(d * 28 * (this.TICK / 1100), 400, 500 + this.TICK * 0.35);   // ≈ 32 m/s
         this.shotFly = {
             fromX: from.x, fromY: from.y, toX, toY, t0, dur, side: key,
-            peak: o.peak != null ? o.peak : 1.1 + Math.random() * 1.4,
+            fromZ: o.head ? this.HEAD_Z : 0,
+            peak: o.head ? 0.5 + Math.random() * 0.6 : o.peak != null ? o.peak : 1.1 + Math.random() * 1.4,
             stay: !!o.stay, started: false
         };
         this.eta = t0 + dur;
@@ -22426,7 +22441,7 @@ simulateAIBypassMatchday(otherMatches) {
                 const regainMs = MATCHSIM.active ? Math.max(0, (MATCHSIM.regainUntil || 0) - MATCHSIM.now()) : 0;
                 const shotDelay = Math.max(800, regainMs + 250);
                 this.holdClock(shotDelay + 400);
-                this.logCommentary(`${icon('fire')} ${matchLine('attack', { equipe: attackerTeam.name })}`, "text-yellow-400");
+                this.sayWhenBall(isHomeAttack ? 'H' : 'A', `${icon('fire')} ${matchLine('attack', { equipe: attackerTeam.name })}`, "text-yellow-400", shotDelay);
 
                 setTimeout(() => {
                     if (this.liveMatch && this.liveMatch.minute < this.liveMatch.maxMinute) {
@@ -22434,7 +22449,7 @@ simulateAIBypassMatchday(otherMatches) {
                     }
                 }, shotDelay);
             } else {
-                this.logCommentary(`${icon('shield')} ${matchLine('defense', { equipe: isHomeAttack ? this.liveMatch.away.name : this.liveMatch.home.name })}`, "text-slate-500 text-[10px]");
+                this.sayWhenBall(isHomeAttack ? 'A' : 'H', `${icon('shield')} ${matchLine('defense', { equipe: isHomeAttack ? this.liveMatch.away.name : this.liveMatch.home.name })}`, "text-slate-500 text-[10px]", 2600);
             }
         } else {
             if (this.liveMatch.minute % 2 === 0) this.animatePitch('midfield');
@@ -22759,10 +22774,14 @@ simulateAIBypassMatchday(otherMatches) {
                 this.trackComp(assister, 'assists');
                 if (this.liveMatch.isCAF) assister.cafAssists = (assister.cafAssists || 0) + 1; // FIX #61
                 
-                const assistComments = [
+                const assistComments = setPiece === 'corner' ? [
+                    `${icon('ball')} ${t('BUT DE LA TÊTE !')} ${striker.name} ${t('reprend le corner de')} ${assister.name} ! (xG: ${displayXG})`,
+                    `${icon('ball')} ${t('BUT !')} ${t('Superbe centre de')} ${assister.name} ${t('pour la tête de')} ${striker.name} ! (xG: ${displayXG})`
+                ] : setPiece === 'freekick' ? [
+                    `${icon('ball')} ${t('BUT !')} ${striker.name} ${t('reprend le coup franc de')} ${assister.name} ! (xG: ${displayXG})`
+                ] : [
                     `${icon('ball')} ${t('BUT !')} ${assister.name} ${t('sert')} ${striker.name} ${t('qui conclut en beauté !')} (xG: ${displayXG})`,
-                    `${icon('ball')} ${t('BUT !')} ${t('Quelle passe de')} ${assister.name} ! ${striker.name} ${t('ne pouvait pas rater !')} (xG: ${displayXG})`,
-                    `${icon('ball')} ${t('BUT !')} ${t('Superbe centre de')} ${assister.name} ${t('pour')} ${striker.name} ! (xG: ${displayXG})`
+                    `${icon('ball')} ${t('BUT !')} ${t('Quelle passe de')} ${assister.name} ! ${striker.name} ${t('ne pouvait pas rater !')} (xG: ${displayXG})`
                 ];
                 this.logCommentary(assistComments[Math.floor(Math.random() * assistComments.length)], "text-emerald-400 font-bold text-base");
             } else if (isPenalty) {
@@ -22771,6 +22790,7 @@ simulateAIBypassMatchday(otherMatches) {
                 // Le but est le moment le plus vu du jeu : quatre banques
                 // distinctes selon la maniere, pour que deux buts identiques ne
                 // se racontent jamais avec les memes mots.
+                if (setPiece === 'corner') { this.logCommentary(`${icon('ball')} ${t('BUT DE LA TÊTE !')} ${striker.name} ${t('surgit au premier poteau sur le corner !')} (xG: ${displayXG})`, "text-emerald-400 font-bold text-base"); this.afterGoalScene(isHome); return; }
                 const banqueBut = setPiece === 'freekick' ? 'goalFreekick'
                     : finalXG < 0.15 ? 'goalLong'
                     : (shot && shot.dist < 12) ? 'goalClose' : 'goal';
@@ -22790,29 +22810,41 @@ simulateAIBypassMatchday(otherMatches) {
                 this.logCommentary(`${icon('alert')} ${matchLine('penaltyMiss', { joueur: striker.name })} (xG: ${displayXG})`, "text-red-400 font-bold");
                 return;
             }
-            if (finalXG > 0.45) { 
-                missComments = [
-                    `😱 ${t('INCROYABLE RATÉ !')} ${striker.name} ${t('était seul face au but !')} (xG: ${displayXG})`,
+            // La phrase suit ce que montre le terrain : cadré = le gardien l'arrête, sinon le
+            // ballon passe à côté. Sur corner, c'est une tête. (Avant : tiré au hasard entre
+            // les deux, d'où « capté par le gardien » sur un tir qui sortait.)
+            const gardienDe = isHome ? this.liveMatch.away.name : this.liveMatch.home.name;
+            const head = setPiece === 'corner';
+            if (head) {
+                missComments = onTarget ? [
+                    `🧤 ${t('Tête de')} ${striker.name} ${t('sur le corner, le gardien la capte.')} (xG: ${displayXG})`,
+                    `🧤 ${t('Belle détente du gardien sur la tête de')} ${striker.name} ! (xG: ${displayXG})`
+                ] : [
+                    `❌ ${t('Tête de')} ${striker.name} ${t('sur le corner, au-dessus de la barre.')} (xG: ${displayXG})`,
+                    `❌ ${striker.name} ${t('reprend le corner de la tête, mais c\'est à côté.')} (xG: ${displayXG})`
+                ];
+            } else if (finalXG > 0.45) {
+                missComments = onTarget ? [
                     `🧤 ${t('ARRÊT MIRACULEUX !')} ${t('Le gardien sauve son équipe face à')} ${striker.name} ! (xG: ${displayXG})`
+                ] : [
+                    `😱 ${t('INCROYABLE RATÉ !')} ${striker.name} ${t('était seul face au but !')} (xG: ${displayXG})`
                 ];
-            } else if (finalXG < 0.10) { 
-                missComments = [
-                    `❌ ${t('Frappe lointaine de')} ${striker.name} ${t('qui passe loin du cadre.')} (xG: ${displayXG})`,
+            } else if (finalXG < 0.10) {
+                missComments = onTarget ? [
                     `🧤 ${t('Tir dans un angle fermé de')} ${striker.name}, ${t('capté tranquillement par le gardien.')} (xG: ${displayXG})`
+                ] : [
+                    `❌ ${t('Frappe lointaine de')} ${striker.name} ${t('qui passe loin du cadre.')} (xG: ${displayXG})`
                 ];
-            } else { 
-                // Cas le plus frequent : on puise aussi dans les banques
-                // d'arrets et de tirs manques pour elargir le vocabulaire.
-                const gardienDe = isHome ? this.liveMatch.away.name : this.liveMatch.home.name;
-                missComments = [
+            } else {
+                missComments = onTarget ? [
                     `🧤 ${t('Bel arrêt du gardien sur cette frappe de')} ${striker.name}. (xG: ${displayXG})`,
+                    `🧤 ${matchLine('save', { equipe: gardienDe })} (xG: ${displayXG})`
+                ] : [
                     `❌ ${striker.name} ${t('dévisse légèrement son tir.')} (xG: ${displayXG})`,
-                    `${icon('shield')} ${t('La défense se jette et contre la frappe de')} ${striker.name} ! (xG: ${displayXG})`,
-                    `🧤 ${matchLine('save', { equipe: gardienDe })} (xG: ${displayXG})`,
                     `❌ ${matchLine('miss', {})} (xG: ${displayXG})`
                 ];
             }
-            
+
             this.logCommentary(missComments[Math.floor(Math.random() * missComments.length)], "text-slate-400");
             // Pas de téléportation au milieu : le gardien relance, le jeu reprend de là.
         }
@@ -24641,6 +24673,21 @@ simulateAIBypassMatchday(otherMatches) {
             box.appendChild(b);
         }
         this.refreshShoutButton();
+    }
+
+    // Le commentaire attend que l'équipe citée ait le ballon à l'écran (simulation
+    // visuelle) ; si ça n'arrive pas dans le délai, la phrase est abandonnée plutôt que
+    // de raconter autre chose que ce qu'on voit.
+    sayWhenBall(side, text, cls, maxMs) {
+        if (!MATCHSIM.active) { this.logCommentary(text, cls); return; }
+        const lm = this.liveMatch, t0 = Date.now();
+        const check = () => {
+            if (this.liveMatch !== lm || this._matchOver) return;
+            const b = MATCHSIM.ball;
+            if (b && b.side === side && !b.fly) { this.logCommentary(text, cls); return; }
+            if (Date.now() - t0 < (maxMs || 2000)) setTimeout(check, 120);
+        };
+        check();
     }
 
     // ═══ JOURNAL DES TIRS : alimente la carte des tirs et la courbe des xG ═══
