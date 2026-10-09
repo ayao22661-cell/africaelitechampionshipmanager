@@ -6408,7 +6408,7 @@ const MATCHSIM = {
                 // (le geste était joué 650 ms trop tôt, tireur encore à l'arrêt).
                 taker.tx = sp.x - T.dir * 0.5; taker.ty = sp.y + (sp.y < 50 ? 0.6 : -0.6);
                 this.commit(delay, 1.2);
-                this.later(Math.max(0, delay - 140), () => this.note('pass', k, taker.i, { to: shooter.i, action: 'cross' }));
+                this.later(Math.max(0, delay - 140), () => this.note('pass', k, taker.i, { to: shooter.i, action: 'cross', hit: 140 }));
                 this.later(Math.max(0, delay - 200), () => { this.ball.hard = false; });
                 this.lastShot = this.shotQuality(T, shooter.x, shooter.y);
                 this.ball.fixed = false; this.ball.hard = false;

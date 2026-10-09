@@ -1611,6 +1611,16 @@
         return g;
     }
 
+    // Instant du contact avec le ballon dans chaque geste (secondes, à vitesse 1), mesuré sur les
+    // clips : pic de vitesse du pied, de la main ou de la tête. Sert à caler le geste sur le départ
+    // réel du ballon — sans ça le ballon partait pendant la prise d'élan (gardien, touche, penalty).
+    const CONTACT = {
+        kick_soccerball: 0.10, kick_soccerball_1: 0.40, kick_soccerball_2: 0.40, soccer_pass: 0.45,
+        strike_forward_jog: 0.45, soccer_penalty_kick: 0.75, scissor_kick: 0.75, throw_in: 1.58,
+        header_soccerball: 0.85, header_soccerball_2: 0.52, soccer_header: 0.90, header: 0.48,
+        gk_drop_kick: 2.12, gk_pass: 0.28, gk_overhand_throw: 1.57
+    };
+
     function playOnce(P, clip, speed, opts) {
         opts = opts || {};
         const g = getGroup(P, clip);
@@ -1618,7 +1628,16 @@
         if (P.cur === g) { g.stop(); P.cur = null; }        // permet de rejouer le même geste
         const fresh = play(P, clip, false, speed, opts.fade || 0.1);
         if (!fresh) return false;
-        const dur = Math.min(clipSeconds(g) / speed * (opts.frac || 1) * 1000, opts.max || 1e9);
+        // opts.hit = dans combien de ms le ballon part réellement : le geste démarre de façon à ce que
+        // le contact tombe à ce moment-là (la prise d'élan trop longue est raccourcie).
+        let skip = 0;
+        if (opts.hit != null && CONTACT[clip] != null) {
+            const fps = (g.targetedAnimations[0] && g.targetedAnimations[0].animation.framePerSecond) || 30;
+            skip = Math.max(0, CONTACT[clip] - (opts.hit / 1000) * speed);
+            skip = Math.min(skip, Math.max(0, (g.to - g.from) / fps - 0.2));
+            if (skip > 0) g.goToFrame(g.from + skip * fps);
+        }
+        const dur = Math.min((clipSeconds(g) - skip) / speed * (opts.frac || 1) * 1000, opts.max || 1e9);
         P.once = { until: now() + dur, freeze: !!opts.freeze, x: P.x, z: P.z };
         return true;
     }
@@ -2014,17 +2033,18 @@
             const R = S.players[ev.side][ev.to];
             if (R) lookAt(P, R.x, R.z, 450);
             const act = ev.action || 'short';
+            const hit = ev.hit != null ? ev.hit : 40;          // le ballon part tout de suite : contact quasi immédiat
             if (act === 'throw' && has('throw_in')) {                 // remise en jeu à la main
-                playOnce(P, 'throw_in', 1.25, { fade: 0.1, max: 1500, freeze: true });
+                playOnce(P, 'throw_in', 1.25, { fade: 0.1, max: 1500, freeze: true, hit });
                 return;
             }
             // le geste dépend de la passe : intérieur du pied au sol, frappe pour un ballon long ou un centre,
             // relance à la main / dégagement pour le gardien
             if (P.isGK) playOnce(P, act === 'long' && has('gk_drop_kick') ? 'gk_drop_kick'
                 : (act === 'short' && has('gk_overhand_throw') && Math.random() < 0.5) ? 'gk_overhand_throw'
-                : has('gk_pass') ? 'gk_pass' : 'kick_soccerball', 1.3, { fade: 0.08, max: 1300 });
-            else if ((act === 'short' || act === 'through' || act === 'recycle') && has('soccer_pass')) playOnce(P, 'soccer_pass', 1.35, { fade: 0.08, max: 1000 });
-            else playOnce(P, act === 'cross' && has('kick_soccerball_1') ? 'kick_soccerball_1' : 'kick_soccerball', 1.25, { fade: 0.08 });
+                : has('gk_pass') ? 'gk_pass' : 'kick_soccerball', 1.3, { fade: 0.08, max: 1300, hit });
+            else if ((act === 'short' || act === 'through' || act === 'recycle') && has('soccer_pass')) playOnce(P, 'soccer_pass', 1.35, { fade: 0.08, max: 1000, hit });
+            else playOnce(P, act === 'cross' && has('kick_soccerball_1') ? 'kick_soccerball_1' : 'kick_soccerball', 1.25, { fade: 0.08, hit });
             // le receveur se retourne et contrôle à l'arrivée du ballon (poitrine/tête si le ballon est haut)
             const fly = (typeof MATCHSIM !== 'undefined' && MATCHSIM.ball) ? MATCHSIM.ball.fly : null;
             if (R && fly && fly.dur && ev.to >= 0) {
@@ -2043,7 +2063,7 @@
                         : pressed && has('soccer_spin') && Math.random() < 0.45 ? 'soccer_spin'
                         : Math.random() < 0.15 ? pickClip(['stall_soccerball', 'stall_soccerball_1', 'stall_soccerball_2', 'stall_soccerball_3', 'stall_soccerball_4'])
                         : 'receive_soccerball';
-                    if (has(clip)) playOnce(R, clip, clip === 'soccer_spin' ? 1.3 : 1.45, { fade: 0.1, max: clip === 'soccer_spin' ? 1000 : 900 });
+                    if (has(clip)) playOnce(R, clip, clip === 'soccer_spin' ? 1.3 : 1.45, { fade: 0.1, max: clip === 'soccer_spin' ? 1000 : 900, hit: 260 });
                 });
             }
         } else if (ev.type === 'shot' && P) {
@@ -2051,11 +2071,12 @@
             const gx = ev.side === 'H' ? PITCH_W / 2 : -PITCH_W / 2;
             lookAt(P, gx, 0, 600);
             // Sur un centre (corner), la reprise se fait de la tête ; lancé dans sa course, il frappe sans s'arrêter.
-            if (ev.sp === 'penalty' && has('soccer_penalty_kick')) playOnce(P, 'soccer_penalty_kick', 1.15, { fade: 0.08, max: 1500 });
-            else if (ev.head && has('scissor_kick') && Math.random() < 0.1) playOnce(P, 'scissor_kick', 1.25, { fade: 0.08, freeze: true, max: 1800 });   // reprise acrobatique, rare
-            else if (ev.head) playOnce(P, pickClip(['header_soccerball', 'header_soccerball_2', 'soccer_header', 'header']), 1.5, { fade: 0.08, max: 1100 });
-            else if (P.spd > 3.2 && has('strike_forward_jog')) playOnce(P, 'strike_forward_jog', 1.2, { fade: 0.08, max: 1300 });
-            else playOnce(P, pickClip(['kick_soccerball_1', 'kick_soccerball_2', 'kick_soccerball']), 1.1, { fade: 0.08 });
+            const hitS = 220;                                    // MATCHSIM.shoot : geste annoncé 220 ms avant le départ
+            if (ev.sp === 'penalty' && has('soccer_penalty_kick')) playOnce(P, 'soccer_penalty_kick', 1.15, { fade: 0.08, max: 1500, hit: hitS });
+            else if (ev.head && has('scissor_kick') && Math.random() < 0.1) playOnce(P, 'scissor_kick', 1.25, { fade: 0.08, freeze: true, max: 1800, hit: hitS });   // reprise acrobatique, rare
+            else if (ev.head) playOnce(P, pickClip(['header_soccerball', 'header_soccerball_2', 'soccer_header', 'header']), 1.5, { fade: 0.08, max: 1100, hit: hitS });
+            else if (P.spd > 3.2 && has('strike_forward_jog')) playOnce(P, 'strike_forward_jog', 1.2, { fade: 0.08, max: 1300, hit: hitS });
+            else playOnce(P, pickClip(['kick_soccerball_1', 'kick_soccerball_2', 'kick_soccerball']), 1.1, { fade: 0.08, hit: hitS });
             // le gardien se tourne vers le tireur et se met en appui
             const gk = S.players[ev.side === 'H' ? 'A' : 'H'][0];
             if (gk) lookAt(gk, P.x, P.z, 1400);
@@ -2494,10 +2515,14 @@
         {
             const M = MATCHSIM, b = M.ball;
             const loose = !carrier || b.fly || b.fixed || (M.shotFly && (now() >= M.shotFly.t0 || M.shotFly.stay)) || S.rp;
+            // nouveau porteur sans vol (récupération au contact) : on repart de zéro, le ballon glisse jusqu'à lui
+            if (!loose && S.attachP !== carrier) { S.attach = 0; S.attachP = carrier; }
             const want = loose ? 0 : 1;
             S.attach = (S.attach || 0) + (want - (S.attach || 0)) * Math.min(1, dt * (want ? 9 : 14));
-            if (S.attach > 0.01 && carrier) {
-                const fy = carrier.yaw, fx = carrier.x + Math.sin(fy) * 0.36, fz = carrier.z + Math.cos(fy) * 0.36;
+            const holder = S.attachP;                 // en se décollant, le ballon part du pied de CELUI qui l'avait
+            if (loose && S.attach < 0.5) S.attach = 0;  // dès que le ballon vole, la simulation reprend la main
+            if (S.attach > 0.01 && holder && !holder.gone) {
+                const fy = holder.yaw, fx = holder.x + Math.sin(fy) * 0.36, fz = holder.z + Math.cos(fy) * 0.36;
                 const k = S.attach;
                 const nx = S.ball.position.x + (fx - S.ball.position.x) * k, nz = S.ball.position.z + (fz - S.ball.position.z) * k;
                 S.ball.rotation.x += (nz - S.ball.position.z) / 0.17; S.ball.rotation.z -= (nx - S.ball.position.x) / 0.17;

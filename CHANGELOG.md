@@ -1,3 +1,8 @@
+# Gameplay : plus de ballon qui se téléporte, gestes calés sur le départ du ballon (09/10/2026)
+
+- **Ballon qui se téléportait** : pendant une passe, le moteur désigne déjà le receveur comme « porteur ». Le collage du ballon au pied (correctif précédent) tirait alors le ballon vers le receveur au décollage, jusqu'à 10 m d'un coup. Le ballon ne se colle plus qu'au joueur qui l'a réellement ; en se décollant il part du pied de celui qui l'avait ; une récupération au contact le fait glisser jusqu'au nouveau porteur. Mesure : 0 saut anormal sur 1 131 images (avant : 10, dont un de 10 m). Les seuls sauts restants se font sous le fondu au noir des coups de pied arrêtés, voulu.
+- **Ballon qui partait avant le geste** : l'instant de contact (pied, main, tête) a été mesuré sur chaque clip. Chaque passe, frappe, tête, touche et relance démarre maintenant juste avant ce contact, pour qu'il tombe au départ réel du ballon. Gardien : le contact du dégagement au pied arrivait 1,6 s après le départ du ballon, celui de la relance à la main 1,2 s après ; c'est maintenant 40 ms. Même calage pour la touche, le penalty, les têtes et les frappes.
+
 # Gameplay : ballon au pied, têtes à hauteur, tacles au contact, commentaires fidèles (09/10/2026)
 
 Mesures prises dans un vrai match, avant / après :
