@@ -187,7 +187,7 @@
         ['commentary', 'Direct', 'M4 5h16v11H8l-4 4z', true],
         ['stats', 'Stats', 'M5 20V10M12 20V4M19 20v-7', true],
         ['ratings', 'Notes', 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z', false],
-        ['heat', 'Zones', 'M3 5h18v14H3zM12 5v14M3 12h18', true]
+        ['heat', 'Analyse', 'M4 19V9M10 19V5M16 19v-7M3 19h18', true]
     ];
     function buildMatchHud() {
         const vm = document.getElementById('view-match');

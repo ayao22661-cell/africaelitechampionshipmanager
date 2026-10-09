@@ -28,7 +28,8 @@
     const JOG_SPEED = 2.48;                      // m/s du clip jog_forward
     const BACK_SPEED = 2.0, STRAFE_SPEED = 2.1;  // m/s estimés des clips jog_backward / jog_strafe_*
     const CELEBRATIONS = ['cel_bboy_hip_hop_move', 'cel_chapa-giratoria', 'cel_swing_dancing',
-        'cel_stepping_backward', 'cel_shuffling', 'cel_capoeira'];   // volontairement sans les 3 clips violents
+        'cel_stepping_backward', 'cel_shuffling', 'cel_capoeira',
+        'cel_breakdance_1990', 'cel_robot_hip_hop_dance', 'cel_thriller_part_3'];   // volontairement sans les 3 clips violents
     const OUTFIELD_MODELS = ['perso_03', 'perso_05', 'perso_07', 'joueur_bleu'];
     const GK_MODEL = 'perso_08', REF_MODEL = 'perso_10';
     // gardiens : chacun garde ses propres couleurs (violet à domicile, vert à l'extérieur)
@@ -2019,7 +2020,9 @@
             }
             // le geste dépend de la passe : intérieur du pied au sol, frappe pour un ballon long ou un centre,
             // relance à la main / dégagement pour le gardien
-            if (P.isGK) playOnce(P, act === 'long' && has('gk_drop_kick') ? 'gk_drop_kick' : has('gk_pass') ? 'gk_pass' : 'kick_soccerball', 1.3, { fade: 0.08, max: 1300 });
+            if (P.isGK) playOnce(P, act === 'long' && has('gk_drop_kick') ? 'gk_drop_kick'
+                : (act === 'short' && has('gk_overhand_throw') && Math.random() < 0.5) ? 'gk_overhand_throw'
+                : has('gk_pass') ? 'gk_pass' : 'kick_soccerball', 1.3, { fade: 0.08, max: 1300 });
             else if ((act === 'short' || act === 'through' || act === 'recycle') && has('soccer_pass')) playOnce(P, 'soccer_pass', 1.35, { fade: 0.08, max: 1000 });
             else playOnce(P, act === 'cross' && has('kick_soccerball_1') ? 'kick_soccerball_1' : 'kick_soccerball', 1.25, { fade: 0.08 });
             // le receveur se retourne et contrôle à l'arrivée du ballon (poitrine/tête si le ballon est haut)
@@ -2030,9 +2033,16 @@
                 schedule(Math.max(0, arrive - 260), () => {
                     if (!MATCHSIM.ball || MATCHSIM.ball.fly !== fly || R.once || R.spd > 3.4) return;      // ballon coupé, ou il court : pas de contrôle figé
                     const high = (fly.peak || 0) > 2;
-                    const clip = high ? (has('soccer_header') && Math.random() < 0.5 ? 'soccer_header' : 'receive_soccerball')
+                    const mid = (fly.peak || 0) > 0.9;
+                    // un adversaire dans son dos : il contrôle en crochet pour s'en défaire
+                    const foes = S.players[ev.side === 'H' ? 'A' : 'H'] || [];
+                    const pressed = foes.some(Q => Q && !Q.gone && Math.hypot(Q.x - R.x, Q.z - R.z) < 2.6);
+                    const clip = high ? pickClip(['soccer_header', 'header', 'receive_soccerball'])
+                        : pressed && has('soccer_spin') && Math.random() < 0.45 ? 'soccer_spin'
+                        : mid && Math.random() < 0.3 ? pickClip(['kneeing_soccerball', 'kneeing_soccerball_2'])
+                        : Math.random() < 0.15 ? pickClip(['stall_soccerball', 'stall_soccerball_1', 'stall_soccerball_2', 'stall_soccerball_3', 'stall_soccerball_4'])
                         : 'receive_soccerball';
-                    if (has(clip)) playOnce(R, clip, 1.45, { fade: 0.1, max: 900 });
+                    if (has(clip)) playOnce(R, clip, clip === 'soccer_spin' ? 1.3 : 1.45, { fade: 0.1, max: clip === 'soccer_spin' ? 1000 : 900 });
                 });
             }
         } else if (ev.type === 'shot' && P) {
@@ -2040,9 +2050,11 @@
             const gx = ev.side === 'H' ? PITCH_W / 2 : -PITCH_W / 2;
             lookAt(P, gx, 0, 600);
             // Sur un centre (corner), la reprise se fait de la tête ; lancé dans sa course, il frappe sans s'arrêter.
-            if (ev.head && has('header_soccerball')) playOnce(P, 'header_soccerball', 1.5, { fade: 0.08, max: 1100 });
+            if (ev.sp === 'penalty' && has('soccer_penalty_kick')) playOnce(P, 'soccer_penalty_kick', 1.15, { fade: 0.08, max: 1500 });
+            else if (ev.head && has('scissor_kick') && Math.random() < 0.1) playOnce(P, 'scissor_kick', 1.25, { fade: 0.08, freeze: true, max: 1800 });   // reprise acrobatique, rare
+            else if (ev.head) playOnce(P, pickClip(['header_soccerball', 'header_soccerball_2', 'soccer_header', 'header']), 1.5, { fade: 0.08, max: 1100 });
             else if (P.spd > 3.2 && has('strike_forward_jog')) playOnce(P, 'strike_forward_jog', 1.2, { fade: 0.08, max: 1300 });
-            else playOnce(P, Math.random() < 0.5 ? 'kick_soccerball_1' : 'kick_soccerball_2', 1.1, { fade: 0.08 });
+            else playOnce(P, pickClip(['kick_soccerball_1', 'kick_soccerball_2', 'kick_soccerball']), 1.1, { fade: 0.08 });
             // le gardien se tourne vers le tireur et se met en appui
             const gk = S.players[ev.side === 'H' ? 'A' : 'H'][0];
             if (gk) lookAt(gk, P.x, P.z, 1400);
@@ -2061,7 +2073,9 @@
             if (L && !L.isGK && Math.random() < (slide ? 0.5 : 0.15) && has('soccer_trip')) {
                 schedule(120, () => {
                     playOnce(L, 'soccer_trip', 1.6, { fade: 0.08, freeze: true, max: 2000 });       // chute complète (~2 s)…
-                    if (has('standing_up')) schedule(1900, () => playOnce(L, 'standing_up', 2.0, { fade: 0.15, freeze: true, max: 1400 }));   // …puis il se relève
+                    const ground = slide && has('fallen_idle') && Math.random() < 0.4 ? 900 : 0;      // parfois il reste un instant au sol
+                    if (ground) schedule(1900, () => playOnce(L, 'fallen_idle', 1.0, { fade: 0.15, freeze: true, max: ground }));
+                    if (has('standing_up')) schedule(1900 + ground, () => playOnce(L, 'standing_up', 2.0, { fade: 0.15, freeze: true, max: 1400 }));   // …puis il se relève
                 });
             }
         } else if (ev.type === 'save' && P) {
@@ -2072,8 +2086,36 @@
             const tx = sh ? wx(sh.toX) : S.ball.position.x, tz = sh ? wz(sh.toY) : S.ball.position.z;
             const fy = P.faceUntil > now() ? P.faceYaw : P.yaw;
             const side = (tx - P.x) * Math.cos(fy) - (tz - P.z) * Math.sin(fy);   // > 0 : à sa droite
-            if (Math.abs(side) < 1.0 && S.clips.has('gk_catch_2')) playOnce(P, 'gk_catch_2', 1.2, { fade: 0.1, freeze: true });
+            const low = sh && (sh.peak || 0) < 0.9;
+            if (Math.abs(side) < 1.0) {
+                playOnce(P, low ? pickClip(['gk_scoop', 'gk_catch_2', 'gk_catch_1', 'gk_catch_4']) : pickClip(['gk_catch_2', 'gk_catch', 'gk_catch_1', 'gk_catch_3', 'gk_catch_4', 'gk_body_block']), 1.2, { fade: 0.1, freeze: true });
+                // ballon capté : il le pose au sol pour relancer
+                schedule(2300, () => { if (!S.rp && (!P.once || now() >= P.once.until)) playOnce(P, pickClip(['gk_placing_ball', 'gk_placing_ball_2']), 1.6, { fade: 0.2, max: 2400 }); });
+            }
+            else if (Math.abs(side) < 1.8 && Math.random() < 0.35) playOnce(P, pickClip(['gk_body_block', 'gk_body_block_2', 'gk_body_block_3']), 1.3, { fade: 0.1, freeze: true, max: 1800 });
             else playOnce(P, side > 0 ? 'gk_diving_save_2' : 'gk_diving_save', 1.5, { fade: 0.1, freeze: true });
+        } else if (ev.type === 'card' && P) {
+            const foes = S.players[ev.side === 'H' ? 'A' : 'H'] || [];
+            const victim = foes.filter(Q => Q && !Q.gone && !Q.isGK).sort((a, b) => Math.hypot(a.x - P.x, a.z - P.z) - Math.hypot(b.x - P.x, b.z - P.z))[0];
+            if (ev.red) {
+                // rouge direct : la victime du tacle s'écroule lourdement, l'expulsé conteste avant de sortir
+                if (victim && has('cel_brutal_assassination')) {
+                    playOnce(victim, 'cel_brutal_assassination', 1.35, { fade: 0.1, freeze: true, max: 3200 });
+                    if (has('standing_up')) schedule(3300, () => playOnce(victim, 'standing_up', 1.8, { fade: 0.15, freeze: true, max: 1500 }));
+                }
+                if (victim) lookAt(P, victim.x, victim.z, 900);
+                if (has('cel_fist_fight_b')) schedule(500, () => playOnce(P, 'cel_fist_fight_b', 1.3, { fade: 0.12, freeze: true, max: 2600 }));
+            } else if (victim && has('soccer_trip') && Math.random() < 0.6) {
+                playOnce(victim, 'soccer_trip', 1.6, { fade: 0.08, freeze: true, max: 2000 });
+                if (has('standing_up')) schedule(1900, () => playOnce(victim, 'standing_up', 2.0, { fade: 0.15, freeze: true, max: 1400 }));
+            }
+        } else if (ev.type === 'injury' && P) {
+            // blessure : il s'effondre, reste au sol un moment, puis se relève en boitant (énergie à plat)
+            if (has('cel_dying')) {
+                playOnce(P, 'cel_dying', 1.25, { fade: 0.12, freeze: true, max: 3400 });
+                if (has('fallen_idle')) schedule(3400, () => playOnce(P, 'fallen_idle', 1.0, { fade: 0.15, freeze: true, max: 2600 }));
+                if (has('standing_up')) schedule(6000, () => playOnce(P, 'standing_up', 1.4, { fade: 0.15, freeze: true, max: 1800 }));
+            }
         } else if (ev.type === 'cut') {
             // Coupure « télé » d'un coup de pied arrêté : fondu au noir, les joueurs sont posés
             // à leur place sous le noir, puis l'image revient.
@@ -2101,7 +2143,8 @@
             const other = ev.side === 'H' ? 'A' : 'H';
             const gk = S.players[other][0];
             if (gk) schedule(Math.max(0, delay - 350), () => playOnce(gk, 'gk_miss', 1.3, { fade: 0.1 }));
-            const pick = () => CELEBRATIONS.find(c => S.clips.has(c) && Math.random() < 0.34) || CELEBRATIONS.find(c => S.clips.has(c));
+            const pick = () => { const ok = CELEBRATIONS.filter(c => S.clips.has(c)); const last = S.lastCel; const pool = ok.length > 1 ? ok.filter(c => c !== last) : ok;
+                const c = pool[Math.floor(Math.random() * pool.length)]; S.lastCel = c; return c; };
             // célébration du buteur : il a le temps de la jouer en entier (le moteur
             // retient le jeu pendant ce temps-là)
             const scorer = P;
@@ -2341,8 +2384,11 @@
             let gait = 'fwd';
             if (P.spd > 0.6 && !d.carrier && P.spd < 3.8 && Math.hypot(bx - x, bz - z) < 38) {
                 const rel = angDiff(toBall, velYaw);                  // > 0 : il se déplace vers SA droite
-                if (Math.abs(rel) > 2.25) gait = 'back';
-                else if (Math.abs(rel) > 1.15 && P.spd < 2.8) gait = rel > 0 ? 'right' : 'left';
+                const ar = Math.abs(rel);
+                if (ar > 2.45) gait = 'back';
+                else if (ar > 1.75 && P.spd < 3.2) gait = rel > 0 ? 'backR' : 'backL';          // recule en diagonale
+                else if (ar > 1.15 && P.spd < 2.8) gait = rel > 0 ? 'right' : 'left';
+                else if (ar > 0.5 && P.spd < 3.4) gait = rel > 0 ? 'fwdR' : 'fwdL';             // avance en diagonale, l'œil sur le ballon
             }
             if (gait !== P.gait) {                                    // pas de clignotement : on garde une allure 0,4 s minimum
                 if (!P.gaitT || t - P.gaitT > 400) { P.gait = gait; P.gaitT = t; }
@@ -2352,7 +2398,7 @@
             // orientation
             let target = P.yaw;
             if (P.faceUntil > t) target = P.faceYaw;
-            else if (P.spd > 0.6) target = g8 === 'fwd' ? velYaw : toBall;
+            else if (P.spd > 0.6) target = g8 === 'fwd' ? velYaw : toBall;      // diagonales et pas chassés : face au ballon
             else target = toBall;
             if (P.once && P.once.freeze && t < P.once.until) target = P.yaw;
             P.yaw += angDiff(P.yaw, target) * Math.min(1, dt * (P.spd > 0.6 ? 9 : 6));
@@ -2370,19 +2416,40 @@
             if (P.once && t >= P.once.until) P.once = null;
             if (!P.once) {
                 P.moving = P.moving ? P.spd > 0.30 : P.spd > 0.55;       // hystérésis : seuils différents pour partir et s'arrêter
+                if (!P.moving) P.wasMoving = false;
                 // gardien : pas chassés pour suivre le ballon latéralement, sans lui tourner le dos
                 const gkSide = P.isGK && P.moving && P.spd < 3 && has('gk_sidestep') && Math.abs(angDiff(toBall, velYaw)) > 1.0;
                 if (gkSide) {
-                    play(P, 'gk_sidestep', true, clamp(P.spd / 1.6, 0.7, 1.6), 0.25);
+                    if (P.gkAlt == null) P.gkAlt = Math.random() < 0.5;
+                    play(P, P.gkAlt && has('gk_sidestep_2') ? 'gk_sidestep_2' : 'gk_sidestep', true, clamp(P.spd / 1.6, 0.7, 1.6), 0.25);
                 } else if (P.moving) {
-                    const clip = g8 === 'back' ? 'jog_backward' : g8 === 'right' ? 'jog_strafe_right' : g8 === 'left' ? 'jog_strafe_left' : 'jog_forward';
-                    const ref = g8 === 'fwd' ? JOG_SPEED : g8 === 'back' ? BACK_SPEED : STRAFE_SPEED;
+                    // Diagonales mesurées sur les clips (rotation moyenne du bassin) : « _diagonal » et « _diagonal_2 »
+                    // partent à droite, « _diagonal_1 » à gauche ; en arrière, « _diagonal » à droite, « _2 » à gauche.
+                    if (P.diagAlt == null) P.diagAlt = Math.random() < 0.5;
+                    const started = !P.wasMoving; P.wasMoving = true;
+                    if (started && !P.isGK && has('transition') && Math.random() < 0.25) {   // démarrage : il s'élance
+                        playOnce(P, 'transition', 1.2, { fade: 0.12, max: 520 });
+                    }
+                    const clip = g8 === 'back' ? 'jog_backward' : g8 === 'right' ? 'jog_strafe_right' : g8 === 'left' ? 'jog_strafe_left'
+                        : g8 === 'fwdR' ? (P.diagAlt ? 'jog_forward_diagonal' : 'jog_forward_diagonal_2') : g8 === 'fwdL' ? 'jog_forward_diagonal_1'
+                        : g8 === 'backR' ? 'jog_backward_diagonal' : g8 === 'backL' ? 'jog_backward_diagonal_2' : 'jog_forward';
+                    const ref = (g8 === 'fwd' || g8 === 'fwdR' || g8 === 'fwdL') ? JOG_SPEED : (g8 === 'back' || g8 === 'backR' || g8 === 'backL') ? BACK_SPEED : STRAFE_SPEED;
                     play(P, S.clips.has(clip) ? clip : 'jog_forward', true, clamp(P.spd / ref, 0.6, g8 === 'fwd' ? 1.75 : 1.6), 0.25);
                 }
                 // à l'arrêt : près du ballon on reste en appui, loin du jeu on souffle ; le gardien
                 // place sa défense quand le jeu est loin
-                else if (P.isGK) play(P, (Math.hypot(bx - x, bz - z) > 40 && has('gk_directing')) ? 'gk_directing' : 'gk_idle', true, 1, 0.35);
-                else play(P, (d.carrier || Math.hypot(bx - x, bz - z) < 22) ? 'offensive_idle' : 'soccer_idle', true, 1, 0.3);
+                else if (P.isGK) {
+                    if (P.gkAlt == null) P.gkAlt = Math.random() < 0.5;
+                    play(P, (Math.hypot(bx - x, bz - z) > 40 && has('gk_directing')) ? 'gk_directing' : (P.gkAlt && has('gk_idle_2') ? 'gk_idle_2' : 'gk_idle'), true, 1, 0.35);
+                }
+                else {
+                    // Ballon arrêté (touche, faute, changement) : celui qui l'a aux pieds jongle en attendant.
+                    const dead = typeof MATCHSIM !== 'undefined' && MATCHSIM.phase !== 'shot' && ((MATCHSIM.now() - (MATCHSIM.deadBall || -1e9)) < 2800 || (MATCHSIM.holdUntil || 0) > MATCHSIM.now() + 600);   // vrai arrêt de jeu, pas une simple pause du porteur
+                    if (dead && d.carrier && !S.rp && t > (P.juggleNext || 0)) {
+                        P.juggleNext = t + 4500 + Math.random() * 4000;
+                        playOnce(P, pickClip(['kick_up_soccerball', 'stall_soccerball_1', 'stall_soccerball_2', 'stall_soccerball_3', 'stall_soccerball_4']), 1.0, { fade: 0.2, max: 2200 });
+                    } else play(P, (d.carrier || Math.hypot(bx - x, bz - z) < 22) ? 'offensive_idle' : 'soccer_idle', true, 1, 0.3);
+                }
             }
             stepFade(P, dt);
         }));
@@ -2614,6 +2681,9 @@
             });
             container.insertBefore(cv, container.firstChild);
             S.canvas = cv;
+        }
+        // Le bouton 2D/3D peut manquer si le canevas a été créé ailleurs (cinématique, aperçu du stade).
+        if (!S.btn || !S.btn.isConnected) {
             const btn = document.createElement('button');
             btn.type = 'button'; btn.id = 'pitch-3d-btn';
             btn.className = 'absolute top-2 start-2 z-40 bg-black/50 hover:bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-white/10 backdrop-blur-sm transition-colors';

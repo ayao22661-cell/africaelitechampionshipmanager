@@ -1,3 +1,44 @@
+# Les 76 animations utilisées, sans exception (09/10/2026)
+
+Les 25 dernières animations jamais jouées sont maintenant toutes en jeu :
+- **Courses en diagonale** (5) : avancer ou reculer en biais en gardant l'œil sur le ballon. Le sens de chaque clip a été mesuré (rotation du bassin) pour éviter les « pas de danse à l'envers ».
+- **Élan** (`transition`) : un joueur qui démarre s'élance parfois.
+- **Crochet** (`soccer_spin`) : contrôle orienté quand un adversaire est dans son dos.
+- **Contrôles** : 2e contrôle du genou, 4 contrôles de semelle de plus, 4e tête.
+- **Jongles pendant les arrêts de jeu** (`kick_up_soccerball`, semelles) : celui qui a le ballon jongle en attendant la reprise (touche, faute, remplacement), jamais en plein jeu.
+- **Gardien** : 2e pas chassé, 2e attente, 2 prises de balle et 2 parades du corps de plus ; après une prise de balle, il **pose le ballon** pour relancer.
+- **Blessure** (`cel_dying`) : le joueur s'effondre, reste au sol, puis se relève.
+- **Carton rouge direct** : la victime du tacle s'écroule lourdement (`cel_brutal_assassination`), l'expulsé conteste face à l'arbitre (`cel_fist_fight_b`) avant de sortir.
+- Carton jaune : la victime de la faute tombe et se relève.
+Le moteur 3D est désormais prévenu des cartons et des blessures (nouveaux événements).
+
+# Vers le niveau de FM / SM : banc, analyse, vestiaire, actu, sélectionneur, animations, son (09/10/2026)
+
+**Pendant le match**
+- **Cris du banc** (bouton « Banc » en haut à gauche) : Encouragez, Exigez plus, Resserrez, Calmez-vous. Effet de 10 minutes sur le danger créé/concédé, la fatigue, les cartons et le moral, puis 5 minutes de recharge. Les fortes têtes n'aiment pas qu'on les secoue.
+- **Onglet Analyse** (ex-Zones) : **carte des tirs** (position réelle, taille = xG, plein = but) et **courbe des xG cumulés** minute par minute, nombre d'occasions franches, puis les cartes de chaleur.
+- Couleurs de maillot toujours lisibles sur fond sombre dans les graphiques et les stats.
+
+**Personnalités et vestiaire**
+- Les traits existants (Bosseur, Leader, Fort caractère, Fidèle, Professionnel, Ambitieux…) pèsent désormais aussi **en match** : cartons pour les caractériels, sang-froid sur penalty et en fin de match pour les pros et les leaders, défaites plus ou moins bien encaissées.
+- **Vestiaire** (bouton dans Effectif) : ambiance du groupe en anneau, cadres, influents et groupe en visages avec leur moral, alerte quand un cadre râle. Un leader sur le terrain soude le groupe après une victoire ; un vestiaire tendu fait baisser le moral de tous.
+- Trait affiché dans la liste de l'effectif.
+
+**Fil d'actu** (Messagerie › Fil d'actu)
+- Supporters, presse et rumeurs réagissent après chaque match : résultat, homme du match, joueur en difficulté, rumeurs de transfert, tête du classement. Sauvegardé.
+
+**Sélectionneur national**
+- La fédération de votre pays vous propose le poste (ou candidature depuis l'écran Manager). Vous convoquez **23 joueurs** parmi tous ceux de la nationalité, dans tous les championnats.
+- **CAN jouable** (années paires) : 16 nations, 4 poules, quarts, demies, finale, tirs au but ; plan de jeu choisi avant chaque match (prudent, équilibré, offensif). **Éliminatoires** les années impaires.
+- Confiance de la fédération, bilan, titres ; limogeage si les résultats ne suivent pas. Le match de la sélection passe avant la journée du club.
+
+**Animations 3D** : frappe de penalty, ciseau acrobatique (rare), 3 gestes de tête, contrôles du genou et de la semelle, relance à la main du gardien, prises de balle et parades du corps variées, joueur qui reste un instant au sol, 3 célébrations de plus (9 au total, jamais deux fois de suite la même).
+
+**Son** (synthétisé, aucun fichier ajouté) : applaudissements sur les arrêts et au coup de sifflet final, sifflets et huées sur les cartons, chants de supporters sur les corners et pendant le jeu, ambiance plus forte les soirs de CAF.
+
+**Corrigé** : bouton 2D/3D parfois absent au lancement du match (erreur au coup d'envoi).
+Traductions anglaise et arabe ajoutées (111 textes). Taille de l'application inchangée.
+
 # Fenêtres par-dessus le jeu : coupe nationale, CAF, fin de mois (08/10/2026)
 
 - **Tirage de la coupe nationale** : l'ancienne fenêtre (bordures, émojis, listes de noms) est remplacée par une fenêtre visuelle. À gauche, coupe dessinée, tour suivant, pastille Qualifié/Éliminé et bouton Continuer ; à droite, les affiches en écussons face à face (la vôtre en orange) et les qualifiés en écussons.

@@ -6375,7 +6375,7 @@ const MATCHSIM = {
                 this.commit(650, 1.6);
                 this.lastShot = null;
                 this.shoot(k, shooter, {
-                    from: { x: sp.x, y: sp.y }, stay: true, lead: 700,
+                    from: { x: sp.x, y: sp.y }, stay: true, lead: 700, sp: kind,
                     peak: kind === 'penalty' ? 0.7 : 2.2,
                     dur: kind === 'penalty' ? this.clamp(560 * (this.TICK / 2400), 520, 900) : null
                 });
@@ -6794,7 +6794,7 @@ const MATCHSIM = {
         this.phase = 'shot';
         this.lastShooter = shooter.i;
         // le geste de frappe est joué juste avant que le ballon ne parte
-        this.later(Math.max(0, lead - 220), () => this.note('shot', key, shooter.i, o.head ? { head: true } : null));
+        this.later(Math.max(0, lead - 220), () => this.note('shot', key, shooter.i, (o.head || o.sp) ? { head: !!o.head, sp: o.sp || null } : null));
         this.applyOutcome();
     },
 
@@ -6908,6 +6908,29 @@ const HALF_TIME_TALKS = [
 ];
 
 // Les consignes collectives, dans le vocabulaire des jeux de gestion.
+// Les 24 nations de la CAN, par code de championnat.
+const NT_NATIONS = {
+    CIV: "Côte d'Ivoire", MAR: 'Maroc', EGY: 'Égypte', ALG: 'Algérie',
+    TUN: 'Tunisie', NGA: 'Nigéria', SEN: 'Sénégal', CMR: 'Cameroun',
+    COD: 'RD Congo', GHA: 'Ghana', RSA: 'Afrique du Sud', MLI: 'Mali',
+    BFA: 'Burkina Faso', GUI: 'Guinée', ZAM: 'Zambie', ANG: 'Angola',
+    KEN: 'Kenya', TAN: 'Tanzanie', SUD: 'Soudan', LBY: 'Libye',
+    MOZ: 'Mozambique', GAB: 'Gabon', MRT: 'Mauritanie', COM: 'Comores'
+};
+
+// Cris du banc : effet de SHOUT_LEN minutes, puis SHOUT_COOLDOWN de recharge.
+const SHOUT_LEN = 10, SHOUT_COOLDOWN = 5;
+const SHOUTS = {
+    encourage: { label: 'Encouragez', say: 'Allez, on y croit, poussez !', hint: 'Moral + · Un peu plus de danger', morale: 4, atk: 0.02, drain: 1.08,
+        ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11v8H4v-8zM7 11l4-7c1.5 0 2.5 1 2.2 2.6L12.6 10H18a2 2 0 012 2.3l-1 5.4A2 2 0 0117 19H7"/></svg>' },
+    demand: { label: 'Exigez plus', say: 'Plus haut, plus vite, je veux du rythme !', hint: 'Danger ++ · Fatigue ++ · Vous vous exposez', morale: 0, atk: 0.035, def: 0.02, drain: 1.25,
+        ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>' },
+    tighten: { label: 'Resserrez', say: 'On ferme tout, compacts derrière !', hint: 'Moins d\'occasions concédées · Moins d\'attaque', morale: 0, atk: -0.02, def: -0.03, drain: 1.05,
+        ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l7 2.6v5.4c0 4.2-2.9 7-7 8.5-4.1-1.5-7-4.3-7-8.5V6.1z"/></svg>' },
+    calm: { label: 'Calmez-vous', say: 'Doucement, on garde la tête froide !', hint: 'Moins de cartons · Rythme plus bas', morale: 1, atk: -0.01, drain: 0.92, cards: 0.55,
+        ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10c3-3 6 3 9 0s6 3 9 0M3 15c3-3 6 3 9 0s6 3 9 0"/></svg>' }
+};
+
 const TEAM_INSTRUCTIONS = [
     { key: 'attackSide', label: 'Couloir d\'attaque', hint: 'Par où le jeu sort',
       options: [['mixed', 'Mixte'], ['middle', 'Axe'], ['flanks', 'Deux ailes'], ['right', 'Droite'], ['left', 'Gauche']] },
@@ -8672,7 +8695,7 @@ const SFX = {
     crowdIntensity(v) {
         if (!this.crowdGain || !this.ctx) return;
         const t = this.ctx.currentTime;
-        this.crowdGain.gain.linearRampToValueAtTime(0.10 + v * 0.22, t + 0.35);
+        this.crowdGain.gain.linearRampToValueAtTime((this._bigNight ? 0.15 : 0.10) + v * 0.22, t + 0.35);
         this.crowdFilter.frequency.linearRampToValueAtTime(600 + v * 1300, t + 0.35);
     },
     stopCrowd() {
@@ -8684,6 +8707,44 @@ const SFX = {
         setTimeout(() => { try { s.stop(); } catch (e) {} }, 900);
         this.crowdSrc = null; this.crowdGain = null;
     },
+
+    // Applaudissements : une pluie de claquements courts, désordonnés, qui retombe.
+    applause(amount = 1) {
+        if (!this.enabled) return;
+        const ctx = this.init(); if (!ctx) return;
+        const n = Math.round(26 * amount), dur = 1.4 + amount * 0.8;
+        for (let i = 0; i < n; i++) {
+            const t = ctx.currentTime + Math.random() * dur * (0.4 + Math.random() * 0.6);
+            this.drumHit('clap', t, (0.05 + Math.random() * 0.05) * (1 - (t - ctx.currentTime) / (dur + 0.4)));
+        }
+    },
+    // Huées et sifflets de la tribune : un « bouh » grave et quelques sifflets aigus.
+    jeer() {
+        if (!this.enabled) return;
+        const ctx = this.init(); if (!ctx) return;
+        this.noise(1.6, 240, 2.2, 0.20, 0, 180);
+        for (let i = 0; i < 5; i++) this.tone(2400 + Math.random() * 900, 0.25 + Math.random() * 0.3, 'sine', 0.035, 0.1 + Math.random() * 0.9, 2000 + Math.random() * 600);
+    },
+    // Chant de supporters : deux notes chantées en chœur (voyelle filtrée), sur le rythme des tambours.
+    chant() {
+        if (!this.enabled || this._chantUntil > Date.now()) return;
+        const ctx = this.init(); if (!ctx) return;
+        this._chantUntil = Date.now() + 9000;
+        const notes = [[196, 0.42], [196, 0.22], [247, 0.42], [220, 0.6]];
+        let t = ctx.currentTime + 0.05;
+        for (let r = 0; r < 2; r++) notes.forEach(([f, d]) => {
+            [0, 3, -4, 7].forEach((det, k) => {                       // plusieurs voix légèrement désaccordées = une foule
+                const o = ctx.createOscillator(), g = ctx.createGain(), fl = ctx.createBiquadFilter();
+                o.type = 'sawtooth'; o.frequency.setValueAtTime(f + det, t);
+                fl.type = 'bandpass'; fl.frequency.value = 700 + k * 120; fl.Q.value = 1.4;
+                g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.022, t + 0.05); g.gain.linearRampToValueAtTime(0.0001, t + d * 0.95);
+                o.connect(fl); fl.connect(g); g.connect(this.master); o.start(t); o.stop(t + d);
+            });
+            t += d;
+        });
+    },
+    // Soirée de gala (CAF, derby) : la nappe de foule est plus forte.
+    bigNight(on) { this._bigNight = !!on; if (this.crowdGain && this.ctx) this.crowdGain.gain.linearRampToValueAtTime(on ? 0.22 : 0.16, this.ctx.currentTime + 1); },
 
     // Vibration : les bons jeux mobiles couplent son et haptique.
     buzz(ms = 12) { if (this.enabled && navigator.vibrate) try { navigator.vibrate(ms); } catch (e) {} }
@@ -13539,6 +13600,8 @@ if (badge) {
         const tag = (this.currentSeason || 1) + ':' + w.from;
         if (this.afconDone === tag) return;
         this.afconDone = tag;
+        // Sélectionneur : la CAN (ou le match d'éliminatoires) se joue pour de vrai.
+        if (this.nationalJob) { try { this.ntOnWindow(prog.kind === 'afcon'); } catch (e) { console.warn('[NT]', e); } }
 
         const isCup = prog.kind === 'afcon';
         const days = (w.to - w.from) + 1;
@@ -13574,7 +13637,7 @@ if (badge) {
         // - stocké dans this.afconWinner pour le palmarès de saison
         // - marqué (afconTitles++) sur les joueurs du user convoqués SI leur
         //   ligue correspond au pays gagnant.
-        if (isCup) {
+        if (isCup && !this.nationalJob) {
             // Mapping league → nom du pays pour la CAN
             const CAN_NATIONS = {
                 CIV: "Côte d'Ivoire", MAR: 'Maroc', EGY: 'Égypte', ALG: 'Algérie',
@@ -21167,6 +21230,11 @@ sellPlayer(playerId) {
         this.showNotification(t("Intersaison : aucun match ne se joue. Terminez les semaines pour lancer la saison."), 'warning');
         return;
     }
+    if (this.ntPendingMatch && this.ntPendingMatch()) {
+        this.openNationalTeam('match');
+        this.showNotification(t("Votre sélection joue d'abord : choisissez votre plan de jeu."), 'info');
+        return;
+    }
 
     // Nettoyer les fixtures corrompues (home ou away null)
     this.fixtures = this.fixtures.filter(f => f.home && f.away);
@@ -21616,6 +21684,7 @@ simulateAIBypassMatchday(otherMatches) {
         this.injectSetPieceStyles();   // les panneaux du match en dépendent
         this.switchMatchTab(this._matchTab || 'commentary');
         this.injectTempoButton();
+        this.injectShoutButton();
         this.applyTempo();
         this._pitchBuilt = true;
         this.setPitchDecor(true);
@@ -22106,6 +22175,11 @@ simulateAIBypassMatchday(otherMatches) {
 
         this.liveMatch.minute++;
         document.getElementById('live-time').innerText = this.matchClock(); // FIX #89
+        try { this.refreshShoutButton(); if (document.getElementById('shout-menu')) this.renderShoutMenu(true); } catch (e) {}
+        try {
+            if (this.liveMatch.minute === 1) SFX.bigNight(!!this.liveMatch.isCAF);
+            if (Math.random() < (this.liveMatch.isCAF ? 0.09 : 0.05)) SFX.chant();
+        } catch (e) {}
 
         // FIX #95 : le badge de statut du direct était figé sur "En Cours" en dur dans le HTML
         this.updateLiveStatus();
@@ -22132,7 +22206,8 @@ simulateAIBypassMatchday(otherMatches) {
             // Chaleur, humidité, terrain lourd, long voyage : tout se paie en
             // jambes, et cumulativement avec le pressing choisi.
             const condDrain = (this.liveMatch && this.liveMatch.cond && this.liveMatch.cond.drain) || 1;
-            const pressDrain = oppDrainF * condDrain * (this.userTactics.pressing === 'all' ? 1.35
+            const shoutDrain = (SHOUTS[this.activeShout()] || {}).drain || 1;
+            const pressDrain = oppDrainF * condDrain * shoutDrain * (this.userTactics.pressing === 'all' ? 1.35
                 : this.userTactics.pressing === 'area' ? 0.85 : 1);
             const userStarters = this.liveMatch.home.isUser ? this.liveMatch.homeStarters
                 : this.liveMatch.away.isUser ? this.liveMatch.awayStarters : null;
@@ -22218,8 +22293,10 @@ simulateAIBypassMatchday(otherMatches) {
         if (minuteEvent === 'yellow') { // FIX #88
             const cardHome = Math.random() < 0.5;
             let team = cardHome ? this.liveMatch.homeStarters : this.liveMatch.awayStarters;
-            if (team.length > 0) {
-                let player = team.find(p => p.yellowCards >= 1 && Math.random() < 0.2) || team[Math.floor(Math.random() * team.length)];
+            const cardOnUser = cardHome ? this.liveMatch.home.isUser : this.liveMatch.away.isUser;
+            const calmSkip = cardOnUser && Math.random() < ((SHOUTS[this.activeShout()] || {}).cards || 0);
+            if (team.length > 0 && !calmSkip) {
+                let player = team.find(p => p.yellowCards >= 1 && Math.random() < 0.2) || this.pickCardPlayer(team);
                 if (player.yellowCards >= 1 && Math.random() < 0.10) {
                     player.yellowCards++;
                     player.redCards++;
@@ -22232,7 +22309,8 @@ simulateAIBypassMatchday(otherMatches) {
                     player.yellowCards++;
                     player.yellowThisMatch = true;
                     this.bumpStat(cardHome, 'yellow', 1);
-                    SFX.card(false); this.logCommentary(`${icon('yellowCard')} ${matchLine('yellow', { joueur: player.name })}.`, "text-yellow-400");
+                    try { if (MATCHSIM.active) MATCHSIM.note('card', cardHome ? 'H' : 'A', this.simIdx(cardHome, player), { red: false }); } catch (e) {}
+                    SFX.card(false); if (cardHome) { try { SFX.jeer(); } catch (e) {} } this.logCommentary(`${icon('yellowCard')} ${matchLine('yellow', { joueur: player.name })}.`, "text-yellow-400");
                 }
             }
         }
@@ -22246,6 +22324,7 @@ simulateAIBypassMatchday(otherMatches) {
                 player.redCards++;
                 player.redThisMatch = true;
                 this.bumpStat(redHome, 'red', 1);
+                try { if (MATCHSIM.active) MATCHSIM.note('card', redHome ? 'H' : 'A', this.simIdx(redHome, player), { red: true, brutal: true }); } catch (e) {}
                 this.simSendOff(redHome, player);
                 team.splice(team.indexOf(player), 1); // L'équipe finit à 10
                 SFX.card(true); this.logCommentary(`${icon('redCard')} ${t('CARTON ROUGE DIRECT !')} ${t('Faute grossière de')} ${player.name} !`, "text-red-500 font-bold");
@@ -22270,6 +22349,7 @@ simulateAIBypassMatchday(otherMatches) {
                 
                 this.injurePlayer(player, 'match');
                 player.energy = 5; // Son énergie s'effondre dans le rouge (diminué sur le terrain)
+                try { if (MATCHSIM.active) MATCHSIM.note('injury', isHomeTeam ? 'H' : 'A', this.simIdx(isHomeTeam, player)); } catch (e) {}
 
                 if (isUser) {
                     // Pour le joueur humain : On avertit. Le joueur RESTE sur le terrain (avec 5 d'énergie) jusqu'à ce que tu le remplaces !
@@ -22551,6 +22631,7 @@ simulateAIBypassMatchday(otherMatches) {
             const takerIdxSP = this.simIdx(isHome, takerP);
             const strikerIdxSP = this.simIdx(isHome, striker);
             const msSP = MATCHSIM.setPiece(kindSP, isHome ? 'H' : 'A', takerIdxSP, strikerIdxSP);
+            if (kindSP === 'corner' || kindSP === 'penalty') { try { kindSP === 'corner' ? SFX.chant() : SFX.crowdIntensity(1); } catch (e) {} }
             this.holdClock(msSP + 9000);
             const lmSP = this.liveMatch;
             setTimeout(() => {
@@ -22599,10 +22680,18 @@ simulateAIBypassMatchday(otherMatches) {
             // Et un pressing tout terrain finit par craquer physiquement.
             if (this.userTactics.pressing === 'all' && this.liveMatch.minute > 60) baseXG += 0.03;
         }
+        // Cris du banc : un coup de pouce (ou de frein) de quelques minutes.
+        if (!isPenalty) {
+            const sh = this.activeShout();
+            const fx = sh ? (SHOUTS[sh] || {}) : null;
+            if (fx && userIsAttacking) baseXG += fx.atk || 0;
+            if (fx && userIsDefending) baseXG += fx.def || 0;
+        }
 
         let strikerStat = (this.calculateEffectiveStat(striker, 'finishing') || striker.ovr || 60) * 0.7 
                         + (this.calculateEffectiveStat(striker, 'composure') || striker.ovr || 60) * 0.3;
         
+        strikerStat += this.traitClutch(striker, isPenalty);
         let gkStat = this.calculateEffectiveStat(gk, 'positioning') || gk.ovr || 60;
         let defStat = defender ? (this.calculateEffectiveStat(defender, 'tackling') || defender.ovr || 60) : gkStat; 
         let defenseStat = (gkStat * 0.8) + (defStat * 0.2);
@@ -22619,18 +22708,21 @@ simulateAIBypassMatchday(otherMatches) {
 
         // LE LANCER DE DÉ
         let isGoal = Math.random() < finalXG;
+        try { this.logShot(isHome, striker, shot, finalXG, isGoal, isPenalty, setPiece); } catch (e) {}
 
         // Cadré ou non. Une occasion franche finit plus souvent dans le cadre
         // qu'une frappe de 30 mètres.
         const onTarget = isGoal || Math.random() < (0.30 + finalXG * 0.45);
         if (onTarget) this.bumpStat(isHome, 'onTarget', 1);
         if (onTarget && !isGoal) this.bumpStat(!isHome, 'saves', 1);
+        { const log = this.liveMatch.shotLog; if (log && log.length) log[log.length - 1].t = onTarget; }
         // Le ballon va où le résultat l'exige, et le résultat s'affiche quand le ballon arrive
         if (MATCHSIM.active) MATCHSIM.setShotOutcome(isGoal ? 'goal' : onTarget ? 'save' : 'miss');
         const lmShot = this.liveMatch;
         const resolveShot = () => {
         if (this.liveMatch !== lmShot || this._matchOver) return;
         if (onTarget && !isGoal && MATCHSIM.active) MATCHSIM.note('save', isHome ? 'A' : 'H', 0);
+        if (onTarget && !isGoal) { try { SFX.applause(finalXG > 0.25 ? 1 : 0.5); } catch (e) {} }
         // la tribune vibre sur une vraie occasion manquée (arrêt ou tir de peu à côté)
         if (!isGoal && finalXG > 0.1) { try { SFX.ooh(); } catch (e) {} }
 
@@ -23743,11 +23835,7 @@ simulateAIBypassMatchday(otherMatches) {
         const userIsHome = !!lm.home.isUser;
 
         // Une ligne = deux barres face à face, aux couleurs des maillots, qui partent du centre.
-        const kc = (team, away) => { let k = {}; try { k = clubKit(team.name, away) || {}; } catch (e) {}
-            const lum = h => { const n = parseInt(String(h || '#888888').replace('#', ''), 16); return ((n >> 16) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) / 255; };
-            let c = k.base || '#64748b'; if (lum(c) < 0.18) c = k.accent || k.trim || '#94a3b8'; return c; };
-        let hc = kc(lm.home, false), ac = kc(lm.away, true);
-        if (hc.toLowerCase() === ac.toLowerCase()) ac = '#e8edf5';
+        let [hc, ac] = this.matchKitColors();
         const row = (label, h, a, fmt) => {
             const f = fmt || (v => v);
             const mx = Math.max(h, a) || 1;
@@ -23927,6 +24015,699 @@ simulateAIBypassMatchday(otherMatches) {
             </div>`;
     }
 
+    // ═══ SÉLECTIONNEUR NATIONAL ════════════════════════════════════════
+    // En parallèle du club : la fédération de votre pays vous confie sa
+    // sélection. Vous convoquez 23 joueurs parmi tous ceux de la nationalité,
+    // où qu'ils jouent, puis vous jouez la CAN (années paires) et les
+    // éliminatoires (années impaires). Matchs simulés, plan de jeu au choix.
+    ntNat() { return String(this.userLeagueId || 'CIV').split('_')[0]; }
+
+    ntPool(nat) {
+        const seen = new Set(), out = [];
+        const add = (p, club) => { if (!p || seen.has(p.id) || !p.nationality || p.nationality.nat !== nat) return; seen.add(p.id); out.push({ p, club }); };
+        (this.userSquad || []).forEach(p => add(p, this.userClubName));
+        Object.values(this.globalData || {}).forEach(lg => (lg.standings || []).forEach(c => (c.squad || []).forEach(p => add(p, c.name))));
+        return out.sort((a, b) => (b.p.ovr || 0) - (a.p.ovr || 0));
+    }
+
+    ntAutoSquad(nat) {
+        const pool = this.ntPool(nat);
+        const gk = pool.filter(o => o.p.position === 'GB').slice(0, 3);
+        const out = pool.filter(o => o.p.position !== 'GB').slice(0, 20);
+        return gk.concat(out).map(o => o.p.id);
+    }
+
+    ntSquad() {
+        const job = this.nationalJob; if (!job) return [];
+        const pool = this.ntPool(job.nat), byId = new Map(pool.map(o => [o.p.id, o]));
+        return (job.squad || []).map(id => byId.get(id)).filter(Boolean);
+    }
+
+    // Force d'une sélection = son meilleur onze (1 gardien + 10 joueurs de champ).
+    ntStrength(nat, squadObjs) {
+        const list = squadObjs || this.ntPool(nat).slice(0, 40);
+        const gk = list.filter(o => o.p.position === 'GB').sort((a, b) => b.p.ovr - a.p.ovr)[0];
+        const of = list.filter(o => o.p.position !== 'GB').sort((a, b) => b.p.ovr - a.p.ovr).slice(0, 10);
+        const xi = (gk ? [gk] : []).concat(of);
+        if (!xi.length) return 60 + (LEAGUE_TIER[nat] || 0.5) * 10;
+        return xi.reduce((s, o) => s + (o.p.ovr || 60), 0) / xi.length;
+    }
+
+    ntSim(sA, sB, mA, mB) {
+        const adj = m => m === 'offensive' ? [0.28, 0.22] : m === 'defensive' ? [-0.25, -0.3] : [0, 0];
+        const [aA, dA] = adj(mA), [aB, dB] = adj(mB);
+        const lamA = Math.max(0.2, 1.25 * Math.exp((sA - sB) / 11) + aA + dB);
+        const lamB = Math.max(0.2, 1.25 * Math.exp((sB - sA) / 11) + aB + dA);
+        const pois = l => { let k = 0, p = Math.exp(-l), c = p, u = Math.random(); while (u > c && k < 8) { k++; p *= l / k; c += p; } return k; };
+        return [pois(lamA), pois(lamB)];
+    }
+
+    ntMaybeOffer() {
+        const season = this.currentSeason || 1;
+        if (this.nationalJob || this.ntOfferedSeason === season || (this.matchday || 0) < 4) return;
+        const nat = this.ntNat(); const name = NT_NATIONS[nat];
+        if (!name || this.ntPool(nat).length < 16) return;
+        this.ntOfferedSeason = season;
+        this.showConfirm(tf("La fédération de {nation} vous propose de devenir sélectionneur, en plus de votre club. Vous convoquerez 23 joueurs et jouerez la CAN. Acceptez-vous ?", { nation: name }),
+            () => this.ntAccept(), { okLabel: t('Accepter'), cancelLabel: t('Refuser') });
+    }
+
+    ntApply() {
+        if (this.nationalJob) return this.openNationalTeam();
+        if ((this.managerStarRating ? this.managerStarRating() : 1) < 2 && (this.currentSeason || 1) > 1) {
+            this.showNotification(t('La fédération attend un palmarès plus solide. Revenez avec des résultats.'), 'warning'); return;
+        }
+        this.ntAccept();
+    }
+
+    ntAccept() {
+        const nat = this.ntNat();
+        this.nationalJob = { nat, name: NT_NATIONS[nat] || nat, since: this.currentSeason || 1, squad: this.ntAutoSquad(nat), mood: 60, rec: { w: 0, d: 0, l: 0 }, titles: 0, last: [] };
+        this.logMilestone('Nommé sélectionneur de {nation}.', { nation: this.nationalJob.name }, 'good');
+        this.pushNews && this.pushNews('press', 'Yao Baba Sport', tf('{name} devient sélectionneur de {nation} tout en gardant {club}.', { name: (this.manager && this.manager.name) || t('Le coach'), nation: this.nationalJob.name, club: this.userClubName }));
+        this.saveGame();
+        this.openNationalTeam();
+    }
+
+    ntResign() {
+        this.showConfirm(t('Quitter le poste de sélectionneur ?'), () => {
+            this.nationalJob = null; this.ntCan = null; this.saveGame();
+            document.getElementById('nt-modal')?.remove(); this.renderManagerView && this.renderManagerView();
+        }, { okLabel: t('Quitter'), danger: true });
+    }
+
+    ntToggle(id) {
+        const job = this.nationalJob; if (!job) return;
+        const i = job.squad.indexOf(id);
+        if (i >= 0) { if (job.squad.length <= 16) return this.showNotification(t('16 joueurs minimum.'), 'warning'); job.squad.splice(i, 1); }
+        else { if (job.squad.length >= 23) return this.showNotification(t('23 joueurs maximum : retirez-en un d\'abord.'), 'warning'); job.squad.push(id); }
+        this.openNationalTeam(this._ntTab || 'squad');
+    }
+
+    // Fenêtre internationale : tirage de la CAN, ou un match d'éliminatoires.
+    ntOnWindow(isCup) {
+        const job = this.nationalJob; if (!job) return;
+        const md = this.matchday || 0;
+        if (!isCup) {
+            const others = Object.keys(NT_NATIONS).filter(n => n !== job.nat);
+            const opp = others[Math.floor(Math.random() * others.length)];
+            job.next = { kind: 'qual', opp, md };
+            this.pushNews && this.pushNews('press', 'Afrique Foot Mag', tf('Éliminatoires : {nation} affronte {opp}.', { nation: job.name, opp: NT_NATIONS[opp] }));
+            return;
+        }
+        // 16 nations : la vôtre + les 15 plus fortes, en 4 poules de 4.
+        const all = Object.keys(NT_NATIONS).map(n => ({ n, s: n === job.nat ? this.ntStrength(n, this.ntSquad()) : this.ntStrength(n) }));
+        const rest = all.filter(o => o.n !== job.nat).sort((a, b) => b.s - a.s).slice(0, 15);
+        const field = [all.find(o => o.n === job.nat)].concat(rest).sort(() => Math.random() - 0.5);
+        const str = {}; field.forEach(o => str[o.n] = o.s);
+        const groups = [0, 1, 2, 3].map(g => field.slice(g * 4, g * 4 + 4).map(o => o.n));
+        const table = {}; field.forEach(o => table[o.n] = { p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 });
+        this.ntCan = { season: this.currentSeason || 1, str, groups, table, round: 0, md0: md, ko: [], winner: null, out: false, results: [] };
+        job.next = { kind: 'can', md };
+        this.pushNews && this.pushNews('press', 'Yao Baba Sport', tf("Tirage de la CAN : {nation} dans la poule {g}.", { nation: job.name, g: 'ABCD'[groups.findIndex(g => g.includes(job.nat))] }));
+    }
+
+    ntPendingMatch() {
+        const job = this.nationalJob;
+        return !!(job && job.next && (this.matchday || 0) >= job.next.md && !(this.ntCan && this.ntCan.winner && job.next.kind === 'can'));
+    }
+
+    ntNextOpponent() {
+        const job = this.nationalJob, c = this.ntCan;
+        if (!job || !job.next) return null;
+        if (job.next.kind === 'qual') return job.next.opp;
+        if (!c) return null;
+        if (c.round < 3) {
+            const g = c.groups.find(g => g.includes(job.nat)); const pairs = [[0, 1, 2, 3], [0, 2, 1, 3], [0, 3, 1, 2]][c.round];
+            const i = g.indexOf(job.nat); const pos = pairs.indexOf(i); const mate = pos % 2 === 0 ? pairs[pos + 1] : pairs[pos - 1];
+            return g[mate];
+        }
+        const tie = (c.ko[c.ko.length - 1] || []).find(t => t.includes(job.nat));
+        return tie ? tie.find(n => n !== job.nat) : null;
+    }
+
+    ntRoundName() {
+        const job = this.nationalJob, c = this.ntCan;
+        if (job && job.next && job.next.kind === 'qual') return t('Éliminatoires');
+        if (!c) return '';
+        return c.round < 3 ? tf('Poule · journée {n}', { n: c.round + 1 }) : [t('Quart de finale'), t('Demi-finale'), t('Finale')][c.round - 3] || '';
+    }
+
+    // On joue le match de la sélection avec le plan choisi ; le reste du tour est simulé.
+    ntPlay(ment) {
+        const job = this.nationalJob; if (!job || !this.ntPendingMatch()) return;
+        const me = job.nat, opp = this.ntNextOpponent(); if (!opp) return;
+        const sMe = this.ntStrength(me, this.ntSquad());
+        const c = this.ntCan;
+        const sOpp = c && c.str[opp] ? c.str[opp] : this.ntStrength(opp);
+        const oppMent = sOpp > sMe + 3 ? 'offensive' : sOpp < sMe - 3 ? 'defensive' : 'balanced';
+        let [gf, ga] = this.ntSim(sMe, sOpp, ment, oppMent);
+        let pens = null;
+        const ko = c && c.round >= 3 && job.next.kind === 'can';
+        if (ko && gf === ga) { const pm = 3 + Math.floor(Math.random() * 3); pens = Math.random() < 0.5 + (sMe - sOpp) / 60 ? [pm, pm - 1 - Math.floor(Math.random() * 2)] : [pm - 1 - Math.floor(Math.random() * 2), pm]; }
+        // buteurs, pris dans le groupe convoqué
+        const sq = this.ntSquad().filter(o => o.p.position !== 'GB');
+        const pickScorer = () => { const pool = []; sq.forEach(o => { const w = o.p.position === 'ATT' ? 5 : o.p.position === 'MIL' ? 2 : 1; for (let i = 0; i < w; i++) pool.push(o); }); return pool[Math.floor(Math.random() * pool.length)]; };
+        const scorers = Array.from({ length: gf }, () => { const o = pickScorer(); return o ? o.p.name : ''; });
+        const win = gf > ga || (pens && pens[0] > pens[1]), draw = gf === ga && !pens;
+        job.rec[win ? 'w' : draw ? 'd' : 'l']++;
+        job.mood = Math.max(0, Math.min(100, job.mood + (win ? 6 : draw ? 1 : -6)));
+        const res = { opp, gf, ga, pens, scorers, round: this.ntRoundName(), ment, kind: job.next.kind };
+        job.last = [res].concat(job.last || []).slice(0, 6);
+        if (job.next.kind === 'qual') { job.next = null; }
+        else this.ntAdvanceCan(me, opp, gf, ga, pens, ment);
+        this.pushNews && this.pushNews(win ? 'fans' : 'press', win ? tf('Supporters de {nation}', { nation: job.name }) : 'Afrique Foot Mag',
+            tf(win ? '{nation} bat {opp} {gf}-{ga} ! Le sélectionneur a trouvé la formule.' : draw ? '{nation} et {opp} se quittent sur un {gf}-{ga}.' : '{nation} tombe face à {opp} ({gf}-{ga}). Le sélectionneur sous pression.',
+                { nation: job.name, opp: NT_NATIONS[opp] || opp, gf, ga }), { mood: win ? 'up' : draw ? 'mid' : 'down' });
+        if (job.mood < 15) {
+            this.showAlert(tf('La fédération de {nation} vous remercie : les résultats ne suivent pas.', { nation: job.name }));
+            this.logMilestone('Limogé de la sélection de {nation}.', { nation: job.name }, 'bad');
+            this.nationalJob = null; this.ntCan = null;
+        }
+        this._ntLast = res;
+        this.saveGame();
+        this.openNationalTeam('match');
+    }
+
+    ntAdvanceCan(me, opp, gf, ga, pens, ment) {
+        const c = this.ntCan, job = this.nationalJob;
+        const rec = (a, b, x, y) => { const A = c.table[a], B = c.table[b]; A.p++; B.p++; A.gf += x; A.ga += y; B.gf += y; B.ga += x;
+            if (x > y) { A.w++; B.l++; A.pts += 3; } else if (x < y) { B.w++; A.l++; B.pts += 3; } else { A.d++; B.d++; A.pts++; B.pts++; } };
+        const simKO = (a, b) => { let [x, y] = this.ntSim(c.str[a], c.str[b], 'balanced', 'balanced'); return x !== y ? (x > y ? a : b) : (Math.random() < 0.5 + (c.str[a] - c.str[b]) / 60 ? a : b); };
+        if (c.round < 3) {
+            const pairs = [[0, 1, 2, 3], [0, 2, 1, 3], [0, 3, 1, 2]][c.round];
+            c.groups.forEach(g => {
+                for (let k = 0; k < 4; k += 2) {
+                    const a = g[pairs[k]], b = g[pairs[k + 1]];
+                    if (a === me || b === me) { a === me ? rec(a, b, gf, ga) : rec(b, a, gf, ga); }
+                    else { const [x, y] = this.ntSim(c.str[a], c.str[b], 'balanced', 'balanced'); rec(a, b, x, y); }
+                }
+            });
+            c.round++;
+            if (c.round === 3) {
+                const rank = g => g.slice().sort((a, b) => (c.table[b].pts - c.table[a].pts) || ((c.table[b].gf - c.table[b].ga) - (c.table[a].gf - c.table[a].ga)) || (c.table[b].gf - c.table[a].gf));
+                const R = c.groups.map(rank);
+                c.ko.push([[R[0][0], R[1][1]], [R[1][0], R[0][1]], [R[2][0], R[3][1]], [R[3][0], R[2][1]]]);
+                if (!c.ko[0].some(t => t.includes(me))) { c.out = 'groupe'; }
+            }
+        } else {
+            const ties = c.ko[c.ko.length - 1];
+            const winners = ties.map(tie => {
+                if (tie.includes(me)) { const iWon = gf > ga || (pens && pens[0] > pens[1]); return iWon ? me : opp; }
+                return simKO(tie[0], tie[1]);
+            });
+            if (!winners.includes(me) && !c.out) c.out = [t('Quart de finale'), t('Demi-finale'), t('Finale')][c.round - 3];
+            c.round++;
+            if (winners.length === 1) c.winner = winners[0];
+            else c.ko.push(winners.reduce((acc, n, i) => { if (i % 2 === 0) acc.push([n, winners[i + 1]]); return acc; }, []));
+        }
+        // éliminé : le reste du tournoi se joue sans vous
+        while (c.out && !c.winner) {
+            if (c.round < 3) { this.ntAdvanceCanAuto(); continue; }
+            const ties = c.ko[c.ko.length - 1];
+            const winners = ties.map(tie => simKO(tie[0], tie[1]));
+            c.round++;
+            if (winners.length === 1) c.winner = winners[0];
+            else c.ko.push(winners.reduce((acc, n, i) => { if (i % 2 === 0) acc.push([n, winners[i + 1]]); return acc; }, []));
+        }
+        if (c.winner) {
+            job.next = null;
+            const won = c.winner === me;
+            const bonus = won ? 30 : c.out === t('Finale') ? 15 : c.out === t('Demi-finale') ? 8 : c.out === 'groupe' ? -20 : 0;
+            job.mood = Math.max(0, Math.min(100, job.mood + bonus));
+            this.afconWinner = { nation: NT_NATIONS[c.winner] || c.winner, lid: c.winner, season: this.currentSeason || 1 };
+            if (won) {
+                job.titles = (job.titles || 0) + 1;
+                this.logMilestone('{nation} championne d\'Afrique avec vous sur le banc !', { nation: job.name }, 'good');
+                this.addCareerPoints && this.addCareerPoints(8);
+                (this.ntSquad() || []).forEach(o => { o.p.afconTitles = (o.p.afconTitles || 0) + 1; });
+            }
+            this.pushNews && this.pushNews('press', 'Yao Baba Sport', won ? tf('{nation} CHAMPIONNE D\'AFRIQUE ! Le sélectionneur entre dans l\'histoire.', { nation: job.name })
+                : tf('{winner} remporte la CAN. {nation} s\'arrête en {stage}.', { winner: NT_NATIONS[c.winner] || c.winner, nation: job.name, stage: c.out === 'groupe' ? t('phase de poules') : String(c.out).toLowerCase() }));
+        } else if (!c.out) {
+            job.next = { kind: 'can', md: (c.md0 || 0) + c.round };
+        }
+    }
+
+    ntAdvanceCanAuto() {
+        const c = this.ntCan;
+        const pairs = [[0, 1, 2, 3], [0, 2, 1, 3], [0, 3, 1, 2]][c.round];
+        const rec = (a, b, x, y) => { const A = c.table[a], B = c.table[b]; A.p++; B.p++; A.gf += x; A.ga += y; B.gf += y; B.ga += x;
+            if (x > y) { A.w++; B.l++; A.pts += 3; } else if (x < y) { B.w++; A.l++; B.pts += 3; } else { A.d++; B.d++; A.pts++; B.pts++; } };
+        c.groups.forEach(g => { for (let k = 0; k < 4; k += 2) { const a = g[pairs[k]], b = g[pairs[k + 1]]; const [x, y] = this.ntSim(c.str[a], c.str[b], 'balanced', 'balanced'); rec(a, b, x, y); } });
+        c.round++;
+        if (c.round === 3) {
+            const rank = g => g.slice().sort((a, b) => (c.table[b].pts - c.table[a].pts) || ((c.table[b].gf - c.table[b].ga) - (c.table[a].gf - c.table[a].ga)));
+            const R = c.groups.map(rank);
+            c.ko.push([[R[0][0], R[1][1]], [R[1][0], R[0][1]], [R[2][0], R[3][1]], [R[3][0], R[2][1]]]);
+        }
+    }
+
+    ntEmblem(nat, size) {
+        const ab = String(nat || '').slice(0, 3);
+        return `<span class="ntx-emb" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.34)}px">${ab}</span>`;
+    }
+
+    ntCardHTML() {
+        const job = this.nationalJob;
+        if (!job) {
+            const name = NT_NATIONS[this.ntNat()];
+            if (!name) return '';
+            return `<div class="ntx-card" onclick="app.ntApply()">${this.ntEmblem(this.ntNat(), 40)}
+                <span class="ntx-ct"><small>${t('Sélection nationale')}</small><b>${name}</b><em>${t('Poste vacant · proposer votre candidature')}</em></span><i>›</i></div>`;
+        }
+        const pend = this.ntPendingMatch();
+        return `<div class="ntx-card is-job${pend ? ' is-due' : ''}" onclick="app.openNationalTeam()">${this.ntEmblem(job.nat, 40)}
+            <span class="ntx-ct"><small>${t('Sélectionneur')}</small><b>${job.name}</b><em>${job.rec.w}${t('V')} · ${job.rec.d}${t('N')} · ${job.rec.l}${t('D')}${job.titles ? ' · ' + job.titles + ' CAN' : ''}</em></span>
+            ${pend ? `<span class="ntx-due">${t('Match à jouer')}</span>` : ''}<i>›</i></div>`;
+    }
+
+    openNationalTeam(tab) {
+        const job = this.nationalJob;
+        document.getElementById('nt-modal')?.remove();
+        if (!job) return;
+        this._ntTab = tab || this._ntTab || (this.ntPendingMatch() ? 'match' : 'squad');
+        if (this.ntPendingMatch() && !tab) this._ntTab = 'match';
+        const sq = this.ntSquad();
+        const str = this.ntStrength(job.nat, sq);
+        const col = m => m >= 64 ? '#34d399' : m >= 40 ? '#fbbf24' : '#f87171';
+        const tabBtn = (id, lab) => `<button type="button" class="${this._ntTab === id ? 'is-on' : ''}" onclick="app.openNationalTeam('${id}')">${lab}</button>`;
+        let body = '';
+        if (this._ntTab === 'squad') {
+            const chosen = new Set(job.squad);
+            const pool = this.ntPool(job.nat);
+            const others = pool.filter(o => !chosen.has(o.p.id)).slice(0, 12);
+            const chip = (o, on) => `<button type="button" class="ntx-p${on ? ' is-on' : ''}" onclick="app.ntToggle('${o.p.id}')" title="${o.p.name} · ${o.club}">
+                <span class="ntx-f">${playerFaceSVG(o.p)}<em>${o.p.ovr}</em></span><b>${String(o.p.name).split(' ').slice(-1)[0]}</b>
+                <small>${o.p.position}${o.club === this.userClubName ? ' · ★' : ''}</small></button>`;
+            const order = { GB: 0, DEF: 1, MIL: 2, ATT: 3 };
+            body = `<div class="ntx-h">${t('Convoqués')} · ${sq.length}/23 <span>${t('Touchez pour retirer')}</span></div>
+                <div class="ntx-grid">${sq.slice().sort((a, b) => (order[a.p.position] - order[b.p.position]) || (b.p.ovr - a.p.ovr)).map(o => chip(o, true)).join('')}</div>
+                <div class="ntx-h">${t('Autres joueurs suivis')} <span>${t('Touchez pour convoquer')}</span></div>
+                <div class="ntx-grid">${others.map(o => chip(o, false)).join('') || `<p class="ntx-empty">${t('Aucun autre joueur de ce pays.')}</p>`}</div>`;
+        } else if (this._ntTab === 'can') {
+            const c = this.ntCan;
+            if (!c || c.season !== (this.currentSeason || 1)) body = `<p class="ntx-empty">${this.isAfconSeason() ? t('La CAN commence en janvier (journée 12).') : t("Pas de CAN cette saison : elle se joue tous les deux ans. Place aux éliminatoires.")}</p>`;
+            else {
+                const tbl = g => g.slice().sort((a, b) => (c.table[b].pts - c.table[a].pts) || ((c.table[b].gf - c.table[b].ga) - (c.table[a].gf - c.table[a].ga))).map((n, i) => `
+                    <div class="ntx-tr${n === job.nat ? ' is-me' : ''}${i < 2 && c.round >= 3 ? ' is-q' : ''}"><i>${i + 1}</i>${this.ntEmblem(n, 18)}<span>${NT_NATIONS[n] || n}</span><b>${c.table[n].pts}</b></div>`).join('');
+                body = `<div class="ntx-groups">${c.groups.map((g, gi) => `<div class="ntx-g"><div class="ntx-gh">${t('Poule')} ${'ABCD'[gi]}</div>${tbl(g)}</div>`).join('')}</div>
+                    ${c.ko.length ? `<div class="ntx-h">${t('Phase finale')}</div><div class="ntx-ko">${c.ko.map((r, ri) => `<div class="ntx-kc"><small>${[t('Quarts'), t('Demies'), t('Finale')][ri]}</small>${r.map(tie => `<div class="ntx-tie">${tie.map(n => `<span class="${n === job.nat ? 'is-me' : ''}${c.ko[ri + 1] && c.ko[ri + 1].some(t2 => t2.includes(n)) || c.winner === n && ri === c.ko.length - 1 ? ' is-win' : ''}">${this.ntEmblem(n, 16)}${NT_NATIONS[n] || n}</span>`).join('')}</div>`).join('')}</div>`).join('')}
+                    ${c.winner ? `<div class="ntx-kc ntx-champ"><small>${t('Champion')}</small>${trophySVG('caf', true)}<b>${NT_NATIONS[c.winner]}</b></div>` : ''}</div>` : ''}`;
+            }
+        } else {
+            const opp = this.ntNextOpponent();
+            const last = this._ntLast;
+            const resCard = last ? `<div class="ntx-res ${last.gf > last.ga || (last.pens && last.pens[0] > last.pens[1]) ? 'is-w' : last.gf === last.ga && !last.pens ? 'is-d' : 'is-l'}">
+                <small>${last.round}</small>
+                <div class="ntx-sc">${this.ntEmblem(job.nat, 34)}<b>${last.gf}<i>-</i>${last.ga}</b>${this.ntEmblem(last.opp, 34)}</div>
+                ${last.pens ? `<em>${t('t.a.b.')} ${last.pens[0]}-${last.pens[1]}</em>` : ''}
+                ${last.scorers.length ? `<p>${last.scorers.map(n => icon('ball', 'w-3 h-3') + ' ' + String(n).split(' ').slice(-1)[0]).join('  ')}</p>` : ''}</div>` : '';
+            this._ntLast = null;
+            body = (resCard || '') + (this.ntPendingMatch() && opp ? `
+                <div class="ntx-next">
+                    <small>${this.ntRoundName()}</small>
+                    <div class="ntx-vs">${this.ntEmblem(job.nat, 44)}<span><b>${job.name}</b><em>${Math.round(str)}</em></span><i>VS</i><span class="is-a"><b>${NT_NATIONS[opp] || opp}</b><em>${Math.round((this.ntCan && this.ntCan.str[opp]) || this.ntStrength(opp))}</em></span>${this.ntEmblem(opp, 44)}</div>
+                    <div class="ntx-h">${t('Votre plan de jeu')}</div>
+                    <div class="ntx-plans">
+                        <button type="button" onclick="app.ntPlay('defensive')"><b>${t('Prudent')}</b><small>${t('On ferme, on contre')}</small></button>
+                        <button type="button" onclick="app.ntPlay('balanced')"><b>${t('Équilibré')}</b><small>${t('Le bon compromis')}</small></button>
+                        <button type="button" onclick="app.ntPlay('offensive')"><b>${t('Offensif')}</b><small>${t('On attaque, on prend des risques')}</small></button>
+                    </div>
+                </div>` : (resCard ? '' : `<p class="ntx-empty">${t('Prochain rendez-vous : la prochaine fenêtre internationale.')}</p>`));
+        }
+        const wrap = document.createElement('div');
+        wrap.id = 'nt-modal';
+        wrap.className = 'fixed inset-0 z-[9997] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        wrap.innerHTML = `
+            <div class="ntx">
+                <div class="ntx-left">
+                    ${this.ntEmblem(job.nat, 64)}
+                    <small>${t('Sélectionneur')}</small>
+                    <b class="ntx-name">${job.name}</b>
+                    <span class="ntx-ring" style="--m:${job.mood};--mc:${col(job.mood)}"><b>${job.mood}</b></span>
+                    <em class="ntx-ml">${t('Confiance de la fédération')}</em>
+                    <div class="ntx-rec"><span><b>${job.rec.w}</b>${t('V')}</span><span><b>${job.rec.d}</b>${t('N')}</span><span><b>${job.rec.l}</b>${t('D')}</span><span><b>${Math.round(str)}</b>${t('Force')}</span></div>
+                    <button type="button" class="ntx-close" onclick="document.getElementById('nt-modal').remove()">${t('Fermer')}</button>
+                    <button type="button" class="ntx-quit" onclick="app.ntResign()">${t('Quitter le poste')}</button>
+                </div>
+                <div class="ntx-right">
+                    <div class="ntx-tabs">${tabBtn('match', t('Match'))}${tabBtn('squad', t('Le groupe'))}${tabBtn('can', 'CAN')}</div>
+                    ${body}
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+    }
+
+    // ═══ PERSONNALITÉS EN MATCH ════════════════════════════════════════
+    // Les traits (voir PLAYER_TRAITS) pèsent désormais aussi sur le terrain :
+    // le fort caractère prend plus de cartons, le pro et le leader gardent
+    // la tête froide sur penalty et dans les dernières minutes.
+    pickCardPlayer(team) {
+        const w = team.map(p => { const id = playerTraitId(p); return id === 'temper' ? 3 : id === 'pro' ? 0.6 : id === 'leader' ? 0.8 : 1; });
+        let r = Math.random() * w.reduce((a, b) => a + b, 0);
+        for (let i = 0; i < team.length; i++) { r -= w[i]; if (r <= 0) return team[i]; }
+        return team[team.length - 1];
+    }
+
+    traitClutch(p, isPenalty) {
+        const id = playerTraitId(p);
+        const late = this.liveMatch && this.liveMatch.minute >= 80;
+        if (isPenalty) return id === 'pro' ? 4 : id === 'leader' ? 3 : id === 'temper' ? -3 : id === 'raw' ? -2 : 0;
+        if (late) return id === 'leader' ? 2 : id === 'ambitious' ? 1.5 : 0;
+        return 0;
+    }
+
+    // ═══ VESTIAIRE : qui compte, et comment va le groupe ════════════════
+    influenceOf(p) {
+        const id = playerTraitId(p);
+        const cap = this.setPieces && this.setPieces.captain === p.id;
+        return (p.ovr || 60) * 0.5 + Math.min(p.age || 24, 34) * 1.0 + Math.min(p.gamesForClub || 0, 150) * 0.12
+            + (id === 'leader' ? 14 : id === 'pro' ? 4 : id === 'temper' ? 3 : 0) + (cap ? 10 : 0);
+    }
+
+    dressingRoom() {
+        const sq = (this.userSquad || []).slice();
+        const ranked = sq.map(p => ({ p, inf: this.influenceOf(p) })).sort((a, b) => b.inf - a.inf);
+        const cadres = ranked.slice(0, 3), influents = ranked.slice(3, 8), groupe = ranked.slice(8);
+        const totW = ranked.reduce((s, o) => s + o.inf, 0) || 1;
+        const mood = Math.round(ranked.reduce((s, o) => s + (o.p.morale ?? 70) * o.inf, 0) / totW);
+        const unhappy = ranked.slice(0, 8).filter(o => (o.p.morale ?? 70) < 45 || o.p.egoStatus === 'wants_transfer');
+        const leaders = ranked.filter(o => playerTraitId(o.p) === 'leader').length;
+        return { cadres, influents, groupe, mood, unhappy, leaders };
+    }
+
+    moodLabel(m) { return m >= 78 ? 'Excellente' : m >= 64 ? 'Bonne' : m >= 50 ? 'Correcte' : m >= 38 ? 'Tendue' : 'Explosive'; }
+
+    openDressingRoom() {
+        const old = document.getElementById('dressing-modal'); if (old) old.remove();
+        const d = this.dressingRoom();
+        const col = m => m >= 64 ? '#34d399' : m >= 50 ? '#fbbf24' : '#f87171';
+        const face = (o, size) => {
+            const p = o.p, tr = playerTrait(p), mo = Math.round(p.morale ?? 70);
+            return `<div class="drx-p is-${size}" onclick="document.getElementById('dressing-modal').remove();app.openPlayerCard('${p.id}')" title="${p.name} · ${t('Moral')} ${mo}%">
+                <span class="drx-f" style="--m:${mo};--mc:${col(mo)}"><i>${playerFaceSVG(p)}</i></span>
+                <b>${String(p.name).split(' ').slice(-1)[0]}</b>
+                ${tr ? `<small class="is-${tr.tone}">${t(tr.name)}</small>` : ''}
+            </div>`;
+        };
+        const wrap = document.createElement('div');
+        wrap.id = 'dressing-modal';
+        wrap.className = 'fixed inset-0 z-[9998] flex items-center justify-center bg-black/80 backdrop-blur-sm';
+        wrap.innerHTML = `
+            <div class="drx">
+                <div class="drx-left">
+                    <small>${t('Ambiance du vestiaire')}</small>
+                    <span class="drx-ring" style="--m:${d.mood};--mc:${col(d.mood)}"><b>${d.mood}</b></span>
+                    <b class="drx-lab" style="color:${col(d.mood)}">${t(this.moodLabel(d.mood))}</b>
+                    <div class="drx-facts">
+                        <span><b>${d.leaders}</b>${t('leader(s)')}</span>
+                        <span class="${d.unhappy.length ? 'is-bad' : ''}"><b>${d.unhappy.length}</b>${t('cadre(s) mécontent(s)')}</span>
+                    </div>
+                    ${d.unhappy.length ? `<p class="drx-warn">${tf("{name} n'est pas content : quand un cadre râle, tout le groupe le sent.", { name: d.unhappy[0].p.name })}</p>` : ''}
+                    <button type="button" class="drx-ok" onclick="document.getElementById('dressing-modal').remove()">${t('Fermer')}</button>
+                </div>
+                <div class="drx-right">
+                    <div class="drx-h">${t('Les cadres')}</div><div class="drx-row">${d.cadres.map(o => face(o, 'l')).join('')}</div>
+                    <div class="drx-h">${t('Les influents')}</div><div class="drx-row">${d.influents.map(o => face(o, 'm')).join('')}</div>
+                    <div class="drx-h">${t('Le groupe')}</div><div class="drx-row">${d.groupe.map(o => face(o, 's')).join('')}</div>
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+    }
+
+    // Après chaque match du joueur : l'ambiance agit sur le moral, et le monde réagit.
+    afterMatchSocial() {
+        const lm = this.liveMatch, sm = this.lastMatchSummary;
+        if (!lm || !sm) return;
+        const won = sm.isHome ? sm.homeScore > sm.awayScore : sm.awayScore > sm.homeScore;
+        const draw = sm.homeScore === sm.awayScore;
+        const d = this.dressingRoom();
+        // Un leader sur le terrain soude le groupe après une victoire ; un vestiaire tendu
+        // déteint sur tout le monde.
+        const xi = lm.home.isUser ? lm.homeStarters : lm.awayStarters;
+        const leaderOn = (xi || []).some(p => playerTraitId(p) === 'leader');
+        (this.userSquad || []).forEach(p => {
+            let dm = 0;
+            if (won && leaderOn) dm += 1;
+            if (d.mood < 45) dm -= 1;
+            if (d.unhappy.length >= 2) dm -= 1;
+            if (dm) p.morale = Math.max(0, Math.min(100, (p.morale ?? 70) + dm));
+        });
+        this.pushMatchNews(sm, won, draw);
+    }
+
+    // ═══ FIL D'ACTU : supporters, presse, rumeurs ═══════════════════════
+    pushNews(kind, who, text, extra) {
+        if (!Array.isArray(this.newsFeed)) this.newsFeed = [];
+        this.newsFeed.unshift(Object.assign({ id: Math.random().toString(36).slice(2, 9), kind, who, text, md: this.matchday || 0, likes: 20 + Math.floor(Math.random() * 400), seen: false }, extra || {}));
+        if (this.newsFeed.length > 40) this.newsFeed.length = 40;
+    }
+
+    pushMatchNews(sm, won, draw) {
+        const me = this.userClubName;
+        const opp = sm.isHome ? sm.awayName : sm.homeName;
+        const gf = sm.isHome ? sm.homeScore : sm.awayScore, ga = sm.isHome ? sm.awayScore : sm.homeScore;
+        const ultras = tf('Ultras de {club}', { club: me.split(' ')[0] });
+        const pick = a => a[Math.floor(Math.random() * a.length)];
+        // 1. les supporters
+        const fans = won && gf - ga >= 3 ? ["Quelle démonstration ! {gf}-{ga}, le stade tremble encore.", "Une leçon de football. On veut la même chose chaque semaine !"]
+            : won ? ["Trois points, c'est l'essentiel. Allez les gars !", "Victoire {gf}-{ga} contre {opp} : on y croit !"]
+            : draw ? ["Un nul {gf}-{ga}… On attendait mieux contre {opp}.", "Ni bien ni mal. Il faut plus de folie devant."]
+            : gf === 0 && ga >= 3 ? ["Humiliation contre {opp}. Le coach doit des explications.", "{ga}-0. On ne reconnaît plus notre équipe."]
+            : ["Défaite {gf}-{ga}. Réveillez-vous !", "Encore une défaite… Les supporters méritent mieux."];
+        this.pushNews('fans', ultras, tf(pick(fans), { gf, ga, opp }), { mood: won ? 'up' : draw ? 'mid' : 'down' });
+        // 2. la presse sur l'homme du match ou le joueur en difficulté
+        const R = (this.lastMatchRatings || []).slice().sort((a, b) => b.note - a.note);
+        if (R.length && R[0].note >= 7.4) this.pushNews('press', 'Yao Baba Sport', tf('{name} ({note}) a porté {club} face à {opp}.', { name: R[0].name, note: (+R[0].note).toFixed(1), club: me, opp }), { player: R[0].name });
+        const worst = R[R.length - 1];
+        if (worst && worst.note < 5.4 && Math.random() < 0.6) this.pushNews('press', 'Afrique Foot Mag', tf('Soirée difficile pour {name} ({note}). Sa place est-elle menacée ?', { name: worst.name, note: (+worst.note).toFixed(1) }), { player: worst.name });
+        // 3. une rumeur de temps en temps
+        if (Math.random() < 0.35) {
+            const stars = (this.userSquad || []).filter(p => (p.ovr || 0) >= 78).sort((a, b) => (b.ovr || 0) - (a.ovr || 0));
+            const big = ['Al Ahly', 'Espérance', 'Mamelodi Sundowns', 'Wydad', 'Zamalek', 'TP Mazembe', 'Raja'];
+            if (stars.length) {
+                const p = pick(stars.slice(0, 4));
+                const amb = playerTraitId(p) === 'ambitious';
+                this.pushNews('rumor', 'Mercato Afrique', tf(amb ? '{name} aurait dit oui à {big}. Le dossier est chaud.' : '{big} suit {name} de près. Une offre pourrait arriver.', { name: p.name, big: pick(big) }), { player: p.name });
+            }
+        }
+        // 4. le classement, quand il bouge en haut
+        try {
+            const st = (this.globalData[this.userLeagueId] || {}).standings || [];
+            const sorted = st.slice().sort((a, b) => (b.points - a.points) || ((b.gf - b.ga) - (a.gf - a.ga)));
+            const rank = sorted.findIndex(c => c.isUser) + 1;
+            if (rank === 1 && won) this.pushNews('club', me, t('Seuls en tête du championnat. Continuons comme ça !'));
+        } catch (e) {}
+    }
+
+    newsFeedHTML() {
+        const feed = this.newsFeed || [];
+        if (!feed.length) return `<p class="nfx-empty">${t("Le fil d'actu se remplit après vos matchs : supporters, presse et rumeurs.")}</p>`;
+        const IC = {
+            fans: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="7" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><path d="M1 20c0-3.3 2.7-6 6-6s6 2.7 6 6zM11 20c0-3.3 2.7-6 6-6s6 2.7 6 6z"/></svg>',
+            press: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>',
+            rumor: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 9a3 3 0 115 2c-1 .7-2 1.3-2 3M12 18h.01"/></svg>'
+        };
+        return `<div class="nfx">${feed.map(n => {
+            const av = n.kind === 'club' ? `<span class="nfx-av is-club">${clubCrestSVG(this.userClubName)}</span>`
+                : `<span class="nfx-av is-${n.kind}">${IC[n.kind] || IC.press}</span>`;
+            return `<div class="nfx-post is-${n.kind}${n.mood ? ' is-' + n.mood : ''}">
+                ${av}
+                <div class="nfx-body"><div class="nfx-top"><b>${n.who}</b><small>J${n.md}</small></div>
+                <p>${n.text}</p>
+                <div class="nfx-react"><span>♥ ${n.likes}</span>${n.kind === 'rumor' ? `<span class="nfx-tag">${t('Rumeur')}</span>` : ''}</div></div>
+            </div>`; }).join('')}</div>`;
+    }
+
+    // ═══ CRIS DU BANC ═══════════════════════════════════════════════════
+    // Un geste, un effet de quelques minutes, puis un temps de recharge :
+    // le coach parle à ses joueurs sans ouvrir les consignes.
+    activeShout() {
+        const lm = this.liveMatch;
+        return lm && lm.shout && lm.minute <= lm.shout.until ? lm.shout.id : null;
+    }
+
+    shout(id) {
+        const lm = this.liveMatch;
+        const S = SHOUTS[id];
+        if (!lm || !S || this._matchOver) return;
+        if (lm.shoutNext && lm.minute < lm.shoutNext) {
+            this.showNotification(tf('Le banc a déjà donné de la voix : encore {n} min.', { n: lm.shoutNext - lm.minute }), 'warning');
+            return;
+        }
+        lm.shout = { id, until: lm.minute + SHOUT_LEN };
+        lm.shoutNext = lm.minute + SHOUT_LEN + SHOUT_COOLDOWN;
+        // Le moral bouge tout de suite : c'est ce que le joueur entend.
+        const mine = lm.home.isUser ? lm.homeStarters : lm.away.isUser ? lm.awayStarters : [];
+        (mine || []).forEach(p => {
+            let d = S.morale || 0;
+            const per = playerTraitId(p);
+            if (per === 'temper' && id === 'demand') d -= 3;          // le caractériel n'aime pas qu'on le secoue
+            if (per === 'pro' && id === 'demand') d += 1;
+            p.morale = Math.max(0, Math.min(100, (p.morale ?? 70) + d));
+        });
+        try { SFX.whistle && SFX.drumHit && SFX.drumHit(); } catch (e) {}
+        this.logCommentary(`${t('Le banc')} : « ${t(S.say)} »`, 'text-brand-400 font-bold');
+        this.renderShoutMenu(false);
+        this.refreshShoutButton();
+    }
+
+    refreshShoutButton() {
+        const b = document.getElementById('pitch-shout-btn');
+        const lm = this.liveMatch;
+        if (!b || !lm) return;
+        const act = this.activeShout();
+        const wait = lm.shoutNext && lm.minute < lm.shoutNext ? lm.shoutNext - lm.minute : 0;
+        b.classList.toggle('is-on', !!act);
+        b.classList.toggle('is-wait', !act && wait > 0);
+        b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4h3l6 4V6L6 10z"/><path d="M16 9a4 4 0 010 6M18.5 6.5a8 8 0 010 11"/></svg><span>${act ? t(SHOUTS[act].label) : wait ? wait + "'" : t('Banc')}</span>`;
+    }
+
+    renderShoutMenu(open) {
+        let m = document.getElementById('shout-menu');
+        if (!open) { if (m) m.remove(); return; }
+        const box = document.getElementById('pitch-container') || document.getElementById('view-match');
+        if (!box) return;
+        if (!m) { m = document.createElement('div'); m.id = 'shout-menu'; box.appendChild(m); }
+        const lm = this.liveMatch || {};
+        const wait = lm.shoutNext && lm.minute < lm.shoutNext ? lm.shoutNext - lm.minute : 0;
+        m.innerHTML = Object.entries(SHOUTS).map(([id, S]) => `
+            <button type="button" class="shx${this.activeShout() === id ? ' is-on' : ''}" ${wait ? 'disabled' : ''} onclick="app.shout('${id}')">
+                <i>${S.ic}</i><b>${t(S.label)}</b><small>${t(S.hint)}</small></button>`).join('')
+            + (wait ? `<p class="shx-wait">${tf('Prochain cri dans {n} min', { n: wait })}</p>` : '');
+    }
+
+    toggleShoutMenu() {
+        const open = !document.getElementById('shout-menu');
+        this.renderShoutMenu(open);
+    }
+
+    injectShoutButton() {
+        const box = document.getElementById('pitch-container');
+        if (!box) return;
+        let b = document.getElementById('pitch-shout-btn');
+        if (!b) {
+            b = document.createElement('button');
+            b.id = 'pitch-shout-btn';
+            b.type = 'button';
+            b.onclick = (e) => { e.stopPropagation(); app.toggleShoutMenu(); };
+            box.appendChild(b);
+        }
+        this.refreshShoutButton();
+    }
+
+    // ═══ JOURNAL DES TIRS : alimente la carte des tirs et la courbe des xG ═══
+    logShot(isHome, striker, shot, xg, goal, pen, setPiece) {
+        const lm = this.liveMatch;
+        if (!lm) return;
+        if (!lm.shotLog) lm.shotLog = [];
+        // Coordonnées ramenées à « on attaque vers la droite » (0-100 x 0-100).
+        let x = 84, y = 35 + Math.random() * 30;
+        if (pen) { x = 89.5; y = 50; }
+        else if (shot && shot.x != null) {
+            const T = MATCHSIM.team(isHome ? 'H' : 'A');
+            x = T && T.atkX < 50 ? 100 - shot.x : shot.x; y = T && T.atkX < 50 ? 100 - shot.y : shot.y;
+        } else if (MATCHSIM.active) {
+            try {
+                const T = MATCHSIM.team(isHome ? 'H' : 'A'); const q = T.p[this.simIdx(isHome, striker)];
+                if (q) { x = T.atkX < 50 ? 100 - q.x : q.x; y = T.atkX < 50 ? 100 - q.y : q.y; }
+            } catch (e) {}
+        } else if (setPiece === 'freekick') { x = 72 + Math.random() * 8; }
+        lm.shotLog.push({ m: lm.minute, s: isHome ? 'H' : 'A', x: Math.max(50, Math.min(99, x)), y: Math.max(2, Math.min(98, y)),
+            xg: +xg.toFixed(3), g: !!goal, t: !!goal, n: striker && striker.name, k: pen ? 'pen' : setPiece || '' });
+    }
+
+    matchKitColors() {
+        const lm = this.liveMatch;
+        const lum = h => { const n = parseInt(String(h || '#888888').replace('#', ''), 16); return ((n >> 16) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) / 255; };
+        // Sur fond sombre, une couleur de maillot trop foncée disparaît : on l'éclaircit vers le blanc.
+        const lift = h => { let c = String(h || '#94a3b8'); let n = parseInt(c.replace('#', ''), 16); let k = 0;
+            while (lum('#' + n.toString(16).padStart(6, '0')) < 0.42 && k < 6) { const r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+                n = (Math.round(r + (255 - r) * 0.25) << 16) | (Math.round(g + (255 - g) * 0.25) << 8) | Math.round(b + (255 - b) * 0.25); k++; }
+            return '#' + n.toString(16).padStart(6, '0'); };
+        const kc = (team, away) => { let k = {}; try { k = clubKit(team.name, away) || {}; } catch (e) {}
+            const opts = [k.base, k.accent, k.trim].filter(Boolean);
+            const best = opts.sort((x, y) => lum(y) - lum(x))[0] || '#94a3b8';
+            return lift(lum(k.base || '#000') >= 0.42 ? k.base : best); };
+        let hc = kc(lm.home, false), ac = kc(lm.away, true);
+        if (Math.abs(lum(hc) - lum(ac)) < 0.06 && hc.toLowerCase() === ac.toLowerCase()) ac = '#e8edf5';
+        return [hc, ac];
+    }
+
+    // Carte des tirs : terrain entier, l'équipe à domicile attaque à droite,
+    // l'extérieur à gauche. Taille = xG, plein = but, pâle = à côté.
+    shotMapSVG() {
+        const lm = this.liveMatch;
+        const log = (lm && lm.shotLog) || [];
+        const [hc, ac] = this.matchKitColors();
+        const dots = log.map(sh => {
+            const X = sh.s === 'H' ? sh.x * 1.05 : (100 - sh.x) * 1.05;
+            const Y = (sh.s === 'H' ? sh.y : 100 - sh.y) * 0.68;
+            const r = 1.1 + Math.sqrt(sh.xg) * 3.4;
+            const op = sh.g ? 1 : sh.t ? 0.7 : 0.32;
+            const col = sh.s === 'H' ? hc : ac;
+            return `<g><circle cx="${X.toFixed(1)}" cy="${Y.toFixed(1)}" r="${r.toFixed(2)}" fill="${col}" opacity="${op}"><title>${sh.m}' ${sh.n || ''} · xG ${sh.xg.toFixed(2)}${sh.g ? ' · ' + t('But') : ''}</title></circle>${sh.g ? `<circle cx="${X.toFixed(1)}" cy="${Y.toFixed(1)}" r="0.9" fill="#0a0e17"/>` : ''}</g>`;
+        }).join('');
+        return `<svg viewBox="0 0 105 68" class="anx-map">
+            <rect width="105" height="68" rx="2" fill="#111827"/>
+            <g fill="rgba(255,255,255,.05)"><rect x="0" y="13.8" width="16.5" height="40.4"/><rect x="88.5" y="13.8" width="16.5" height="40.4"/><rect x="0" y="24.8" width="5.5" height="18.4"/><rect x="99.5" y="24.8" width="5.5" height="18.4"/></g>
+            <rect x="52" y="0" width="1" height="68" fill="rgba(255,255,255,.07)"/>
+            <circle cx="52.5" cy="34" r="9.15" fill="rgba(255,255,255,.035)"/>
+            ${dots}
+        </svg>`;
+    }
+
+    // Courbe des xG cumulés minute par minute ; les buts sont des points.
+    xgTimelineSVG() {
+        const lm = this.liveMatch;
+        const log = (lm && lm.shotLog) || [];
+        const [hc, ac] = this.matchKitColors();
+        const maxM = Math.max(90, (lm && lm.maxMinute) || 90, (lm && lm.minute) || 0);
+        const now = Math.min(maxM, (lm && lm.minute) || 0);
+        const tot = { H: 0, A: 0 };
+        log.forEach(sh => { tot[sh.s] += sh.xg; });
+        const top = Math.max(1, tot.H, tot.A) * 1.1;
+        const W = 300, H = 74, X = m => (m / maxM) * W, Y = v => H - 4 - (v / top) * (H - 10);
+        const path = side => {
+            let v = 0, d = `M0 ${Y(0).toFixed(1)}`; const pts = [];
+            log.filter(sh => sh.s === side).forEach(sh => {
+                d += ` H${X(sh.m).toFixed(1)}`; v += sh.xg; d += ` V${Y(v).toFixed(1)}`;
+                if (sh.g) pts.push([X(sh.m), Y(v)]);
+            });
+            d += ` H${X(now).toFixed(1)}`;
+            return { d, pts, v };
+        };
+        const h = path('H'), a = path('A');
+        const ht = X(45);
+        return `<svg viewBox="0 0 ${W} ${H}" class="anx-xg" preserveAspectRatio="none">
+            <rect width="${W}" height="${H}" rx="6" fill="#111827"/>
+            <rect x="${ht.toFixed(1)}" y="0" width="1" height="${H}" fill="rgba(255,255,255,.08)"/>
+            <path d="${a.d}" fill="none" stroke="${ac}" stroke-width="2.4" stroke-linejoin="round"/>
+            <path d="${h.d}" fill="none" stroke="${hc}" stroke-width="2.4" stroke-linejoin="round"/>
+            ${a.pts.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" fill="${ac}"/>`).join('')}
+            ${h.pts.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" fill="${hc}"/>`).join('')}
+        </svg>`;
+    }
+
+    matchAnalysisHTML() {
+        const lm = this.liveMatch;
+        if (!lm) return '';
+        const log = lm.shotLog || [];
+        const [hc, ac] = this.matchKitColors();
+        const sum = side => log.filter(s => s.s === side).reduce((v, s) => v + s.xg, 0);
+        const big = side => log.filter(s => s.s === side && s.xg >= 0.3).length;
+        return `
+            <div class="anx" style="--hc:${hc};--ac:${ac}">
+                <div class="anx-h"><span class="is-h">${lm.home.name}</span><b>${t('Carte des tirs')}</b><span class="is-a">${lm.away.name}</span></div>
+                ${this.shotMapSVG()}
+                <div class="anx-leg"><span><i class="is-g"></i>${t('But')}</span><span><i class="is-t"></i>${t('Cadré')}</span><span><i class="is-m"></i>${t('À côté')}</span><span>${t('Taille = xG')}</span></div>
+                <div class="anx-h"><span class="is-h">${sum('H').toFixed(2)}</span><b>${t('Courbe des xG')}</b><span class="is-a">${sum('A').toFixed(2)}</span></div>
+                ${this.xgTimelineSVG()}
+                <div class="anx-big"><span class="is-h">${big('H')}</span><small>${t('Occasions franches')}</small><span class="is-a">${big('A')}</span></div>
+            </div>`;
+    }
+
     // ══ CARTES DE CHALEUR ════════════════════════════════════════════════
     // Une grille par titulaire, dessinée en SVG : chaque case est d'autant
     // plus chaude que le joueur y a passé de temps. C'est la lecture qui
@@ -23969,13 +24750,13 @@ simulateAIBypassMatchday(otherMatches) {
         const side = this.userSideKey();
         const grids = lm && MATCHSIM.heat ? MATCHSIM.heat[side === 'away' ? 'A' : 'H'] : null;
         if (!lm || !grids || !grids.length) {
-            box.innerHTML = `<p class="ms-note">${t('Les zones se remplissent au fil du match.')}</p>`;
+            box.innerHTML = (lm ? this.matchAnalysisHTML() : '') + `<p class="ms-note">${t('Les zones se remplissent au fil du match.')}</p>`;
             return;
         }
         const starters = (side === 'away' ? lm.awayStarters : lm.homeStarters) || [];
         const form = FORMATIONS_MAP[this.userTactics.formation] || FORMATIONS_MAP['4-4-2'];
-        box.innerHTML = `
-            <p class="ms-note" style="margin-top:0">${t("Temps passé dans chaque zone du terrain. Vous attaquez vers la droite.")}</p>
+        box.innerHTML = this.matchAnalysisHTML() + `
+            <div class="anx-h" style="margin-top:10px"><b>${t('Zones occupées')}</b></div>
             <div class="heat-grid">
                 ${grids.map((g, i) => {
                     const p = starters[i];
@@ -24100,8 +24881,11 @@ simulateAIBypassMatchday(otherMatches) {
         this.dismissAssistantTip();
         this.togglePitchFull(false);   // le terrain quitte le plein écran avant l'écran des résultats
         // Coup de sifflet final : sifflet long, puis l'ambiance retombe.
-        SFX.whistle(true); SFX.stopCrowd();
+        SFX.whistle(true);
+        try { const L = this.liveMatch; if (L && L.homeScore >= L.awayScore) SFX.applause(L.homeScore > L.awayScore ? 1.4 : 0.7); } catch (e) {}
+        SFX.stopCrowd();
         this._matchOver = true; // LOT 15 : plus aucun ordre de scène accepté
+        try { this.renderShoutMenu(false); } catch (e) {}
         this.stopPitchLoop(); // LOT 15
         // FIX blessures : purge globale, tous clubs confondus, 1 jour par journée écoulée.
         // (Avant, seuls les joueurs déjà blessés AVANT ce match précis, dans les 2 équipes
@@ -24295,6 +25079,7 @@ simulateAIBypassMatchday(otherMatches) {
             this.checkEuropeanInterest();
             this.callUpSquad();
             this.returnFromDuty();
+            try { this.ntMaybeOffer(); } catch (e) {}
 
             // PROMESSE NON TENUE : un joueur à qui on a promis du temps de jeu et
             // qui n'a pas joué se sent trahi. C'est ce qui donne du poids au
@@ -24478,7 +25263,11 @@ simulateAIBypassMatchday(otherMatches) {
                 p.energy = Math.min(100, Math.round(p.energy + rec));
                 // Gain de moral si victoire, perte si défaite/nul
                 if (wonMatch) p.morale = Math.min(100, p.morale + 5);
-                else p.morale = Math.max(0, p.morale - 5);
+                else {
+                    const tid = playerTraitId(p);
+                    const hit = tid === 'temper' ? 7 : (tid === 'loyal' || tid === 'pro' || tid === 'leader') ? 3 : 5;
+                    p.morale = Math.max(0, p.morale - hit);
+                }
 
                 // ÉGO — temps de jeu : il a joué, son compteur de frustration "banc" retombe.
                 p.benchStreak = 0;
@@ -24897,6 +25686,7 @@ simulateAIBypassMatchday(otherMatches) {
                 poss: (() => { try { return this.possessionSplit(); } catch (e) { return [50, 50]; } })(),
                 st: _lm.stats ? JSON.parse(JSON.stringify(_lm.stats)) : null
             };
+            try { this.afterMatchSocial(); } catch (e) { console.warn('[social]', e); }
         }
 
         this.liveMatch = null; 
@@ -26485,6 +27275,7 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
             <div class="sm-filters">
                 <div class="sm-chips">${LINES.map(([k, l]) => `<button type="button" class="${line === k ? 'is-on' : ''}" onclick="app.setSquadOpt('Line','${k}')">${l}</button>`).join('')}</div>
                 <div class="sm-chips">${SORTS.map(([k, l]) => `<button type="button" class="${sort === k ? 'is-on' : ''}" onclick="app.setSquadOpt('Sort','${k}')">${l}</button>`).join('')}</div>
+                <button type="button" class="sm-vest" onclick="app.openDressingRoom()"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6zM10 20c0-3.3 2.7-6 6-6s6 2.7 6 6z"/></svg>${t('Vestiaire')} <b style="color:${(() => { const m = this.dressingRoom().mood; return m >= 64 ? '#34d399' : m >= 50 ? '#fbbf24' : '#f87171'; })()}">${this.dressingRoom().mood}</b></button>
                 <div class="sm-chips sm-seg">
                     <button type="button" class="${view === 'list' ? 'is-on' : ''}" onclick="app.setSquadOpt('View','list')">${t('Liste')}</button>
                     <button type="button" class="${view === 'cards' ? 'is-on' : ''}" onclick="app.setSquadOpt('View','cards')">${t('Cartes')}</button>
@@ -26515,6 +27306,7 @@ processCAFKnockoutStats(home, away, hG, aG, matchType, index) {
             if (p.egoStatus === 'wants_transfer') st.push(`<i class="st bad">${t('Veut partir')}</i>`);
             else if (p.egoStatus === 'wants_playtime') st.push(`<i class="st warn">${t('Veut jouer')}</i>`);
             if (p.loanedIn) st.push(`<i class="st info">${t('Prêt')}</i>`);
+            { const tr = playerTrait(p); if (tr) st.push(`<i class="st trait is-${tr.tone}" title="${t(tr.desc)}">${t(tr.name)}</i>`); }
             const ctr = this.contractEndingSoon(p);
             return `<div class="sm-prow${starters.has(p.id) ? ' is-xi' : ''}" onclick="app.openPlayerCard('${p.id}')">
                 <span class="c-face">${playerFaceSVG(p)}</span>
@@ -26916,10 +27708,15 @@ acceptContractOffer(playerId, offerId) {
 renderInbox() {
     const container = document.getElementById('inbox-content');
     if (!container) return;
+    // Deux onglets : messages du club, fil d'actualité (supporters, presse, rumeurs).
+    const tab = this._inboxTab || 'msg';
+    const tabs = `<div class="nfx-tabs"><button type="button" class="${tab === 'msg' ? 'is-on' : ''}" onclick="app._inboxTab='msg';app.renderInbox()">${t('Messages')}</button><button type="button" class="${tab === 'feed' ? 'is-on' : ''}" onclick="app._inboxTab='feed';app.renderInbox()">${t("Fil d'actu")}${(this.newsFeed || []).some(n => !n.seen) ? '<i></i>' : ''}</button></div>`;
+    if (tab === 'feed') { container.innerHTML = tabs + this.newsFeedHTML(); (this.newsFeed || []).forEach(n => n.seen = true); return; }
+    this._inboxTabs = tabs;
 
     const msgs = this.messages || [];
     if (msgs.length === 0) {
-        container.innerHTML = `
+        container.innerHTML = (this._inboxTabs || '') + `
             <div class="flex flex-col items-center justify-center py-12 text-slate-600">
                 <div class="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center mb-3">${icon('clipboard', 'w-7 h-7')}</div>
                 <p class="text-xs uppercase font-bold tracking-widest">${t('Aucun message')}</p>
@@ -26946,7 +27743,7 @@ renderInbox() {
         adOffer:        { ic: 'renew',    col: 'text-emerald-400', bg: 'bg-emerald-500/10', bd: 'border-emerald-500/25', lbl: t('Bonus') }
     };
 
-    container.innerHTML = msgs.map(m => {
+    container.innerHTML = (this._inboxTabs || '') + msgs.map(m => {
         const k = KIND[m.type] || KIND.news;
         const isOffer = m.type === 'offer';
         const isLoanReq = m.type === 'loanRequest';
@@ -30219,6 +31016,8 @@ generateFreeAgents() {
             afconWinner: this.afconWinner || null,
             offseason: this.offseason || null,
             cupData: this.cupData || null,
+            newsFeed: (this.newsFeed || []).slice(0, 40),
+            nationalJob: this.nationalJob || null, ntCan: this.ntCan || null, ntOfferedSeason: this.ntOfferedSeason || 0,
             confData: this.confData || null,
             acadRegion: this.acadRegion || null,
             supercup: this.supercup || null,
@@ -30351,6 +31150,8 @@ generateFreeAgents() {
         this.afconWinner = data.afconWinner || null;
         this.offseason = data.offseason || null;
         this.cupData = data.cupData || null;
+        this.newsFeed = Array.isArray(data.newsFeed) ? data.newsFeed : [];
+        this.nationalJob = data.nationalJob || null; this.ntCan = data.ntCan || null; this.ntOfferedSeason = data.ntOfferedSeason || 0;
         this.confData = data.confData || null;
         this.acadRegion = data.acadRegion || null;
         this.supercup = data.supercup || null;
@@ -31747,6 +32548,7 @@ generateFreeAgents() {
             </div>
 
             <div class="tac-pane" id="mgr-pane-profile">
+                ${this.ntCardHTML()}
             <div class="panel-glass rounded-2xl p-5 border border-white/10 mb-4 relative overflow-hidden">
                 <div class="absolute -end-6 -bottom-8 w-40 h-40 opacity-[0.06] pointer-events-none">${clubCrestSVG(this.userClubName || 'Club')}</div>
                 <div class="flex items-center gap-4 relative z-10">
