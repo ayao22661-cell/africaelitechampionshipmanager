@@ -1,3 +1,8 @@
+# Sélectionneur : candidature et démission corrigées (09/10/2026)
+
+- **Candidature** : elle n'embauche plus immédiatement. La fédération étudie le dossier pendant 2 journées puis répond selon la réputation, les étoiles du coach et le classement du club. Elle peut refuser. La carte de l'écran Manager affiche l'état réel (candidature en attente, refusée…).
+- **Démission** : elle est définitive pour la saison. Plus d'offre spontanée et plus de candidature possible avant la saison suivante, ce qui évite d'être réembauché d'un simple toucher. Message de confirmation et article de presse.
+
 # Les 76 animations utilisées, sans exception (09/10/2026)
 
 Les 25 dernières animations jamais jouées sont maintenant toutes en jeu :

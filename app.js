@@ -24064,7 +24064,8 @@ simulateAIBypassMatchday(otherMatches) {
 
     ntMaybeOffer() {
         const season = this.currentSeason || 1;
-        if (this.nationalJob || this.ntOfferedSeason === season || (this.matchday || 0) < 4) return;
+        if (this.nationalJob || this.ntOfferedSeason === season || (this.ntBlockedSeason || 0) >= season || (this.matchday || 0) < 4) return;
+        if (this.ntApplication && this.ntApplication.season === season) return;
         const nat = this.ntNat(); const name = NT_NATIONS[nat];
         if (!name || this.ntPool(nat).length < 16) return;
         this.ntOfferedSeason = season;
@@ -24074,10 +24075,39 @@ simulateAIBypassMatchday(otherMatches) {
 
     ntApply() {
         if (this.nationalJob) return this.openNationalTeam();
-        if ((this.managerStarRating ? this.managerStarRating() : 1) < 2 && (this.currentSeason || 1) > 1) {
-            this.showNotification(t('La fédération attend un palmarès plus solide. Revenez avec des résultats.'), 'warning'); return;
+        const season = this.currentSeason || 1;
+        if ((this.ntBlockedSeason || 0) >= season) {
+            this.showNotification(t("Vous avez quitté la sélection cette saison : la fédération ne reviendra pas vers vous avant la saison prochaine."), 'warning'); return;
         }
-        this.ntAccept();
+        if (this.ntApplication && this.ntApplication.season === season) {
+            this.showNotification(this.ntApplication.answered ? t('La fédération a déjà répondu à votre candidature cette saison.') : t('Candidature en cours d\'étude : réponse dans quelques journées.'), 'info'); return;
+        }
+        this.ntApplication = { season, md: this.matchday || 0, answered: false };
+        this.showNotification(tf('Candidature envoyée à la fédération de {nation}. Réponse dans 2 journées.', { nation: NT_NATIONS[this.ntNat()] || '' }), 'success');
+        this.saveGame();
+        this.renderManagerView && this.renderManagerView();
+    }
+
+    // Réponse de la fédération, deux journées après la candidature.
+    ntProcessApplication() {
+        const ap = this.ntApplication;
+        if (!ap || ap.answered || this.nationalJob || ap.season !== (this.currentSeason || 1)) return;
+        if ((this.matchday || 0) < ap.md + 2) return;
+        ap.answered = true;
+        const stars = this.managerStarRating ? this.managerStarRating() : 1;
+        let rank = 8;
+        try { const st = (this.globalData[this.userLeagueId] || {}).standings || []; rank = st.slice().sort((a, b) => (b.points - a.points) || ((b.gf - b.ga) - (a.gf - a.ga))).findIndex(c => c.isUser) + 1 || 8; } catch (e) {}
+        const chance = Math.min(0.9, 0.2 + stars * 0.12 + (rank <= 3 ? 0.25 : rank <= 6 ? 0.1 : 0) + ((this.reputation || 30) - 30) / 200);
+        const nation = NT_NATIONS[this.ntNat()] || '';
+        if (Math.random() < chance) {
+            this.ntOfferedSeason = this.currentSeason || 1;
+            this.showConfirm(tf('La fédération de {nation} retient votre candidature : le poste de sélectionneur est à vous. Acceptez-vous ?', { nation }),
+                () => this.ntAccept(), { okLabel: t('Accepter'), cancelLabel: t('Refuser') });
+        } else {
+            this.messages.unshift({ id: Math.random().toString(36).substr(2, 9), type: 'info', read: false,
+                ...newsText('La fédération de {nation} a choisi un autre sélectionneur. Votre palmarès doit encore grandir.', { nation: { k: nation } }) });
+            this.showNotification(tf('{nation} a choisi un autre sélectionneur.', { nation }), 'warning');
+        }
     }
 
     ntAccept() {
@@ -24090,9 +24120,19 @@ simulateAIBypassMatchday(otherMatches) {
     }
 
     ntResign() {
-        this.showConfirm(t('Quitter le poste de sélectionneur ?'), () => {
-            this.nationalJob = null; this.ntCan = null; this.saveGame();
-            document.getElementById('nt-modal')?.remove(); this.renderManagerView && this.renderManagerView();
+        const job = this.nationalJob; if (!job) return;
+        this.showConfirm(tf('Quitter le poste de sélectionneur de {nation} ? La fédération ne reviendra pas vers vous avant la saison prochaine.', { nation: job.name }), () => {
+            const name = job.name;
+            this.nationalJob = null; this.ntCan = null; this._ntLast = null;
+            this.ntBlockedSeason = this.currentSeason || 1;
+            this.ntOfferedSeason = this.currentSeason || 1;
+            if (this.ntApplication) this.ntApplication.answered = true;
+            this.logMilestone('A quitté la sélection de {nation}.', { nation: name }, 'info');
+            this.pushNews && this.pushNews('press', 'Yao Baba Sport', tf('{name} quitte la sélection de {nation} pour se consacrer à {club}.', { name: (this.manager && this.manager.name) || t('Le coach'), nation: name, club: this.userClubName }));
+            this.saveGame();
+            document.getElementById('nt-modal')?.remove();
+            this.renderManagerView && this.renderManagerView();
+            this.showNotification(tf('Vous n\'êtes plus sélectionneur de {nation}.', { nation: name }), 'info');
         }, { okLabel: t('Quitter'), danger: true });
     }
 
@@ -24273,8 +24313,14 @@ simulateAIBypassMatchday(otherMatches) {
         if (!job) {
             const name = NT_NATIONS[this.ntNat()];
             if (!name) return '';
-            return `<div class="ntx-card" onclick="app.ntApply()">${this.ntEmblem(this.ntNat(), 40)}
-                <span class="ntx-ct"><small>${t('Sélection nationale')}</small><b>${name}</b><em>${t('Poste vacant · proposer votre candidature')}</em></span><i>›</i></div>`;
+            const season = this.currentSeason || 1, ap = this.ntApplication;
+            const status = (this.ntBlockedSeason || 0) >= season ? t('Vous avez quitté le poste · retour possible la saison prochaine')
+                : ap && ap.season === season && !ap.answered ? t('Candidature envoyée · réponse en attente')
+                : ap && ap.season === season ? t('Candidature non retenue cette saison')
+                : t('Poste vacant · envoyer votre candidature');
+            const can = !((this.ntBlockedSeason || 0) >= season) && !(ap && ap.season === season);
+            return `<div class="ntx-card${can ? '' : ' is-off'}" ${can ? 'onclick="app.ntApply()"' : ''}>${this.ntEmblem(this.ntNat(), 40)}
+                <span class="ntx-ct"><small>${t('Sélection nationale')}</small><b>${name}</b><em>${status}</em></span>${can ? '<i>›</i>' : ''}</div>`;
         }
         const pend = this.ntPendingMatch();
         return `<div class="ntx-card is-job${pend ? ' is-due' : ''}" onclick="app.openNationalTeam()">${this.ntEmblem(job.nat, 40)}
@@ -25079,7 +25125,7 @@ simulateAIBypassMatchday(otherMatches) {
             this.checkEuropeanInterest();
             this.callUpSquad();
             this.returnFromDuty();
-            try { this.ntMaybeOffer(); } catch (e) {}
+            try { this.ntProcessApplication(); this.ntMaybeOffer(); } catch (e) {}
 
             // PROMESSE NON TENUE : un joueur à qui on a promis du temps de jeu et
             // qui n'a pas joué se sent trahi. C'est ce qui donne du poids au
@@ -31018,6 +31064,7 @@ generateFreeAgents() {
             cupData: this.cupData || null,
             newsFeed: (this.newsFeed || []).slice(0, 40),
             nationalJob: this.nationalJob || null, ntCan: this.ntCan || null, ntOfferedSeason: this.ntOfferedSeason || 0,
+            ntApplication: this.ntApplication || null, ntBlockedSeason: this.ntBlockedSeason || 0,
             confData: this.confData || null,
             acadRegion: this.acadRegion || null,
             supercup: this.supercup || null,
@@ -31152,6 +31199,7 @@ generateFreeAgents() {
         this.cupData = data.cupData || null;
         this.newsFeed = Array.isArray(data.newsFeed) ? data.newsFeed : [];
         this.nationalJob = data.nationalJob || null; this.ntCan = data.ntCan || null; this.ntOfferedSeason = data.ntOfferedSeason || 0;
+        this.ntApplication = data.ntApplication || null; this.ntBlockedSeason = data.ntBlockedSeason || 0;
         this.confData = data.confData || null;
         this.acadRegion = data.acadRegion || null;
         this.supercup = data.supercup || null;

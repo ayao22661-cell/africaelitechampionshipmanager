@@ -2341,3 +2341,4 @@ html.sm-over #pitch-shout-btn, html:not(.in-match) #pitch-shout-btn { display: n
 .ntx-champ svg.tr-svg { width: 40px; height: 48px; }
 .ntx-champ b { font-family: 'Teko', sans-serif; font-size: 15px; color: #facc15; text-align: center; }
 @media (max-width: 560px) { .ntx { grid-template-columns: 1fr; height: auto; } .ntx-groups { grid-template-columns: repeat(2, 1fr); } }
+.ntx-card.is-off { cursor: default; opacity: .75; }
