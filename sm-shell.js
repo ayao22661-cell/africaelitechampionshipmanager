@@ -212,6 +212,21 @@
         vm.appendChild(tk);
         const lc = document.getElementById('live-commentary');
         if (lc && window.MutationObserver) new MutationObserver(updTicker).observe(lc, { childList: true });
+        // bouton de fin de match : classe dédiée (le :last-of-type ne tient plus depuis l'ajout
+        // du bandeau, du rail et de la barre des joueurs) ; visible => le bandeau s'efface pour lui
+        const eb = document.getElementById('btn-end-match');
+        if (eb) {
+            eb.parentElement.classList.add('sm-endbar');
+            const syncEnd = () => document.documentElement.classList.toggle('sm-over', !eb.classList.contains('hidden'));
+            if (window.MutationObserver) new MutationObserver(syncEnd).observe(eb, { attributes: true, attributeFilter: ['class'] });
+            syncEnd();
+        }
+        // les onglets du panneau (Direct / Stats / Notes / Zones) rallument le bon bouton à droite
+        if (window.app && app.switchMatchTab && !app.switchMatchTab._rail) {
+            const orig = app.switchMatchTab.bind(app);
+            app.switchMatchTab = function (pane) { const r = orig(pane); syncRail(); return r; };
+            app.switchMatchTab._rail = true;
+        }
     }
     function syncRail() {
         const open = document.documentElement.classList.contains('sm-panel-open');
@@ -224,8 +239,10 @@
         const row = lc.firstElementChild;
         if (!row) { tk.textContent = ''; return; }
         const min = row.querySelector('span'), m = min ? min.textContent.trim() : '';
-        const txt = row.textContent.trim().slice(m.length).trim();
-        tk.innerHTML = (m ? `<span class="op">${esc(m)}</span>` : '') + esc(txt);
+        // le texte seul (sans la minute ni le score collé à la fin) ; le score est repris à part
+        const tx = row.querySelector('.lc-txt'), sc = row.querySelector('.lc-score');
+        const txt = tx ? tx.textContent.trim() : row.textContent.trim().slice(m.length).trim();
+        tk.innerHTML = (m ? `<span class="op">${esc(m)}</span>` : '') + esc(txt) + (sc ? ` <b class="op">${esc(sc.textContent.trim())}</b>` : '');
     }
     // Barre des joueurs en bas du match : poste, nom, énergie, note en direct (même calcul que l'onglet Notes).
     function renderStrip() {

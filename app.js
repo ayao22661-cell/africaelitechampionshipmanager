@@ -7860,6 +7860,23 @@ function playerCardHTML(p, opts = {}) {
     </div>`;
 }
 
+// Trophées dessinés (vitrine du palmarès). won = doré, sinon silhouette.
+let _trophyUid = 0;
+function trophySVG(kind, won) {
+    const gid = 'tg_' + kind + '_' + (++_trophyUid);            // identifiant unique : un même trophée peut être dessiné sur deux écrans
+    const g = won ? 'url(#' + gid + ')' : '#1f2937', s = won ? '#ca8a04' : '#111827';
+    const grad = won ? `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fde68a"/><stop offset=".55" stop-color="#facc15"/><stop offset="1" stop-color="#ca8a04"/></linearGradient></defs>` : '';
+    const base = `<rect x="20" y="86" width="40" height="8" rx="2" fill="${won ? '#111827' : '#0a0e17'}"/><rect x="26" y="80" width="28" height="7" rx="2" fill="${s}"/>`;
+    let body = '';
+    if (kind === 'league') body = `<path d="M24 14h32v18c0 13-7 22-16 24-9-2-16-11-16-24z" fill="${g}"/><path d="M24 20h-9c0 11 5 17 12 18M56 20h9c0 11-5 17-12 18" fill="none" stroke="${g}" stroke-width="5"/><rect x="36" y="56" width="8" height="18" fill="${g}"/><rect x="29" y="72" width="22" height="8" rx="2" fill="${g}"/>`;
+    else if (kind === 'caf') body = `<path d="M28 10h24l-3 30c-1 9-4 14-9 16-5-2-8-7-9-16z" fill="${g}"/><path d="M28 16c-9 0-12 6-10 12 2 5 7 8 12 9M52 16c9 0 12 6 10 12-2 5-7 8-12 9" fill="none" stroke="${g}" stroke-width="4"/><circle cx="40" cy="27" r="6" fill="${won ? '#0a0e17' : '#111827'}" opacity=".35"/><rect x="37" y="56" width="6" height="16" fill="${g}"/><path d="M30 80l4-9h12l4 9z" fill="${g}"/>`;
+    else if (kind === 'ballon') body = `<circle cx="40" cy="38" r="24" fill="${g}"/><path d="M40 22l9 7-3 11h-12l-3-11zM40 22v-8M49 29l11-3M46 40l8 9M34 40l-8 9M31 29l-11-3" fill="none" stroke="${won ? '#a16207' : '#0a0e17'}" stroke-width="2.4"/><rect x="34" y="62" width="12" height="12" fill="${g}"/>`;
+    else if (kind === 'boot') body = `<path d="M22 20h18v24l18 8c6 3 6 10 0 12H22z" fill="${g}"/><path d="M26 64v6M34 64v6M42 64v6M50 64v6" stroke="${s}" stroke-width="3"/><rect x="30" y="72" width="20" height="8" fill="${g}"/>`;
+    else if (kind === 'glove') body = `<path d="M26 28c0-4 6-4 6 0v-8c0-4 6-4 6 0v-3c0-4 6-4 6 0v3c0-4 6-4 6 0v22l4-6c3-4 8-1 6 3l-8 16c-3 6-8 9-14 9h-4c-6 0-10-5-10-11z" fill="${g}"/><rect x="28" y="66" width="22" height="7" rx="2" fill="${s}"/><rect x="33" y="73" width="12" height="7" fill="${g}"/>`;
+    else body = `<path d="M40 12l7 15 16 2-12 11 3 16-14-8-14 8 3-16-12-11 16-2z" fill="${g}"/><rect x="37" y="56" width="6" height="16" fill="${g}"/><rect x="30" y="72" width="20" height="8" rx="2" fill="${g}"/>`;
+    return `<svg viewBox="0 0 80 96" class="tr-svg">${grad}${body}${base}</svg>`;
+}
+
 function statRings(p, known = true) {
     if (isKeeper(p)) ensureKeeperStats(p);
     return statKeysFor(p).map(([lbl, key, full]) => {
@@ -10414,6 +10431,25 @@ if (badge) {
 
     // FIX #97 : remplace les alert() purement informatifs (fin du mois, titre CAF...) par une
     // modale maison à un seul bouton, dans la charte du jeu.
+    // Bilan du mois : résultat en grand, recettes (vert) et dépenses (rouge) en barres.
+    showMonthReport(d) {
+        const old = document.getElementById('month-modal'); if (old) old.remove();
+        const rows = [[t('Recettes des matchs'), d.gate, 1], [t('Sponsors'), d.sponsor, 1], [t('Salaires joueurs'), d.wages, -1], [t('Salaires staff'), d.staff, -1]];
+        const mx = Math.max(1, ...rows.map(r => Math.abs(r[1] || 0)));
+        const wrap = document.createElement('div');
+        wrap.id = 'month-modal';
+        wrap.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 backdrop-blur-sm';
+        wrap.innerHTML = `
+            <div class="mrx ${d.net >= 0 ? 'is-up' : 'is-down'}">
+                <div class="mrx-top"><small>${t('Bilan du mois')}</small>
+                    <b>${d.net >= 0 ? '+' : ''}${formatMoney(d.net)}</b></div>
+                <div class="mrx-rows">${rows.map(([l, v, sg]) => `
+                    <div class="mrx-r ${sg > 0 ? 'is-in' : 'is-out'}"><span>${l}</span><i><em style="width:${Math.round(Math.abs(v || 0) / mx * 100)}%"></em></i><b>${sg > 0 ? '+' : '−'}${formatMoney(Math.abs(v || 0))}</b></div>`).join('')}</div>
+                <button type="button" class="mrx-ok" onclick="document.getElementById('month-modal').remove()">${t('Continuer')}</button>
+            </div>`;
+        document.body.appendChild(wrap);
+    }
+
     showAlert(message, options = {}) {
         this.showConfirm(message, null, { okLabel: options.okLabel || 'OK', cancelLabel: 'Fermer' });
     }
@@ -10620,12 +10656,73 @@ if (badge) {
             return `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.6" fill="${active ? '#f97316' : '#94a3b8'}"/>`;
         }).join('');
         return `<svg viewBox="0 0 60 40" class="w-full h-auto">
-            <rect x="0.5" y="0.5" width="59" height="39" rx="3" fill="${active ? 'rgba(249,115,22,0.10)' : 'rgba(255,255,255,0.03)'}"
-                  stroke="${active ? 'rgba(249,115,22,0.5)' : 'rgba(255,255,255,0.08)'}"/>
+            <rect x="0" y="0" width="60" height="40" rx="3" fill="${active ? 'rgba(249,115,22,0.16)' : 'rgba(255,255,255,0.04)'}"/>
             <line x1="30" y1="1" x2="30" y2="39" stroke="rgba(255,255,255,0.10)" stroke-width="0.7"/>
             <circle cx="30" cy="20" r="5" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="0.7"/>
             ${dots}
         </svg>`;
+    }
+
+    // ═══ CONSIGNES COMPACTES : mini-terrain qui dessine les réglages + lignes de choix ═══
+    // Partagé par l'onglet Tactique › Consignes et les consignes en direct.
+    tacBoardSVG(tac) {
+        tac = tac || this.userTactics || {};
+        const lineX = { low: 52, normal: 72, high: 94 }[tac.line] || 72;
+        const pressW = { area: 60, half: 100, all: 196 }[tac.pressing] || 100;
+        const ment = tac.mentality || 'balanced';
+        const shift = ment === 'offensive' ? 14 : ment === 'defensive' ? -12 : 0;
+        const lanes = { mixed: [30, 65, 100], middle: [65], flanks: [22, 108], right: [108], left: [22] }[tac.attackSide] || [30, 65, 100];
+        const style = tac.style || 'possession';
+        const arrow = y => {
+            const x0 = 112 + shift, x1 = 182;
+            if (style === 'possession') return `<path d="M${x0} ${y} l14 -6 l14 6 l14 -6 l14 6" fill="none" stroke="#f97316" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+            if (style === 'counter') return `<path d="M${x0 - 20} ${y + 8} Q${x0 + 20} ${y - 14} ${x1} ${y}" fill="none" stroke="#f97316" stroke-width="3" stroke-linecap="round"/><path d="M${x1} ${y} l-8 -5 M${x1} ${y} l-8 5" stroke="#f97316" stroke-width="3" stroke-linecap="round"/>`;
+            return `<path d="M${x0} ${y} H${x1}" stroke="#f97316" stroke-width="3" stroke-linecap="round"/><path d="M${x1} ${y} l-8 -5 M${x1} ${y} l-8 5" stroke="#f97316" stroke-width="3" stroke-linecap="round"/>`;
+        };
+        const form = FORMATIONS_MAP[tac.formation] || FORMATIONS_MAP['4-4-2'];
+        const dots = form.map(([x, y]) => {
+            const px = x <= 6 ? 10 : 10 + (x / 50) * (lineX + 60) + shift * 0.6;
+            return `<circle cx="${Math.min(194, px).toFixed(1)}" cy="${(8 + y / 100 * 114).toFixed(1)}" r="4" fill="#fff"/>`;
+        }).join('');
+        return `<svg viewBox="0 0 200 130" class="tb-svg" preserveAspectRatio="xMidYMid meet">
+            <rect x="0" y="0" width="200" height="130" rx="8" fill="#111827"/>
+            <rect x="${200 - pressW}" y="0" width="${pressW}" height="130" fill="rgba(249,115,22,.10)"/>
+            <g fill="rgba(255,255,255,.06)"><rect x="0" y="36" width="26" height="58"/><rect x="174" y="36" width="26" height="58"/></g>
+            <rect x="99" y="0" width="2" height="130" fill="rgba(255,255,255,.08)"/>
+            <rect x="${lineX - 1.5}" y="6" width="3" height="118" rx="1.5" fill="#38bdf8" opacity=".85"/>
+            ${lanes.map(arrow).join('')}
+            ${dots}
+        </svg>`;
+    }
+
+    tacRowsHTML(tac, live) {
+        tac = tac || this.userTactics || {};
+        const S = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+        const rows = [
+            ['mentality', t('Mentalité'), [['defensive', S('<path d="M12 3.5l7 2.6v5.4c0 4.2-2.9 7-7 8.5-4.1-1.5-7-4.3-7-8.5V6.1z"/>'), t('Défensive')], ['balanced', S('<path d="M5 9h14M5 15h14"/>'), t('Équilibrée')], ['offensive', S('<path d="M12 20V5M6 11l6-6 6 6"/>'), t('Offensive')]]],
+            ['style', t('Style'), [['possession', S('<path d="M3 14l4-4 4 4 4-4 4 4"/>'), t('Possession')], ['counter', S('<path d="M4 18Q10 6 20 8M20 8l-5-3M20 8l-4 4"/>'), t('Contre')], ['direct', S('<path d="M4 12h15M14 7l5 5-5 5"/>'), t('Direct')]]],
+            ['attackSide', t('Couloir'), [['mixed', S('<path d="M4 6h14M4 12h14M4 18h14"/>'), t('Mixte')], ['middle', S('<path d="M4 12h15"/>'), t('Axe')], ['flanks', S('<path d="M4 6h15M4 18h15"/>'), t('Ailes')], ['left', S('<path d="M4 6h15"/>'), t('Gauche')], ['right', S('<path d="M4 18h15"/>'), t('Droite')]]],
+            ['pressing', t('Pressing'), [['area', S('<rect x="3" y="8" width="5" height="8"/>'), t('Bas')], ['half', S('<rect x="3" y="6" width="9" height="12"/>'), t('Moyen')], ['all', S('<rect x="3" y="4" width="18" height="16"/>'), t('Partout')]]],
+            ['line', t('Ligne'), [['low', S('<path d="M7 4v16"/>'), t('Basse')], ['normal', S('<path d="M12 4v16"/>'), t('Normale')], ['high', S('<path d="M17 4v16"/>'), t('Haute')]]]
+        ];
+        const call = (k, v) => live ? `app.setLiveInstruction('${k}','${v}')`
+            : (k === 'mentality' || k === 'style') ? `app.setTactic('${k}','${v}')` : `app.setInstruction('${k}','${v}')`;
+        return rows.map(([k, lab, opts]) => `
+            <div class="tb-row"><span class="tb-lab">${lab}</span><div class="tb-opts">${opts.map(([v, ic, l]) => `
+                <button type="button" class="tb-o${tac[k] === v ? ' is-on' : ''}" onclick="${call(k, v)}" title="${l}">${ic}<span>${l}</span></button>`).join('')}</div></div>`).join('');
+    }
+
+    formationStripHTML(cur, live) {
+        return `<div class="tb-forms">${Object.keys(FORMATIONS_MAP).map(f => `
+            <button type="button" class="tb-f${f === cur ? ' is-on' : ''}" onclick="${live ? `app.setLiveInstruction('formation','${f}')` : `app.setTactic('formation','${f}')`}">${this.formationThumb(f, f === cur)}<span>${f}</span></button>`).join('')}</div>`;
+    }
+
+    renderTacBoard() {
+        const body = document.querySelector('#acc-o-play .acc-body');
+        if (!body) return;
+        let el = document.getElementById('tac-board');
+        if (!el) { el = document.createElement('div'); el.id = 'tac-board'; el.className = 'tb'; body.insertBefore(el, body.firstChild); }
+        el.innerHTML = `<div class="tb-pitch">${this.tacBoardSVG()}</div><div class="tb-rows">${this.tacRowsHTML(this.userTactics, false)}</div>`;
     }
 
     renderTacticPickers() {
@@ -10685,6 +10782,7 @@ if (badge) {
                 opt('style', 'direct',     'Jeu direct', S('<path d="M4 12h14M18 12l-5-5M18 12l-5 5" stroke-linecap="round" stroke-linejoin="round"/>'), t.style)
             ].join('');
         }
+        try { this.renderTacBoard(); } catch (e) {}
     }
 
     // =====================================================================
@@ -11792,6 +11890,7 @@ if (badge) {
     }
 
     renderTeamInstructions() {
+        try { this.renderTacBoard(); } catch (e) {}
         const panel = this.ensureInstructionsPanel();
         if (!panel) return;
         // FIX (même bug que renderLiveTactics) : `t` renommée en `tac` pour ne
@@ -14330,48 +14429,34 @@ if (badge) {
         const nextLabel = this._lastCupNextRoundLabel || '';
         this._showCupDrawPopup = false;
 
-        const userIn = qualified.includes(this.userClubName);
-        const headerColor = userIn ? 'from-emerald-600 to-emerald-400' : 'from-slate-600 to-slate-400';
-        const userStatus = userIn
-            ? `<div style="font-size:11px;color:#d1fae5;margin-top:2px">✅ ${this.userClubName} est qualifié !</div>`
-            : `<div style="font-size:11px;color:#fca5a5;margin-top:2px">❌ ${this.userClubName} est éliminé</div>`;
-
-        const fixtureRows = nextFixtures.map(f =>
-            `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.05)">
-                <span style="font-size:12px;font-weight:700;color:${f.home.name===this.userClubName?'#fde047':'#e2e8f0'}">${f.home.name}</span>
-                <span style="font-size:10px;color:#64748b;font-weight:800">VS</span>
-                <span style="font-size:12px;font-weight:700;color:${f.away.name===this.userClubName?'#fde047':'#e2e8f0'}">${f.away.name}</span>
-            </div>`
-        ).join('');
-
-        const qualifiedList = qualified.map(n =>
-            `<span style="display:inline-block;padding:2px 8px;margin:2px;border-radius:99px;font-size:10px;font-weight:700;background:${n===this.userClubName?'rgba(253,224,71,0.2)':'rgba(255,255,255,0.07)'};color:${n===this.userClubName?'#fde047':'#94a3b8'}">${n}</span>`
-        ).join('');
-
+        // Fenêtre visuelle : coupe dessinée, statut du club, affiches en écussons face à face,
+        // clubs qualifiés en écussons. Plus de liste texte ni d'émojis.
+        const me = this.userClubName;
+        const userIn = qualified.includes(me);
+        const crest = n => { try { return clubCrestSVG(n); } catch (e) { return ''; } };
+        const ab = n => String(n || '').split(' ').filter(w => w.length > 2)[0] || n;
+        const ties = nextFixtures.map(f => `
+            <div class="cdx-tie${(f.home.name === me || f.away.name === me) ? ' is-me' : ''}">
+                <span class="cdx-c">${crest(f.home.name)}</span><b>${ab(f.home.name)}</b>
+                <i>VS</i>
+                <b class="is-a">${ab(f.away.name)}</b><span class="cdx-c">${crest(f.away.name)}</span>
+            </div>`).join('');
+        const qual = qualified.map(n => `<span class="cdx-q${n === me ? ' is-me' : ''}" title="${n}">${crest(n)}</span>`).join('');
         const modal = document.createElement('div');
         modal.id = 'cup-draw-modal';
         modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
         modal.innerHTML = `
-            <div style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:16px;width:100%;max-width:360px;margin:16px;box-shadow:0 25px 50px rgba(0,0,0,0.5);overflow:hidden">
-                <div style="background:linear-gradient(to right, #b45309, #d97706);padding:12px 16px">
-                    <div style="font-family:'Teko',sans-serif;font-size:20px;color:#fff;text-transform:uppercase;letter-spacing:0.05em">🏆 Coupe nationale — Tirage</div>
-                    <div style="font-size:10px;color:rgba(255,255,255,0.75);margin-top:1px">${roundLabel} terminé · Qualification pour ${nextLabel}</div>
-                    ${userStatus}
+            <div class="cdx">
+                <div class="cdx-left ${userIn ? 'is-in' : 'is-out'}">
+                    <span class="cdx-cup">${trophySVG('league', true)}</span>
+                    <small>${t('Coupe nationale')}</small>
+                    <b class="cdx-round">${t(nextLabel || roundLabel)}</b>
+                    <span class="cdx-st">${userIn ? t('Qualifié') : t('Éliminé')}</span>
+                    <button type="button" class="cdx-ok" onclick="document.getElementById('cup-draw-modal').remove()">${t('Continuer')}</button>
                 </div>
-                <div style="padding:10px 12px 6px">
-                    <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px">Équipes qualifiées</div>
-                    <div style="line-height:1.6">${qualifiedList}</div>
-                </div>
-                ${nextFixtures.length ? `
-                <div style="border-top:1px solid rgba(255,255,255,0.07);padding:6px 0">
-                    <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;padding:4px 12px 6px">Affiches du prochain tour · ${nextLabel}</div>
-                    ${fixtureRows}
-                </div>` : ''}
-                <div style="padding:12px 16px">
-                    <button onclick="document.getElementById('cup-draw-modal').remove()"
-                        style="width:100%;background:rgba(255,255,255,0.1);border:none;color:#fff;font-size:13px;font-weight:700;padding:9px;border-radius:8px;cursor:pointer">
-                        OK, compris !
-                    </button>
+                <div class="cdx-right">
+                    ${nextFixtures.length ? `<div class="cdx-h">${t('Affiches')} · ${t(nextLabel)}</div><div class="cdx-ties">${ties}</div>` : ''}
+                    ${qualified.length ? `<div class="cdx-h">${t('Qualifiés')} · ${qualified.length}</div><div class="cdx-qs">${qual}</div>` : ''}
                 </div>
             </div>`;
         document.body.appendChild(modal);
@@ -15562,14 +15647,34 @@ if (badge) {
             box.innerHTML = `<p class="ss-desc" style="margin:0">${t('Aucun match joué cette saison.')}</p>`;
             return;
         }
-        box.innerHTML = `
-            <div class="cs-head"><span></span><i>${t('J')}</i><i>${t('G')}</i><i>${t('N')}</i><i>${t('P')}</i><i>${t('Diff')}</i></div>`
-            + rows.map(r => `
-                <div class="cs-row">
-                    <span>${t(r.nom)}</span>
-                    <i>${r.j}</i><i>${r.g}</i><i>${r.n}</i><i>${r.p}</i>
-                    <i style="color:${r.bp - r.bc >= 0 ? '#34d399' : '#f87171'}">${r.bp - r.bc >= 0 ? '+' : ''}${r.bp - r.bc}</i>
-                </div>`).join('');
+        // Une carte par compétition : % de victoires, barre G/N/P, buts ; puis la forme récente
+        const moi = this.userClubName;
+        const cards = rows.map(r => {
+            const pct = r.j ? Math.round(r.g / r.j * 100) : 0, mx = Math.max(1, r.bp, r.bc);
+            return `
+            <div class="bl-card">
+                <div class="bl-ring" style="--p:${pct}"><b>${pct}%</b><small>${t('victoires')}</small></div>
+                <div class="bl-body">
+                    <div class="bl-top"><b>${t(r.nom)}</b><small>${r.j} ${t('matchs')}</small></div>
+                    <div class="bl-bar">
+                        ${r.g ? `<i class="is-g" style="flex:${r.g}">${r.g}</i>` : ''}${r.n ? `<i class="is-n" style="flex:${r.n}">${r.n}</i>` : ''}${r.p ? `<i class="is-p" style="flex:${r.p}">${r.p}</i>` : ''}
+                    </div>
+                    <div class="bl-goals">
+                        <span>${t('Marqués')}</span><span class="bl-gb"><i style="width:${r.bp / mx * 100}%"></i></span><b>${r.bp}</b>
+                        <span>${t('Encaissés')}</span><span class="bl-gb is-a"><i style="width:${r.bc / mx * 100}%"></i></span><b>${r.bc}</b>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+        const played = this.clubFixtures().filter(f => f.played).slice(-10);
+        const form = played.map(f => {
+            const dom = f.home.name === moi, adv = dom ? f.away.name : f.home.name;
+            const m = dom ? (f.homeScore || 0) : (f.awayScore || 0), o = dom ? (f.awayScore || 0) : (f.homeScore || 0);
+            const k = m > o ? 'is-g' : m < o ? 'is-p' : 'is-n';
+            return `<div class="bl-res ${k}" title="${adv}"><span>${clubCrestSVG(adv)}</span><b>${m}-${o}</b><small>${dom ? t('D') : t('E')}</small></div>`;
+        }).join('');
+        box.innerHTML = `<div class="bl-cards">${cards}</div>`
+            + (form ? `<div class="bl-form"><span class="bl-form-t">${t('Forme')}</span><div>${form}</div></div>` : '');
     }
 
     rivalryWith(oppName) {
@@ -17264,10 +17369,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
             ['Fraîcheur', this.slotsOf('recup') * 2 - this.slotsOf('physique'), '#10b981']
         ].map(([lbl, n, col]) => {
             const w = Math.max(0, Math.min(100, 50 + n * 18));
-            return `<div class="wk-eff">
-                <span class="wk-eff-lbl">${t(lbl)}</span>
-                <span class="wk-eff-bar"><i style="width:${w}%;background:${col}"></i></span>
-            </div>`;
+            return `<div class="trx-ring" style="--p:${w};--c:${col}"><span><b>${w}</b></span><small>${t(lbl)}</small></div>`;
         }).join('');
 
         // ── AUTOMATISMES ────────────────────────────────────────────────
@@ -17278,32 +17380,13 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
 
         const autos = this.masteryEntries().map(e => {
             const col = e.pct >= 85 ? '#10b981' : e.pct >= 65 ? '#84cc16' : e.pct >= 45 ? '#f59e0b' : '#ef4444';
-            return `<div class="au-row">
-                <div class="au-head">
-                    <span class="au-lbl">${t(e.label)}${e.value ? ` <b>${e.value}</b>` : ''}</span>
-                    <span class="au-state" style="color:${col}">${t(this.masteryLabel(e.pct))}</span>
-                </div>
-                <div class="au-track"><i style="width:${e.pct}%;background:${col}"></i></div>
-            </div>`;
+            return `<div class="trx-ring" style="--p:${Math.round(e.pct)};--c:${col}" title="${t(e.label)} ${e.value || ''} — ${t(this.masteryLabel(e.pct))}"><span><b>${Math.round(e.pct)}</b></span><small>${t(e.label).split(' ')[0]}</small></div>`;
         }).join('');
 
         // ── INTENSITÉ ───────────────────────────────────────────────────
-        const intensity = Object.entries(TRAIN_INTENSITIES).map(([key, ti]) => {
-            const on = key === cur;
-            return `<button onclick="app.setTrainingIntensity('${key}')"
-                class="flex-1 min-w-0 p-2 sm:p-3 rounded-xl text-start transition-all ${on
-                    ? 'bg-brand-500/10 ring-2 ring-brand-500'
-                    : 'bg-ui-900 ring-1 ring-white/5 hover:ring-white/20'}">
-                <div class="flex items-center justify-between gap-1 mb-1.5">
-                    <span class="text-[10px] font-bold uppercase tracking-wide sm:tracking-widest truncate ${on ? 'text-brand-400' : 'text-slate-400'}">${t(ti.label)}</span>
-                    <span class="font-teko text-lg shrink-0 ${on ? 'text-white' : 'text-slate-500'}">×${ti.rate.toFixed(2)}</span>
-                </div>
-                <div class="h-1 bg-ui-800 rounded-full overflow-hidden">
-                    <div class="h-full bg-brand-500" style="width:${(ti.rate / 1.55) * 100}%"></div>
-                </div>
-                <p class="hidden sm:block text-[10px] text-slate-500 leading-tight mt-1.5">${t(ti.hint)}</p>
-            </button>`;
-        }).join('');
+        const intensity = Object.entries(TRAIN_INTENSITIES).map(([key, ti]) => `
+            <button onclick="app.setTrainingIntensity('${key}')" class="trx-int${key === cur ? ' is-on' : ''}" title="${t(ti.hint)}">
+                <b>${t(ti.label)}</b><span>×${ti.rate.toFixed(2)}</span></button>`).join('');
 
         // ── EFFECTIF ────────────────────────────────────────────────────
         const rows = this.userSquad.map(p => {
@@ -17323,30 +17406,18 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
 
             const chips = keys.map(([lbl, k]) => {
                 const on = k === focus;
-                return `<button onclick="app.setTrainingFocus('${p.id}','${k}')"
-                    class="px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${on
-                        ? 'bg-brand-500 text-white'
-                        : 'bg-ui-900 text-slate-500 hover:text-white'}">${lbl} <span class="opacity-70">${p.stats?.[k] ?? '–'}</span></button>`;
+                return `<button onclick="app.setTrainingFocus('${p.id}','${k}')" class="trx-c${on ? ' is-on' : ''}">${lbl}<i>${p.stats?.[k] ?? '–'}</i></button>`;
             }).join('');
 
+            const days = maxed ? 0 : Math.max(1, Math.ceil((TRAIN_POINTS_PER_LEVEL - (p.trainXP || 0)) / Math.max(0.01, rate)));
+            const sc = { 'Bloqué': '#64748b', 'Lent': '#f87171', 'Modéré': '#fbbf24', 'Bon': '#38bdf8', 'Rapide': '#34d399' }[speed.t];
             return `
-            <div class="panel-glass rounded-xl p-3 border border-white/5">
-                <div class="flex items-center gap-2 mb-2.5">
-                    <div class="w-9 h-9 rounded-full bg-ui-900 border border-white/10 overflow-hidden shrink-0">${playerFaceSVG(p)}</div>
-                    <div class="min-w-0 flex-1">
-                        <p class="text-sm font-bold text-white truncate leading-tight">${p.name}</p>
-                        <p class="text-[10px] ${posColor(p.position,'text')} uppercase font-bold truncate">${p.position} &bull; ${p.age} ans${p.injuryDays > 0 ? ' &bull; ' + t('blessé') : ''}</p>
-                    </div>
-                    <span class="badge-status ${speed.c} shrink-0 whitespace-nowrap">${t(speed.t)}</span>
-                    <span class="font-teko text-2xl text-white shrink-0 w-6 text-end">${p.ovr}</span>
-                </div>
-                <div class="flex flex-wrap gap-1 mb-2">${chips}</div>
-                <div class="flex items-center gap-2">
-                    <div class="flex-1 h-1.5 bg-ui-900 rounded-full overflow-hidden">
-                        <div class="h-full bg-brand-500 transition-all" style="width:${maxed ? 100 : pct}%"></div>
-                    </div>
-                    <span class="text-[10px] text-slate-500 shrink-0">${maxed ? t('Plafond atteint') : `${t('+1 dans')} ${Math.max(1, Math.ceil((TRAIN_POINTS_PER_LEVEL - (p.trainXP || 0)) / Math.max(0.01, rate)))} j`}</span>
-                </div>
+            <div class="trx-p">
+                <span class="trx-face">${playerFaceSVG(p)}</span>
+                <span class="trx-n"><b>${p.name}</b><small>${p.position} · ${p.age}${p.injuryDays > 0 ? ' · ✚' : ''}</small></span>
+                <span class="trx-chips">${chips}</span>
+                <span class="trx-prog" style="--p:${maxed ? 100 : Math.round(pct)};--c:${maxed ? '#64748b' : sc}" title="${t(speed.t)} · ${maxed ? t('Plafond atteint') : t('+1 dans') + ' ' + days + ' j'}"><span>${maxed ? '■' : days + 'j'}</span></span>
+                <b class="trx-ovr">${p.ovr}</b>
             </div>`;
         }).join('');
 
@@ -17370,28 +17441,18 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
             </div>
 
             <div class="tac-pane" id="tr-pane-week">
-                <div class="panel-glass rounded-2xl p-4 border border-white/5 mb-3">
-                    <div class="sec-head"><span>${t('Les quatre séances')}</span></div>
-                    <div class="wk-grid">${slots}</div>
-                    <div class="wk-verdict" style="--v:${verdict[2]}">
-                        <b style="color:${verdict[2]}">${t(verdict[0])}</b>
-                        <span>${t(verdict[1])}</span>
+                <div class="trx-week">
+                    <div class="trx-card">
+                        <div class="sec-head"><span>${t('Les quatre séances')}</span><b class="trx-verdict" style="--v:${verdict[2]}" title="${t(verdict[1])}">${t(verdict[0])}</b></div>
+                        <div class="wk-grid">${slots}</div>
+                        <div class="trx-rings">${effets}</div>
                     </div>
-                    <div class="wk-effs">${effets}</div>
-                </div>
-
-                <div class="panel-glass rounded-2xl p-4 border border-white/5 mb-3">
-                    <div class="sec-head">
-                        <span>${t('Automatismes')}</span>
-                        <span class="au-bonus" style="color:${mbCol}">${mbTxt} ${t('de force samedi')}</span>
+                    <div class="trx-card">
+                        <div class="sec-head"><span>${t('Automatismes')}</span><b class="au-bonus" style="color:${mbCol}">${mbTxt}</b></div>
+                        <div class="trx-rings">${autos}</div>
+                        <div class="sec-head" style="margin-top:8px"><span>${t('Intensité')}</span></div>
+                        <div class="trx-ints">${intensity}</div>
                     </div>
-                    <p class="text-[10px] text-slate-500 mb-3 leading-relaxed">${t("Ce que vos joueurs ont répété. Chaque réglage garde sa propre maîtrise : changer de système vous ramène au niveau de rodage de ce système-là.")}</p>
-                    ${autos}
-                </div>
-
-                <div class="panel-glass rounded-2xl p-4 border border-white/5">
-                    <div class="sec-head"><span>${t('Intensité')}</span></div>
-                    <div class="flex gap-2">${intensity}</div>
                 </div>
             </div>
 
@@ -17406,7 +17467,7 @@ const offerAmount = Math.floor(maxOffer * (0.85 + Math.random() * 0.35));
                             </div>`).join('')}
                     </div>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${rows}</div>
+                <div class="trx-list">${rows}</div>
             </div>`;
 
         this.setTrainingPane(this._trainingPane || 'week');
@@ -23097,9 +23158,49 @@ simulateAIBypassMatchday(otherMatches) {
     }
 
     logCommentary(text, cssClasses) {
+        // Fil d'événements « match-centre » : type d'action (icône colorée), équipe (écusson), minute.
         const div = document.createElement('div');
-        div.className = `pb-2 border-b border-white/5 ${cssClasses} animate-[fadeIn_0.3s_ease-out]`;
-        div.innerHTML = `<span class="font-bold opacity-50 w-8 inline-block">${this.matchClock()}</span> ${text}`; // FIX #89
+        const plain = String(text).replace(/<[^>]+>/g, ' ');
+        const kind = /BUT|BUT !|BUT EXCEPTIONNEL|BUT SUR PENALTY/.test(plain) ? 'goal'
+            : /carton rouge|expuls/i.test(plain) ? 'red'
+            : /carton jaune|avertissement/i.test(plain) ? 'yellow'
+            : /changement|remplace|entre à la place/i.test(plain) ? 'sub'
+            : /bless|touché|civière/i.test(plain) ? 'injury'
+            : /xG|frappe|tir |tire |arrêt|poteau|transversale|à côté|au-dessus/i.test(plain) ? 'chance'
+            : /coup franc|corner|penalty|touche/i.test(plain) ? 'set'
+            : /mi-temps|siffle|coup d'envoi|fin du match/i.test(plain) ? 'whistle' : 'play';
+        const lm = this.liveMatch;
+        let side = '';
+        if (lm) {
+            const ih = plain.indexOf(lm.home.name), ia = plain.indexOf(lm.away.name);
+            side = ih < 0 && ia < 0 ? '' : ia < 0 || (ih >= 0 && ih < ia) ? 'H' : 'A';
+            // pas de nom de club dans la phrase : on cherche le premier joueur cité (buteur, remplaçant…)
+            if (!side) {
+                let best = -1;
+                const scan = (list, sd) => (list || []).forEach(p => { const i = p && p.name ? plain.indexOf(p.name) : -1; if (i >= 0 && (best < 0 || i < best)) { best = i; side = sd; } });
+                scan([].concat(lm.homeStarters || [], lm.homeBench || [], lm.homeSubs || []), 'H');
+                scan([].concat(lm.awayStarters || [], lm.awayBench || [], lm.awaySubs || []), 'A');
+            }
+            if (!side && /l'adversaire|adverse/i.test(plain)) side = lm.home.isUser ? 'A' : 'H';
+        }
+        const club = side ? (side === 'H' ? lm.home.name : lm.away.name) : '';
+        const IC = {
+            goal: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#fff"/><path d="M12 7l3.5 2.5-1.3 4h-4.4l-1.3-4z" fill="#0a0e17"/></svg>',
+            red: '<svg viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="2" fill="#ef4444"/></svg>',
+            yellow: '<svg viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="2" fill="#facc15"/></svg>',
+            sub: '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round"><path d="M7 15V5M4 8l3-3 3 3" stroke="#4ade80"/><path d="M17 9v10M14 16l3 3 3-3" stroke="#f87171"/></svg>',
+            injury: '<svg viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="6" rx="1" fill="#f87171"/><rect x="9" y="4" width="6" height="16" rx="1" fill="#f87171"/></svg>',
+            chance: '<svg viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="2.4"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg>',
+            set: '<svg viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round"><path d="M6 21V4h10l-2 4 2 4H6"/></svg>',
+            whistle: '<svg viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="2.4" stroke-linecap="round"><circle cx="15" cy="13" r="5"/><path d="M10 13H3M7 9l3 2"/></svg>',
+            play: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#64748b"/></svg>'
+        };
+        const key = kind === 'goal' || kind === 'red' || kind === 'sub' || kind === 'injury';
+        div.className = `lc-row lc-${kind}${key ? ' is-key' : ''}${side ? ' lc-' + side : ''}`;
+        let crest = ''; try { crest = club ? clubCrestSVG(club) : ''; } catch (e) {}
+        const score = kind === 'goal' && lm ? `<b class="lc-score">${lm.homeScore} - ${lm.awayScore}</b>` : '';
+        div.innerHTML = `<span class="lc-min">${this.matchClock()}</span><span class="lc-ic">${IC[kind]}</span>`
+            + (crest ? `<span class="lc-crest">${crest}</span>` : '') + `<span class="lc-txt">${text}</span>${score}`; // FIX #89
         const container = document.getElementById('live-commentary');
         container.prepend(div);
         // FIX #30 : on purge les commentaires trop anciens pour éviter l'accumulation de nœuds DOM
@@ -23352,10 +23453,7 @@ simulateAIBypassMatchday(otherMatches) {
                 <div class="pm-body">
                     <div class="pm-block">
                         <h4>${t('Comment ils jouent')}</h4>
-                        <p>${t(r.lines[r.tac.style])}</p>
-                        <p>${t(r.chanLines[r.tac.chan])}</p>
-                        <p>${t(r.pressLines[r.tac.press])}</p>
-                        <p>${t(r.lineLines[r.tac.line])}</p>
+                        ${[r.lines[r.tac.style], r.chanLines[r.tac.chan] || r.chanLines.mixed, r.pressLines[r.tac.press], r.lineLines[r.tac.line]].filter(Boolean).map(x => `<p>${t(x)}</p>`).join('')}
                     </div>
                     <div class="pm-block">
                         <h4>${t('Les hommes à surveiller')}</h4>
@@ -23487,7 +23585,7 @@ simulateAIBypassMatchday(otherMatches) {
         const fx = info.fixture || {};
         let dateTxt = '', compTxt = '', stadTxt = '';
         try { dateTxt = fx.matchday != null ? this.formatMatchdayDate(fx.matchday) : ''; } catch (e) {}
-        compTxt = info.isCAF ? t('Ligue des champions africaine')
+        compTxt = info.isCAF ? t('Ligue Elite Africaine')
             : (fx.type && /CUP/.test(fx.type)) ? t('Coupe nationale')
             : (fx.type && /SUPERCUP/.test(fx.type)) ? t('Supercoupe')
             : t('Championnat');
@@ -23644,32 +23742,33 @@ simulateAIBypassMatchday(otherMatches) {
         const [ph, pa] = this.possessionSplit();
         const userIsHome = !!lm.home.isUser;
 
-        // Une ligne = deux chiffres et une barre partagée. On lit d'un coup
-        // d'œil qui domine, sans avoir à comparer des nombres.
+        // Une ligne = deux barres face à face, aux couleurs des maillots, qui partent du centre.
+        const kc = (team, away) => { let k = {}; try { k = clubKit(team.name, away) || {}; } catch (e) {}
+            const lum = h => { const n = parseInt(String(h || '#888888').replace('#', ''), 16); return ((n >> 16) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) / 255; };
+            let c = k.base || '#64748b'; if (lum(c) < 0.18) c = k.accent || k.trim || '#94a3b8'; return c; };
+        let hc = kc(lm.home, false), ac = kc(lm.away, true);
+        if (hc.toLowerCase() === ac.toLowerCase()) ac = '#e8edf5';
         const row = (label, h, a, fmt) => {
             const f = fmt || (v => v);
-            const tot = (h + a) || 1;
-            const hp = Math.round(h / tot * 100);
+            const mx = Math.max(h, a) || 1;
             return `
-            <div class="ms-row">
-                <div class="ms-nums"><b class="${h >= a ? 'is-lead' : ''}">${f(h)}</b>
-                    <span>${label}</span>
-                    <b class="${a >= h ? 'is-lead' : ''}">${f(a)}</b></div>
-                <div class="ms-bar"><i class="ms-h" style="width:${hp}%"></i><i class="ms-a" style="width:${100 - hp}%"></i></div>
+            <div class="msx-row">
+                <b class="${h > a ? 'is-lead' : ''}">${f(h)}</b>
+                <span class="msx-bar is-h"><i style="width:${Math.round(h / mx * 100)}%"></i></span>
+                <span class="msx-lab">${label}</span>
+                <span class="msx-bar is-a"><i style="width:${Math.round(a / mx * 100)}%"></i></span>
+                <b class="${a > h ? 'is-lead' : ''}">${f(a)}</b>
             </div>`;
         };
 
         const over = this._matchOver || lm.minute >= (lm.maxMinute || 90);
+        box.style.setProperty('--hc', hc); box.style.setProperty('--ac', ac);
         box.innerHTML = `
             ${over ? this.matchDebriefHTML() : ''}
-            <div class="ms-head">
-                <span class="${userIsHome ? 'is-user' : ''}">${lm.home.name}</span>
-                <span class="ms-min">${lm.minute}'</span>
-                <span class="${!userIsHome ? 'is-user' : ''}">${lm.away.name}</span>
-            </div>
-            <div class="ms-poss">
-                <div class="ms-poss-bar"><i style="width:${ph}%"></i></div>
-                <div class="ms-poss-lab"><b>${ph}%</b><span>${t('Possession')}</span><b>${pa}%</b></div>
+            <div class="msx-head">
+                <span class="msx-team${userIsHome ? ' is-user' : ''}"><i>${clubCrestSVG(lm.home.name)}</i><b>${lm.home.name}</b></span>
+                <span class="msx-poss" style="--p:${ph}"><b>${ph}%</b><small>${t('Possession')}</small><b>${pa}%</b></span>
+                <span class="msx-team is-a${!userIsHome ? ' is-user' : ''}"><b>${lm.away.name}</b><i>${clubCrestSVG(lm.away.name)}</i></span>
             </div>
             ${row(t('Tirs'), s.home.shots, s.away.shots)}
             ${row(t('Tirs cadrés'), s.home.onTarget, s.away.onTarget)}
@@ -23702,71 +23801,129 @@ simulateAIBypassMatchday(otherMatches) {
         // 1. Réalisme : l'écart entre les buts marqués et les occasions créées.
         const myXg = mine.xg || 0;
         if (myXg >= 0.8 && myGoals - myXg >= 1.1) out.push({ tone: 'good',
-            text: tf("Réalisme au-dessus de la normale : {goals} but(s) pour {xg} d'occasions. Un match qui aurait pu tourner autrement.", { goals: myGoals, xg: myXg.toFixed(2) }) });
+            k: myGoals + '/' + myXg.toFixed(1), lab: t('Réalisme'), text: tf("Réalisme au-dessus de la normale : {goals} but(s) pour {xg} d'occasions. Un match qui aurait pu tourner autrement.", { goals: myGoals, xg: myXg.toFixed(2) }) });
         else if (myXg - myGoals >= 1.1) out.push({ tone: 'bad',
-            text: tf("Gâchis devant le but : {xg} d'occasions créées pour seulement {goals} but(s). Le jeu était là, pas la finition.", { xg: myXg.toFixed(2), goals: myGoals }) });
+            k: myXg.toFixed(1), lab: t('xG gâchés'), text: tf("Gâchis devant le but : {xg} d'occasions créées pour seulement {goals} but(s). Le jeu était là, pas la finition.", { xg: myXg.toFixed(2), goals: myGoals }) });
 
         // 2. Domination stérile ou contre-attaque efficace.
         if (poss >= 58 && myGoals <= foeGoals) out.push({ tone: 'bad',
-            text: tf('{poss}% de possession pour ce résultat : le ballon sans la profondeur ne suffit pas contre un bloc regroupé.', { poss: poss }) });
+            k: poss + '%', lab: t('Possession stérile'), text: tf('{poss}% de possession pour ce résultat : le ballon sans la profondeur ne suffit pas contre un bloc regroupé.', { poss: poss }) });
         else if (poss <= 42 && myGoals > foeGoals) out.push({ tone: 'good',
-            text: tf('{poss}% de possession seulement, et trois points au bout : les transitions ont fait le travail.', { poss: poss }) });
+            k: poss + '%', lab: t('Contre efficace'), text: tf('{poss}% de possession seulement, et trois points au bout : les transitions ont fait le travail.', { poss: poss }) });
 
         // 3. Ce qu'on a laissé faire en face.
         const conceded = theirs.shots || 0, theirXg = theirs.xg || 0;
         if (theirXg >= 1.8 && foeGoals <= 1) out.push({ tone: 'good',
-            text: tf("On s'en sort bien derrière : {shots} tirs concédés pour {xg} d'occasions adverses.", { shots: conceded, xg: theirXg.toFixed(2) }) });
+            k: theirXg.toFixed(1), lab: t('xG adverses contenus'), text: tf("On s'en sort bien derrière : {shots} tirs concédés pour {xg} d'occasions adverses.", { shots: conceded, xg: theirXg.toFixed(2) }) });
         else if (conceded >= (mine.shots || 0) + 5) out.push({ tone: 'bad',
-            text: tf('{shots} tirs encaissés contre {mine} : on a subi tout le match, la ligne et le pressing sont à revoir.', { shots: conceded, mine: mine.shots || 0 }) });
+            k: conceded + '-' + (mine.shots || 0), lab: t('Tirs subis'), text: tf('{shots} tirs encaissés contre {mine} : on a subi tout le match, la ligne et le pressing sont à revoir.', { shots: conceded, mine: mine.shots || 0 }) });
 
         // 4. Discipline.
         if ((mine.red || 0) > 0) out.push({ tone: 'bad',
-            text: t("Jouer en infériorité a coûté cher : l'expulsion a changé la physionomie du match.") });
+            k: mine.red, lab: t('Expulsion'), text: t("Jouer en infériorité a coûté cher : l'expulsion a changé la physionomie du match.") });
         else if ((mine.yellow || 0) >= 3) out.push({ tone: 'warn',
-            text: tf('{n} cartons jaunes : à ce rythme, une suspension arrive vite.', { n: mine.yellow }) });
+            k: mine.yellow, lab: t('Cartons jaunes'), text: tf('{n} cartons jaunes : à ce rythme, une suspension arrive vite.', { n: mine.yellow }) });
 
         // 5. Fraîcheur : ce qui explique souvent les vingt dernières minutes.
         const starters = (side === 'home' ? lm.homeStarters : lm.awayStarters) || [];
         const cooked = starters.filter(p => (p.energy ?? 100) < 45).length;
         if (cooked >= 3) out.push({ tone: 'warn',
-            text: tf("{n} titulaires ont fini sous 45% d'énergie. Des changements plus tôt auraient tenu la fin de match.", { n: cooked }) });
+            k: cooked, lab: t('Titulaires épuisés'), text: tf("{n} titulaires ont fini sous 45% d'énergie. Des changements plus tôt auraient tenu la fin de match.", { n: cooked }) });
 
         // 6. Les transitions : combien de fois on a récupéré et lancé.
         const myT = (MATCHSIM.trans && MATCHSIM.trans[side === 'away' ? 'A' : 'H']) || 0;
         const foeT = (MATCHSIM.trans && MATCHSIM.trans[side === 'away' ? 'H' : 'A']) || 0;
         if (myT + foeT >= 8) {
             if (myT >= foeT + 4) out.push({ tone: 'good',
-                text: tf('{n} transitions gagnées contre {m} : on a récupéré haut et lancé vite.', { n: myT, m: foeT }) });
+                k: myT + '-' + foeT, lab: t('Transitions gagnées'), text: tf('{n} transitions gagnées contre {m} : on a récupéré haut et lancé vite.', { n: myT, m: foeT }) });
             else if (foeT >= myT + 4) out.push({ tone: 'bad',
-                text: tf("On a perdu la bataille des transitions ({n} contre {m}) : trop de ballons rendus dans de mauvaises zones.", { n: myT, m: foeT }) });
+                k: myT + '-' + foeT, lab: t('Transitions perdues'), text: tf("On a perdu la bataille des transitions ({n} contre {m}) : trop de ballons rendus dans de mauvaises zones.", { n: myT, m: foeT }) });
         }
 
         // 7. Les conditions, quand elles ont réellement pesé.
         if (lm.cond && lm.cond.drain >= 1.25) out.push({ tone: 'warn',
-            text: tf("{weather} : le match s'est joué autant contre les conditions que contre l'adversaire.", { weather: { k: lm.cond.weather.name } }) });
+            k: '', lab: t(lm.cond.weather.name), text: tf("{weather} : le match s'est joué autant contre les conditions que contre l'adversaire.", { weather: { k: lm.cond.weather.name } }) });
         else if (lm.cond && lm.cond.pitch.loss >= 1.2) out.push({ tone: 'warn',
-            text: tf('{pitch} : la circulation a été hachée toute la rencontre.', { pitch: { k: lm.cond.pitch.name } }) });
+            k: '', lab: t(lm.cond.pitch.name), text: tf('{pitch} : la circulation a été hachée toute la rencontre.', { pitch: { k: lm.cond.pitch.name } }) });
 
         // 8. L'homme du match, d'après les notes.
         const ctx = this.ratingContext(true);
         if (ctx && starters.length) {
             const best = starters.map(p => ({ p, n: this.computePlayerRating(p, ctx) })).sort((a, b) => b.n - a.n)[0];
             if (best && best.n >= 7.5) out.push({ tone: 'good',
-                text: tf("{player} a porté l'équipe ({note}).", { player: best.p.name, note: best.n.toFixed(1) }) });
+                k: best.n.toFixed(1), lab: best.p.name, face: best.p, text: tf("{player} a porté l'équipe ({note}).", { player: best.p.name, note: best.n.toFixed(1) }) });
         }
 
         if (!out.length) out.push({ tone: 'neutral',
-            text: t('Match équilibré, sans fait marquant : le détail a fait la différence.') });
+            k: '=', lab: t('Match équilibré'), text: t('Match équilibré, sans fait marquant : le détail a fait la différence.') });
         return out.slice(0, 5);
+    }
+
+    // Après-match : score et écussons en grand, 3 stats en barres, homme du match,
+    // puis chaque joueur en tuile (visage, note colorée, buts/passes en icônes).
+    postMatchModalHTML() {
+        const s = this.lastMatchSummary || {};
+        const R = [...(this.lastMatchRatings || [])].sort((a, b) => b.note - a.note);
+        const squad = (this.userSquad || []).concat(this.academy || []);
+        const pl = n => squad.find(p => p.name === n) || { name: n };
+        const cls = n => n >= 7.5 ? 'is-great' : n >= 6.5 ? 'is-good' : n >= 5.5 ? 'is-ok' : 'is-bad';
+        const close = `document.getElementById('nci-ratings-modal').remove(); app.switchView('dashboard'); if(app._showCupDrawPopup) setTimeout(()=>app.showCupDrawPopup(),300);`;
+        const kc = (name, away) => { let k = {}; try { k = clubKit(name, away) || {}; } catch (e) {} return k.base || '#64748b'; };
+        let hc = kc(s.homeName, false), ac = kc(s.awayName, true);
+        if (String(hc).toLowerCase() === String(ac).toLowerCase()) ac = '#e8edf5';
+        const st = s.st || { home: {}, away: {} };
+        const bar = (lab, h, a, f) => { const tot = (h + a) || 1; return `
+            <div class="pmx-bar"><b>${f ? f(h) : h}</b><span><i style="width:${Math.round(h / tot * 100)}%"></i></span><b>${f ? f(a) : a}</b><small>${lab}</small></div>`; };
+        const crest = n => { try { return clubCrestSVG(n); } catch (e) { return ''; } };
+        const best = R[0];
+        const ga = (g, a) => (g ? Array(Math.min(g, 3)).fill(icon('ball', 'w-2.5 h-2.5')).join('') : '') + (a ? Array(Math.min(a, 2)).fill(icon('target', 'w-2.5 h-2.5')).join('') : '');
+        const won = s.isHome ? s.homeScore > s.awayScore : s.awayScore > s.homeScore;
+        const res = s.homeScore === s.awayScore ? 'is-d' : won ? 'is-w' : 'is-l';
+        return `
+        <div class="pmx" style="--hc:${hc};--ac:${ac}">
+            <div class="pmx-left ${res}">
+                <span class="pmx-comp">${s.compLabel || ''}</span>
+                <div class="pmx-score">
+                    <span class="pmx-cr">${crest(s.homeName)}</span>
+                    <b>${s.homeScore ?? 0}<i>-</i>${s.awayScore ?? 0}</b>
+                    <span class="pmx-cr">${crest(s.awayName)}</span>
+                </div>
+                <div class="pmx-names"><span>${s.homeName || ''}</span><span>${s.awayName || ''}</span></div>
+                ${s.extraTime || s.penalties ? `<div class="pmx-extra">${s.extraTime ? 'a.p.' : ''}${s.penalties ? ' t.a.b. ' + (s.penaltyScore || '') : ''}</div>` : ''}
+                <div class="pmx-bars">
+                    ${bar(t('Possession'), (s.poss || [50, 50])[0], (s.poss || [50, 50])[1], v => v + '%')}
+                    ${bar(t('Tirs'), st.home.shots || 0, st.away.shots || 0)}
+                    ${bar('xG', +(st.home.xg || 0), +(st.away.xg || 0), v => v.toFixed(1))}
+                </div>
+                <button type="button" class="pmx-close" onclick="${close}">${t('Continuer')}</button>
+            </div>
+            <div class="pmx-right">
+                ${best ? `<div class="pmx-mvp"><span class="pmx-mf">${playerFaceSVG(pl(best.name))}</span>
+                    <span class="pmx-mt"><small>★ ${t('Homme du match')}</small><b>${best.name}</b></span>
+                    <span class="pmx-ga">${ga(best.goals, best.assists)}</span>
+                    <em class="${cls(best.note)}">${(+best.note).toFixed(1)}</em></div>` : ''}
+                <div class="pmx-grid">${R.slice(1).map(r => `
+                    <div class="pmx-p" title="${r.name}">
+                        <span class="pmx-f">${playerFaceSVG(pl(r.name))}<em class="${cls(r.note)}">${(+r.note).toFixed(1)}</em></span>
+                        <b>${String(r.name).split(' ').slice(-1)[0]}</b>
+                        <small>${r.position || ''}${(r.goals || r.assists) ? ' ' + ga(r.goals, r.assists) : ''}</small>
+                    </div>`).join('')}</div>
+            </div>
+        </div>`;
     }
 
     matchDebriefHTML() {
         const lines = this.matchDebrief();
         if (!lines.length) return '';
+        // Tuiles : le chiffre clé + deux ou trois mots ; la phrase complète au toucher (title).
+        const ic = { good: '▲', bad: '▼', warn: '!', neutral: '•' };
         return `
-            <div class="md-box">
-                <div class="md-h">${icon('clipboard', 'w-3 h-3')}<span>${t("Ce qui a fait le match")}</span></div>
-                ${lines.map(l => `<p class="md-l is-${l.tone}">${l.text}</p>`).join('')}
+            <div class="mdx">
+                <div class="mdx-grid">${lines.map(l => `
+                    <div class="mdx-c is-${l.tone}" title="${String(l.text).replace(/"/g, '&quot;')}">
+                        ${l.face ? `<span class="mdx-f">${playerFaceSVG(l.face)}</span>` : `<i>${ic[l.tone] || '•'}</i>`}
+                        ${l.k !== '' && l.k != null ? `<b>${l.k}</b>` : ''}<small>${l.lab || ''}</small>
+                    </div>`).join('')}</div>
             </div>`;
     }
 
@@ -23840,34 +23997,44 @@ simulateAIBypassMatchday(otherMatches) {
         const ctx = this.ratingContext(false);
         if (!ctx) { box.innerHTML = `<p class="ms-note">${t('Notes indisponibles pour ce match.')}</p>`; return; }
 
-        const rows = ctx.starters.map(p => {
-            const note = this.computePlayerRating(p, ctx);
+        // Terrain vu de dessus : chaque titulaire à son poste, note en pastille,
+        // anneau = énergie restante. On lit l'équipe d'un coup d'œil.
+        const form = FORMATIONS_MAP[this.userTactics.formation] || FORMATIONS_MAP['4-4-2'];
+        const notes = ctx.starters.map(p => this.computePlayerRating(p, ctx));
+        const best = notes.length ? notes.indexOf(Math.max(...notes)) : -1;
+        const chips = ctx.starters.map((p, i) => {
+            const note = notes[i];
+            const pos = form[i] || [25, 50];
             const pre = (ctx.preStats || {})[p.name] || { goals: 0, assists: 0 };
             const g = Math.max(0, (p.goals || 0) - pre.goals);
             const a = Math.max(0, (p.assists || 0) - pre.assists);
             const cls = note >= 7.5 ? 'is-great' : note >= 6.5 ? 'is-good' : note >= 5.5 ? 'is-ok' : 'is-bad';
-            const en = Math.round(p.energy ?? 100);
-            const enCls = en < 30 ? 'is-bad' : en < 55 ? 'is-ok' : '';
+            const en = Math.max(0, Math.min(100, Math.round(p.energy ?? 100)));
+            const enC = en < 30 ? '#f87171' : en < 55 ? '#fbbf24' : '#34d399';
             const marks = (g ? Array(Math.min(g, 3)).fill(icon('ball', 'w-2.5 h-2.5')).join('') : '') + (a ? Array(Math.min(a, 2)).fill(icon('target', 'w-2.5 h-2.5')).join('') : '')
                 + (p.redThisMatch ? icon('redCard', 'w-2.5 h-2.5') : p.yellowThisMatch ? icon('yellowCard', 'w-2.5 h-2.5') : '');
+            const last = String(p.name).split(' ').slice(-1)[0];
+            // un coéquipier juste en dessous cacherait le nom : on le passe au-dessus du visage
+            const up = form.some((q, j) => j !== i && q && Math.abs(q[0] - pos[0]) <= 6 && q[1] - pos[1] > 0 && q[1] - pos[1] <= 12);
             return `
-            <div class="lr-row">
-                <span class="lr-face">${playerFaceSVG(p)}</span>
-                <span class="lr-main">
-                    <span class="lr-name">${p.name}${marks ? ` <span class="lr-marks">${marks}</span>` : ''}</span>
-                    <span class="lr-meta">${playerRole(p).short} · <b class="lr-en ${enCls}">${en}%</b> ${t("d'énergie")}</span>
-                </span>
-                <span class="lr-note ${cls}">${note.toFixed(1)}</span>
+            <div class="lrp-p${i === best ? ' is-best' : ''}${up ? ' is-up' : ''}" style="left:${(3 + pos[0] / 50 * 93).toFixed(1)}%;top:${(-4 + pos[1] / 100 * 104).toFixed(1)}%" title="${p.name} · ${en}% ${t("d'énergie")}">
+                <span class="lrp-face" style="--en:${en};--enc:${enC}"><i>${playerFaceSVG(p)}</i><b class="lrp-note ${cls}">${note.toFixed(1)}</b>${marks ? `<em class="lrp-marks">${marks}</em>` : ''}</span>
+                <span class="lrp-n">${last}</span>
             </div>`;
         }).join('');
 
-        const avg = ctx.starters.length
-            ? (ctx.starters.reduce((t, p) => t + this.computePlayerRating(p, ctx), 0) / ctx.starters.length).toFixed(2)
-            : '—';
+        const avg = notes.length ? (notes.reduce((x, y) => x + y, 0) / notes.length) : 0;
+        const bp = best >= 0 ? ctx.starters[best] : null;
+        const tired = ctx.starters.filter(p => (p.energy ?? 100) < 55).length;
         box.innerHTML = `
-            <div class="lr-head">${t('Notes à la')} ${this.liveMatch.minute}<sup>e</sup> ${t('· moyenne')} <b>${avg}</b></div>
-            ${rows}
-            <p class="ms-note">${t('Notes provisoires : le poids du résultat monte à mesure que le match avance.')}</p>`;
+            <div class="lrp">
+                <div class="lrp-pitch">${chips}</div>
+                <div class="lrp-side">
+                    <div class="lrp-avg"><small>${t('Moyenne')}</small><b>${notes.length ? avg.toFixed(2) : '—'}</b><span>${this.liveMatch.minute}'</span></div>
+                    ${bp ? `<div class="lrp-mvp"><small>${t('Homme du match')}</small><span class="lrp-mf">${playerFaceSVG(bp)}</span><b>${bp.name}</b><em>${notes[best].toFixed(1)}</em></div>` : ''}
+                    <div class="lrp-leg"><i style="background:#34d399"></i><i style="background:#fbbf24"></i><i style="background:#f87171"></i><span>${t('Énergie')}</span>${tired ? `<b>${tired} ${t('fatigué(s)')}</b>` : ''}</div>
+                </div>
+            </div>`;
     }
 
     // =====================================================================
@@ -23896,44 +24063,16 @@ simulateAIBypassMatchday(otherMatches) {
         // panneau de consignes en direct. Renommée en `tac`.
         const tac = this.userTactics;
 
-        const seg = (key, options, cur) => options.map(([val, lab]) => `
-            <button type="button" class="ti-seg ${cur === val ? 'is-on' : ''}"
-                    onclick="app.setLiveInstruction('${key}','${val}')">${t(lab)}</button>`).join('');
-
-        // Mêmes vignettes de terrain que le bureau tactique : en plein match, une
-        // silhouette se lit plus vite qu'un intitulé « 4-2-3-1 ».
-        const forms = Object.keys(FORMATIONS_MAP).map(f => {
-            const on = tac.formation === f;
-            return `<button type="button" onclick="app.setLiveInstruction('formation','${f}')"
-                class="p-1 rounded-lg transition-all ${on ? 'bg-brand-500/10 ring-2 ring-brand-500' : 'bg-ui-900 ring-1 ring-white/5 hover:ring-white/20'}">
-                ${this.formationThumb(f, on)}
-                <span class="block text-[10px] font-bold mt-0.5 ${on ? 'text-brand-400' : 'text-slate-500'}">${f}</span>
-            </button>`;
-        }).join('');
-
-        const blocks = [
-            [t('Mentalité'), 'mentality', [['defensive', t('Défensive')], ['balanced', t('Équilibrée')], ['offensive', t('Offensive')]]],
-            [t('Style de jeu'), 'style', [['possession', t('Possession')], ['direct', t('Direct')], ['counter', t('Contre')]]]
-        ].concat(TEAM_INSTRUCTIONS.map(i => [t(i.label), i.key, i.options.map(([val, lab]) => [val, t(lab)])]));
-
+        // Même tableau compact que l'onglet Tactique : bande de formations, mini-terrain
+        // qui dessine les réglages, cinq lignes de choix. Tout tient sur un écran.
         body.innerHTML = `
-            <div class="flex justify-between items-center mb-4">
-                <div>
-                    <h3 class="font-teko text-2xl text-white tracking-wide leading-none">${t('Consignes en direct')}</h3>
-                    <p class="text-[10px] text-slate-500 mt-1">${t("Chaque changement s'applique immédiatement, sans arrêter le jeu.")}</p>
-                </div>
+            <div class="lt-head">
+                <b>${t('Consignes en direct')}</b>
                 <button onclick="app.toggleLiveTacticsModal()" class="sp-close" aria-label="${t('Fermer')}">✕</button>
             </div>
-            <div class="mb-3">
-                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">${t('Formation')}</label>
-                <div class="lt-forms">${forms}</div>
-            </div>
-            ${blocks.map(([label, key, opts]) => `
-                <div class="ti-row">
-                    <div class="ti-label"><b>${label}</b></div>
-                    <div class="ti-segs">${seg(key, opts, tac[key])}</div>
-                </div>`).join('')}
-            <button onclick="app.toggleLiveTacticsModal()" class="w-full btn-primary mt-4 py-3 rounded-xl font-bold uppercase text-white tracking-widest text-xs">${t('Reprendre le match')}</button>`;
+            ${this.formationStripHTML(tac.formation, true)}
+            <div class="tb lt-tb"><div class="tb-pitch">${this.tacBoardSVG(tac)}</div><div class="tb-rows">${this.tacRowsHTML(tac, true)}</div></div>
+            <button onclick="app.toggleLiveTacticsModal()" class="lt-go">${t('Reprendre le match')}</button>`;
     }
 
     // Un seul point d'entrée pour toutes les consignes du match : on modifie,
@@ -24488,7 +24627,7 @@ simulateAIBypassMatchday(otherMatches) {
             if (this.budget < 0) {
                 setTimeout(() => this.showAlert(`🚨 ALERTE FINANCIÈRE\n\nClub dans le rouge de ${formatMoney(Math.abs(this.budget))} !\nMasse salariale mensuelle : ${formatMoney(totalMonth)} (déjà prélevée par journée)\nSponsors ce mois : +${formatMoney(sponsorIncome)}\nVendez des joueurs ou dégraissez le staff !`), 1500); // FIX #97
             } else {
-                setTimeout(() => this.showAlert(`💰 Fin du mois\n\nRecettes des matchs : ${formatMoney(monthlyRevenueSnapshot)}\nSponsors : ${formatMoney(sponsorIncome)}\nSalaires joueurs : ${formatMoney(totalWages)}\nSalaires staff : ${formatMoney(staffWages)}\nTotal prélevé ce mois : ${formatMoney(monthlyExpensesSnapshot)}\n\n${netMonth >= 0 ? 'Résultat du mois : +' : 'Résultat du mois : '}${formatMoney(netMonth)}`), 1500); // FIX #97
+                setTimeout(() => this.showMonthReport({ gate: monthlyRevenueSnapshot, sponsor: sponsorIncome, wages: totalWages, staff: staffWages, net: netMonth }), 1500); // FIX #97
             }
         }
 
@@ -24733,7 +24872,7 @@ simulateAIBypassMatchday(otherMatches) {
             const _lm = this.liveMatch;
             const _isHome = _lm.home.isUser;
             const _fxType = (_lm.fixture && _lm.fixture.type) || 'LEAGUE';
-            const _extraTime = (_lm.maxMinute || 90) > 90;
+            const _extraTime = _lm.regulationMax != null ? (_lm.maxMinute || 90) > _lm.regulationMax : (_lm.maxMinute || 90) > 100;
             const _penalties = !!(_lm.fixture && _lm.fixture.penalties);
             const _penaltyScore = (_lm.fixture && _lm.fixture.penaltyScore) || null;
             const _homeScore = _lm.homeScore;
@@ -24754,7 +24893,9 @@ simulateAIBypassMatchday(otherMatches) {
                 homeScore: _homeScore, awayScore: _awayScore,
                 isHome: _isHome, compLabel: _compLabel,
                 extraTime: _extraTime, penalties: _penalties,
-                penaltyScore: _penaltyScore
+                penaltyScore: _penaltyScore,
+                poss: (() => { try { return this.possessionSplit(); } catch (e) { return [50, 50]; } })(),
+                st: _lm.stats ? JSON.parse(JSON.stringify(_lm.stats)) : null
             };
         }
 
@@ -24781,60 +24922,10 @@ simulateAIBypassMatchday(otherMatches) {
 
         // --- POPUP YAO BABA SPORT ---
         if (this.lastMatchRatings && this.lastMatchRatings.length > 0) {
-            const ratingRows = [...this.lastMatchRatings]
-                .sort((a, b) => b.note - a.note)
-                .map(p => {
-                    const noteColor = p.note >= 7.5 ? 'text-emerald-400' : p.note >= 6.0 ? 'text-yellow-400' : 'text-red-400';
-                    const goals = p.goals > 0 ? ` ⚽×${p.goals}` : '';
-                    const assists = p.assists > 0 ? ` 🅰️×${p.assists}` : '';
-                    return `<tr class="border-b border-white/5">
-                        <td class="py-1.5 px-2 text-xs text-slate-300 font-bold">${p.name}</td>
-                        <td class="py-1.5 px-2 text-[10px] text-slate-500 uppercase">${p.position}</td>
-                        <td class="py-1.5 px-2 text-[10px] text-slate-400">${goals}${assists}</td>
-                        <td class="py-1.5 px-2 text-end font-black text-base font-teko ${noteColor}">${p.note}</td>
-                    </tr>`;
-                }).join('');
-
             const modal = document.createElement('div');
             modal.id = 'nci-ratings-modal';
             modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm';
-            modal.innerHTML = `
-                <div class="bg-ui-900 border border-white/10 rounded-2xl w-full max-w-sm mx-4 shadow-2xl overflow-hidden">
-                    <div class="bg-gradient-to-r from-brand-600 to-brand-400 px-4 py-3 flex justify-between items-center">
-                        <div>
-                            <div class="font-teko text-xl text-white uppercase tracking-wider">📺 Yao Baba Sport</div>
-                            <div class="text-[10px] text-white/70">${t('Notes du match')}</div>
-                            ${(() => {
-                                const s = this.lastMatchSummary;
-                                if (!s) return '';
-                                const scoreStr = s.homeName + ' ' + s.homeScore + ' \u2013 ' + s.awayScore + ' ' + s.awayName;
-                                const suffixes = [];
-                                if (s.extraTime) suffixes.push('<span style="color:#fde047;font-weight:800">a.p.</span>');
-                                if (s.penalties) suffixes.push('<span style="color:#fbbf24;font-weight:800">t.a.b.' + (s.penaltyScore ? ' ' + s.penaltyScore : '') + '</span>');
-                                return '<div style="margin-top:3px;font-size:11px;color:#fff;font-weight:700">' + scoreStr + '</div>'
-                                     + '<div style="font-size:10px;color:rgba(255,255,255,.75);display:flex;gap:5px;align-items:center;margin-top:1px;flex-wrap:wrap">'
-                                     + '<span>' + s.compLabel + '</span>'
-                                     + (suffixes.length ? '<span>\u00b7</span>' + suffixes.join('<span style="margin:0 1px">\u00b7</span>') : '')
-                                     + '</div>';
-                            })()}
-                        </div>
-                        <button onclick="document.getElementById('nci-ratings-modal').remove(); app.switchView('dashboard'); if(app._showCupDrawPopup) setTimeout(()=>app.showCupDrawPopup(),300);"
-                            class="bg-white/20 hover:bg-white/30 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">
-                            Fermer
-                        </button>
-                    </div>
-                    <div class="overflow-y-auto max-h-80">
-                        <table class="w-full">
-                            <thead><tr class="border-b border-white/10">
-                                <th class="py-1.5 px-2 text-start text-[10px] text-slate-500 uppercase font-bold">${t('Joueur')}</th>
-                                <th class="py-1.5 px-2 text-start text-[10px] text-slate-500 uppercase font-bold">${t('Poste')}</th>
-                                <th class="py-1.5 px-2 text-[10px] text-slate-500 uppercase font-bold"></th>
-                                <th class="py-1.5 px-2 text-end text-[10px] text-slate-500 uppercase font-bold">${t('Note')}</th>
-                            </tr></thead>
-                            <tbody>${ratingRows}</tbody>
-                        </table>
-                    </div>
-                </div>`;
+            modal.innerHTML = this.postMatchModalHTML();
             document.body.appendChild(modal);
         } else {
             this.switchView('dashboard');
@@ -27911,27 +28002,21 @@ reputationStars() {
             : `<div class="flex flex-col gap-2">
                 ${hist.map(h => {
                     const a = h.awards;
-                    // Un lauréat = un visage + un écusson, pas une cellule de tableau
-                    const win = (w, label, ic) => w ? `
-                        <div class="flex items-center gap-2 min-w-0 flex-1">
-                            <span class="w-4 h-4 shrink-0 ${w.isUser ? 'text-yellow-400' : 'text-slate-500'}">${icon(ic,'w-4 h-4')}</span>
-                            <span class="w-5 h-5 shrink-0 inline-block">${clubCrestSVG(w.club)}</span>
-                            <span class="min-w-0">
-                                <span class="block text-[10px] uppercase tracking-widest text-slate-600 leading-none">${label}</span>
-                                <span class="block text-xs truncate ${w.isUser ? 'text-yellow-400 font-bold' : 'text-slate-300'}">${w.name}</span>
-                            </span>
+                    // Un lauréat = son trophée, son visage, son écusson
+                    const win = (w, label, kind) => w ? `
+                        <div class="pi-tile${w.isUser ? ' is-mine' : ''}">
+                            <span class="pi-cup">${trophySVG(kind, !!w.isUser)}</span>
+                            <span class="pi-face">${playerFaceSVG({ id: w.name, name: w.name, age: 26, position: kind === 'glove' ? 'GB' : 'ATT' })}<i>${clubCrestSVG(w.club)}</i></span>
+                            <span class="pi-txt"><small>${label}</small><b>${w.name}</b></span>
                         </div>` : '';
                     return `
-                    <div class="p-3 rounded-xl border border-white/5 bg-ui-800/40">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="badge-status badge-neutral">S${h.season}</span>
-                            <span class="font-teko text-lg ${a.paid > 0 ? 'text-emerald-400' : 'text-slate-600'}">${a.paid > 0 ? '+' + formatMoney(a.paid) : '—'}</span>
-                        </div>
-                        <div class="flex flex-wrap gap-3">
-                            ${win(a.ballonDor, "Ballon d'Or", 'trophy')}
+                    <div class="pi-season">
+                        <div class="pi-head"><b>S${h.season}</b><span class="${a.paid > 0 ? 'is-paid' : ''}">${a.paid > 0 ? '+' + formatMoney(a.paid) : t('Aucune prime')}</span></div>
+                        <div class="pi-grid">
+                            ${win(a.ballonDor, "Ballon d'Or", 'ballon')}
                             ${win(a.soulierDor, "Soulier d'Or", 'boot')}
                             ${win(a.gantDor, "Gant d'Or", 'glove')}
-                            ${win(a.espoirDor, "Espoir", 'seedling')}
+                            ${win(a.espoirDor, t('Espoir'), 'star')}
                         </div>
                     </div>`;
                 }).join('')}
@@ -28131,7 +28216,26 @@ reputationStars() {
         if (this.history.length === 0) {
             palmares = emptyState('trophy', t('Le palmarès se remplira à la fin de votre première saison'), 'py-6');
         } else {
-            palmares = `<div class="flex flex-col gap-2">
+            const me = this.userClubName, H = this.history;
+            const seasonsOf = f => H.filter(f).map(h => 'S' + h.season);
+            const mineAw = key => H.filter(h => h.awards && h.awards[key] && h.awards[key].isUser);
+            const cab = [
+                ['league', t('Championnat'), seasonsOf(h => h.userLeagueChampion === me)],
+                ['caf', t('Ligue Elite Africaine'), seasonsOf(h => h.cafWinner === me)],
+                ['ballon', t("Ballon d'Or"), mineAw('ballonDor').map(h => 'S' + h.season)],
+                ['boot', t("Soulier d'Or"), mineAw('soulierDor').map(h => 'S' + h.season)],
+                ['glove', t("Gant d'Or"), mineAw('gantDor').map(h => 'S' + h.season)],
+                ['star', t('Espoir de l\'année'), mineAw('espoirDor').map(h => 'S' + h.season)]
+            ];
+            const vitrine = `<div class="tr-cabinet">
+                <div class="tr-shelf">${cab.map(([k, lbl, ss]) => `
+                    <div class="tr-item${ss.length ? ' is-won' : ''}">
+                        <span class="tr-cup">${trophySVG(k, ss.length > 0)}${ss.length > 1 ? `<b class="tr-n">×${ss.length}</b>` : ''}</span>
+                        <span class="tr-lbl">${lbl}</span>
+                        <span class="tr-ss">${ss.length ? ss.slice(0, 4).join(' · ') : t('À conquérir')}</span>
+                    </div>`).join('')}</div>
+            </div>`;
+            palmares = vitrine + `<div class="flex flex-col gap-2">
                 ${this.history.map(h => {
                     const isChamp = h.userLeagueChampion === h.userClubName;
                     const cafMine = h.cafWinner === h.userClubName;
@@ -29645,87 +29749,52 @@ renderCAF() {
 
     let html = `<div class="caf-wrapper">`;
 
-    // ── HERO BANNER ──────────────────────────────────────────────────────────
+    // ── EN-TÊTE : la compétition et sa frise des phases ──────────────────────
+    const STEPS = [['groupes', t('Poules')], ['huitiemes', t('8es')], ['quarts', t('Quarts')], ['semis', t('Demies')], ['finale', t('Finale')]];
+    const curStep = winner ? STEPS.length : Math.max(0, STEPS.findIndex(st => st[0] === phase));
     html += `
-    <div class="caf-hero">
-        <div class="caf-hero-stars"></div>
-        <div style="position:relative;display:flex;align-items:center;gap:18px;margin-bottom:16px">
-            <div class="caf-logo-ring">${icon('trophy','w-6 h-6')}</div>
-            <div>
-                <div class="caf-competition-name">Ligue Elite Africaine</div>
-                <div class="caf-meta" style="margin-top:4px">Compétition Continentale Africaine &middot; Saison en cours</div>
-            </div>
-        </div>
-        <div style="position:relative;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <span class="caf-phase-badge" style="background:rgba(249,115,22,0.12);border:1px solid rgba(249,115,22,0.3);color:#f97316">
-                    &#9670; ${phaseLabel.toUpperCase()}
-                </span>
-                <span class="caf-phase-badge ${isLocked ? 'locked' : 'unlocked'}">
-                    ${isLocked ? `&#128274; ${tf('Disponible J{n}', { n: phaseUnlock })}` : '&#10003; ' + t('Déverrouillé')}
-                </span>
-                <span class="caf-meta">J${currentMd}</span>
-            </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
-                <span class="caf-hint">&#128161; Jouez vos matchs depuis l'écran Accueil</span>
-            </div>
-        </div>
-        ${!isUserInCAF ? `<div style="position:relative;margin-top:14px;padding:10px 14px;border-radius:10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2)">
-            <span style="font-size:11px;color:#fca5a5">&#9888; ${t("Votre club n'est pas qualifié cette saison — terminez")} <strong>${t('Top 2')}</strong> ${t('de votre championnat pour participer.')}</span>
-        </div>` : this.cafData.userEliminated ? `<div style="position:relative;margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25)">
-            <div style="font-size:13px;font-weight:700;color:#f87171;margin-bottom:2px">❌ ${t('Votre club est éliminé')}</div>
-            <div style="font-size:11px;color:#fca5a5">${t('Sorti en')} <strong>${
-                this.cafData.userEliminated === 'groupes' ? t('Phase de groupes') :
-                this.cafData.userEliminated === 'quarts'  ? t('Quarts de finale') :
-                t('Demi-finale')
-            }</strong> — ${t('vous pouvez suivre la suite de la compétition en spectateur.')}</div>
-        </div>` : ''}
+    <div class="cafx-head">
+        <span class="cafx-cup">${icon('trophy', 'w-6 h-6')}</span>
+        <div class="cafx-title"><b>${t('Ligue Elite Africaine')}</b>
+            <small>${isLocked ? tf('Prochaine phase : J{n}', { n: phaseUnlock }) : t('Phase en cours')} · J${currentMd}</small></div>
+        <div class="cafx-steps">${STEPS.map((st, i) => `<span class="${i < curStep ? 'is-done' : i === curStep ? 'is-cur' : ''}"><i></i>${st[1]}</span>`).join('')}</div>
     </div>`;
+    if (!isUserInCAF) html += `<div class="cafx-note is-bad">${t("Votre club n'est pas qualifié cette saison — terminez")} <b>${t('Top 2')}</b> ${t('de votre championnat pour participer.')}</div>`;
+    else if (this.cafData.userEliminated) html += `<div class="cafx-note is-bad">${t('Votre club est éliminé')} — ${t('vous pouvez suivre la suite de la compétition en spectateur.')}</div>`;
 
-    // ── WINNER SCREEN ────────────────────────────────────────────────────────
+    // ── VAINQUEUR ────────────────────────────────────────────────────────────
     if (winner) {
         html += `
-        <div class="caf-winner-screen">
-            <div class="caf-winner-trophy">&#127942;</div>
-            <div class="caf-winner-label">${t("Champion d'Afrique")}</div>
-            <div class="caf-winner-name">${winner}</div>
+        <div class="cafx-winner">
+            <span class="cafx-winner-crest">${clubCrestSVG(winner)}</span>
+            <div><small>${t("Champion d'Afrique")}</small><b>${winner}</b></div>
+            <span class="cafx-winner-cup">${icon('trophy', 'w-10 h-10')}</span>
         </div>`;
     }
 
-    // ── PHASE DE GROUPES ─────────────────────────────────────────────────────
+    // ── PHASE DE GROUPES : 8 cartes compactes (votre poule d'abord) ──────────
+    const abbr = n => { const w = String(n).replace(/[^A-Za-zÀ-ÿ0-9 ]/g, ' ').trim().split(/\s+/).filter(Boolean);
+        return (w.length >= 2 ? w.slice(0, 3).map(x => x[0]).join('') : (w[0] || '').slice(0, 3)).toUpperCase(); };
+    const maxPts = Math.max(3, ...groups.flat().map(c => c.cafPoints || 0));
+    const order = groups.map((g, gi) => gi).sort((x, y) => (y === this.cafData.userGroup) - (x === this.cafData.userGroup));
     html += `<div class="caf-section-title">${t('Phase de groupes')}</div>`;
-    html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:24px">`;
-
-    groups.forEach((g, gi) => {
+    html += `<div class="cafx-groups">`;
+    order.forEach(gi => {
+        const g = groups[gi];
         const isUserGroup = gi === this.cafData.userGroup;
         const sorted = [...g].sort((a, b) => (b.cafPoints||0) - (a.cafPoints||0) || (((b.cafGF||0)-(b.cafGA||0)) - ((a.cafGF||0)-(a.cafGA||0)))); // FIX #14
         html += `
-        <div class="caf-group-card ${isUserGroup ? 'is-user-group' : ''}">
-            <div class="caf-group-header">
-                <span class="caf-group-letter">${t('GROUPE')} ${['A','B','C','D','E','F','G','H'][gi]}</span>
-                ${isUserGroup ? `<span class="caf-group-yours">${t('Votre groupe')}</span>` : ''}
-            </div>
-            <div class="caf-col-headers">
-                <div>${t('Club')}</div>
-                <div style="text-align:center">${t('V')}</div>
-                <div style="text-align:center">${t('N')}</div>
-                <div style="text-align:center">${t('D')}</div>
-                <div style="text-align:end">${t('Pts')}</div>
-            </div>
+        <div class="cafx-group${isUserGroup ? ' is-mine' : ''}">
+            <div class="cafx-ghead"><b>${['A','B','C','D','E','F','G','H'][gi]}</b>${isUserGroup ? `<small>${t('Votre groupe')}</small>` : `<small>${t('Groupe')}</small>`}</div>
             ${sorted.map((c, ri) => {
-                const isUser = c.name === this.userClubName;
-                const qualified = ri < 2;
+                const isUser = c.name === this.userClubName, pts = c.cafPoints || 0;
                 return `
-                <div class="caf-team-row ${qualified ? 'qualified' : ''}">
-                    <div style="display:flex;align-items:center;gap:8px;min-width:0">
-                        <span class="caf-rank">${ri+1}</span>
-                        <span style="width:22px;height:22px;flex-shrink:0;display:block">${clubCrestSVG(c.name)}</span>
-                        <span class="caf-team-name ${isUser ? 'is-user' : ''}">${c.name}</span>
-                    </div>
-                    <span class="caf-stat">${c.cafW||0}</span>
-                    <span class="caf-stat">${c.cafD||0}</span>
-                    <span class="caf-stat">${c.cafL||0}</span>
-                    <span class="caf-pts ${ri===0 ? 'top' : ''}">${c.cafPoints||0}</span>
+                <div class="cafx-row${ri < 2 ? ' is-q' : ''}${isUser ? ' is-me' : ''}" title="${c.name} · ${c.cafW||0}V ${c.cafD||0}N ${c.cafL||0}D">
+                    <i class="cafx-rk">${ri + 1}</i>
+                    <span class="cafx-crest">${clubCrestSVG(c.name)}</span>
+                    <span class="cafx-name">${abbr(c.name)}</span>
+                    <span class="cafx-bar"><i style="width:${Math.round(pts / maxPts * 100)}%"></i></span>
+                    <b class="cafx-pts">${pts}</b>
                 </div>`;
             }).join('')}
         </div>`;
@@ -29804,118 +29873,50 @@ renderCAF() {
         }
     }
 
-    // ── QUARTS DE FINALE ─────────────────────────────────────────────────────
-    if (this.cafData.quarterFinals && this.cafData.quarterFinals.length > 0) {
-        html += `<div class="caf-section-title">${t('Quarts de finale')}</div>`;
-        html += `<div class="caf-bracket-card" style="margin-bottom:20px">`;
-        html += `<div class="caf-bracket-header"><span class="caf-bracket-title">${t('Quarts de finale')}</span><span class="caf-meta">${t('Aller')} / ${t('Retour')}</span></div>`;
-        this.cafData.quarterFinals.forEach((qf, i) => {
-            const isUserHome = qf.home.name === this.userClubName;
-            const isUserAway = qf.away.name === this.userClubName;
-            // FIX #16 : affichage des scores aller/retour (avant : toujours "vs", même après les matchs)
-            const played = qf.hG !== undefined;
-            const score1 = played ? `${qf.hG} — ${qf.aG}` : null;
-            const score2 = played ? `${qf.hG2 ?? '?'} — ${qf.aG2 ?? '?'}` : null; // FIX #17 (?? au lieu de ||, sinon un 0-0 affichait "?")
-            const tab = played && qf.penalties ? `<span style="font-size:10.5px;color:#fbbf24;font-weight:700;text-transform:uppercase">${qf.penaltyScore ? qf.penaltyScore + ' t.a.b.' : 'TAB'}</span>` : ''; // FIX #100
-            html += `
-            <div class="caf-match-block">
-                <div class="caf-match-label">${t('Quart')} ${i+1}</div>
-                <div class="caf-match-clubs">
-                    <div class="caf-club-chip ${isUserHome ? 'is-user' : ''}">
-                        <div class="caf-club-crest">${clubCrestSVG(qf.home.name)}</div>
-                        <span class="caf-club-chip-name">${qf.home.name}</span>
-                    </div>
-                    <div class="caf-score-block">
-                        ${played
-                            ? `<span class="caf-score-main">${score1}</span>
-                               <span class="caf-score-sub">${t('Aller')}</span>
-                               <span class="caf-score-main" style="font-size:18px;color:#94a3b8">${score2}</span>
-                               <span class="caf-score-sub">${t('Retour')}</span>${tab}`
-                            : `<span class="caf-score-main pending">vs</span>`
-                        }
-                    </div>
-                    <div class="caf-club-chip right ${isUserAway ? 'is-user' : ''}">
-                        <div class="caf-club-crest">${clubCrestSVG(qf.away.name)}</div>
-                        <span class="caf-club-chip-name">${qf.away.name}</span>
-                    </div>
-                </div>
-                ${qf.winner ? `<div class="caf-winner-tag">&#10230; Qualifié : ${qf.winner.name}</div>` : ''}
-            </div>`;
+    // ── TABLEAU FINAL : 8es → quarts → demies → finale, toujours affiché ──────
+    {
+        const me = this.userClubName;
+        const team = (club, goals, win, tbd) => tbd
+            ? `<div class="cbk-team is-tbd"><span class="cbk-crest"></span><span class="cbk-n">${t('À venir')}</span><b></b></div>`
+            : `<div class="cbk-team${win ? ' is-win' : ''}${club.name === me ? ' is-me' : ''}" title="${club.name}">
+                <span class="cbk-crest">${clubCrestSVG(club.name)}</span><span class="cbk-n">${abbr(club.name)}</span><b>${goals == null ? '' : goals}</b></div>`;
+        const tie = (m, kind, extra) => {
+            if (!m) return `<div class="cbk-tie">${team(null, null, false, true)}${team(null, null, false, true)}</div>`;
+            let gh = null, ga = null, legs = '';
+            if (kind === 'single') { if (m.hG !== undefined) { gh = m.hG; ga = m.aG; } }
+            else if (m.hG !== undefined) {
+                gh = (m.hG || 0) + (m.aG2 || 0); ga = (m.aG || 0) + (m.hG2 || 0);
+                legs = `${m.hG}-${m.aG} · ${m.hG2 ?? '?'}-${m.aG2 ?? '?'}${m.penalties ? ' · ' + (m.penaltyScore ? m.penaltyScore + ' t.a.b.' : 't.a.b.') : ''}`;
+            }
+            const w = m.winner ? m.winner.name : (extra && extra.winner) || null;
+            return `<div class="cbk-tie${(m.home.name === me || m.away.name === me) ? ' has-me' : ''}">
+                ${team(m.home, gh, w === m.home.name)}${team(m.away, ga, w === m.away.name)}
+                ${legs ? `<small class="cbk-legs">${legs}</small>` : ''}</div>`;
+        };
+        // 8es : tirage + résultats (match sec, lus dans le calendrier)
+        const r16 = (this.cafData.roundOf16 || []).map((m, i) => {
+            const f = (this.fixtures || []).find(x => x.type === 'CAF_R16' && x.r16Index === i && x.played);
+            const mm = { home: m.home, away: m.away };
+            let win = null;
+            if (f) {
+                mm.hG = f.homeScore || 0; mm.aG = f.awayScore || 0;
+                win = mm.hG !== mm.aG ? (mm.hG > mm.aG ? m.home.name : m.away.name)
+                    : ((m.home.cafPoints || 0) >= (m.away.cafPoints || 0) ? m.home.name : m.away.name);
+            }
+            return { m: mm, win };
         });
-        html += `</div>`;
-    }
-
-    // ── DEMI-FINALES ─────────────────────────────────────────────────────────
-    if (semiFinals && semiFinals.length > 0) {
-        html += `<div class="caf-section-title">${t('Demi-finales')}</div>`;
-        html += `<div class="caf-bracket-card" style="margin-bottom:20px">`;
-        html += `<div class="caf-bracket-header"><span class="caf-bracket-title">Demi-finales</span><span class="caf-meta">Aller / Retour</span></div>`;
-        semiFinals.forEach((sf, i) => {
-            const played = sf.hG !== undefined;
-            const score1 = played ? `${sf.hG} — ${sf.aG}` : null;
-            const score2 = played ? `${sf.hG2 ?? '?'} — ${sf.aG2 ?? '?'}` : null; // FIX #17
-            const tab = played && sf.penalties ? `<span style="font-size:10.5px;color:#fbbf24;font-weight:700;text-transform:uppercase">${sf.penaltyScore ? sf.penaltyScore + ' t.a.b.' : 'TAB'}</span>` : ''; // FIX #100
-            const isUserHome = sf.home.name === this.userClubName;
-            const isUserAway = sf.away.name === this.userClubName;
-            html += `
-            <div class="caf-match-block">
-                <div class="caf-match-label">Demi-finale ${i+1}</div>
-                <div class="caf-match-clubs">
-                    <div class="caf-club-chip ${isUserHome ? 'is-user' : ''}">
-                        <div class="caf-club-crest">${clubCrestSVG(sf.home.name)}</div>
-                        <span class="caf-club-chip-name">${sf.home.name}</span>
-                    </div>
-                    <div class="caf-score-block">
-                        ${played
-                            ? `<span class="caf-score-main">${score1}</span>
-                               <span class="caf-score-sub">${t('Aller')}</span>
-                               <span class="caf-score-main" style="font-size:18px;color:#94a3b8">${score2}</span>
-                               <span class="caf-score-sub">${t('Retour')}</span>${tab}`
-                            : `<span class="caf-score-main pending">vs</span>`
-                        }
-                    </div>
-                    <div class="caf-club-chip right ${isUserAway ? 'is-user' : ''}">
-                        <div class="caf-club-crest">${clubCrestSVG(sf.away.name)}</div>
-                        <span class="caf-club-chip-name">${sf.away.name}</span>
-                    </div>
-                </div>
-                ${sf.winner ? `<div class="caf-winner-tag">&#10230; Qualifié : ${sf.winner.name}</div>` : ''}
-            </div>`;
-        });
-        html += `</div>`;
-    }
-
-    // ── FINALE ───────────────────────────────────────────────────────────────
-    if (final) {
-        html += `<div class="caf-section-title">${t('Finale')}</div>`;
-        const played = final.hG !== undefined;
-        const isUserHome = final.home.name === this.userClubName;
-        const isUserAway = final.away.name === this.userClubName;
-        html += `
-        <div class="caf-bracket-card">
-            <div class="caf-bracket-header" style="background:linear-gradient(90deg,rgba(234,179,8,0.15),transparent)">
-                <span style="font-size:20px">&#127942;</span>
-                <span class="caf-bracket-title" style="font-size:22px">${t('Grande Finale')}</span>
-            </div>
-            <div class="caf-match-block" style="padding:24px 20px">
-                <div class="caf-match-clubs">
-                    <div class="caf-club-chip ${isUserHome ? 'is-user' : ''}">
-                        <div class="caf-club-crest" style="width:52px;height:52px">${clubCrestSVG(final.home.name)}</div>
-                        <span class="caf-club-chip-name" style="font-size:14px">${final.home.name}</span>
-                    </div>
-                    <div class="caf-score-block">
-                        ${played
-                            ? `<span class="caf-score-main" style="font-size:32px;color:#f59e0b">${final.hG} — ${final.aG}</span>`
-                            : `<span class="caf-score-main pending" style="font-size:28px">vs</span>
-                               <span class="caf-score-sub" style="color:#f97316;letter-spacing:0.1em">Finale</span>`
-                        }
-                    </div>
-                    <div class="caf-club-chip right ${isUserAway ? 'is-user' : ''}">
-                        <div class="caf-club-crest" style="width:52px;height:52px">${clubCrestSVG(final.away.name)}</div>
-                        <span class="caf-club-chip-name" style="font-size:14px">${final.away.name}</span>
-                    </div>
-                </div>
-            </div>
+        const pad = (arr, n) => { const out = arr.slice(0, n); while (out.length < n) out.push(null); return out; };
+        const col = (title, items) => `<div class="cbk-col"><div class="cbk-t">${title}</div><div class="cbk-ties">${items.join('')}</div></div>`;
+        const champ = winner || (final && final.winner && final.winner.name) || null;
+        html += `<div class="caf-section-title">${t('Phase finale')}</div>`;
+        html += `<div class="cbk">
+            ${col(t('8es'), pad(r16, 8).map(x => x ? tie(x.m, 'single', { winner: x.win }) : tie(null)))}
+            ${col(t('Quarts'), pad(this.cafData.quarterFinals || [], 4).map(m => tie(m, 'double')))}
+            ${col(t('Demies'), pad(semiFinals || [], 2).map(m => tie(m, 'double')))}
+            ${col(t('Finale'), [tie(final || null, 'single', { winner: champ })])}
+            <div class="cbk-col cbk-champ"><div class="cbk-t">${t('Champion')}</div><div class="cbk-ties">
+                <div class="cbk-cup${champ ? ' is-won' : ''}">${trophySVG('caf', !!champ)}${champ ? `<span class="cbk-cc">${clubCrestSVG(champ)}</span><b>${abbr(champ)}</b>` : `<b>?</b>`}</div>
+            </div></div>
         </div>`;
     }
 

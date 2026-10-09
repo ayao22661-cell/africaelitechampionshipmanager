@@ -1,3 +1,56 @@
+# Fenêtres par-dessus le jeu : coupe nationale, CAF, fin de mois (08/10/2026)
+
+- **Tirage de la coupe nationale** : l'ancienne fenêtre (bordures, émojis, listes de noms) est remplacée par une fenêtre visuelle. À gauche, coupe dessinée, tour suivant, pastille Qualifié/Éliminé et bouton Continuer ; à droite, les affiches en écussons face à face (la vôtre en orange) et les qualifiés en écussons.
+- **Après un match de CAF** : l'écran d'après-match affichait « a.p. » pour un simple match de poule (le temps additionnel était pris pour une prolongation). Corrigé.
+- **Avant-match CAF** : la ligne « undefined » dans « Comment ils jouent » est supprimée (adversaire continental sans couloir d'attaque défini). Nom unifié : « Ligue Elite Africaine » partout, y compris sur les compositions.
+- **Bilan du mois** : la fenêtre texte avec émoji devient un résultat en grand (vert ou rouge), avec recettes et dépenses en barres.
+Vérifié avec un vrai match de poule CAF joué de bout en bout : aucune erreur.
+
+# Consignes, Entraînement, Notes et après-match allégés (08/10/2026)
+
+| Écran | Avant | Maintenant |
+|---|---|---|
+| **Notes en direct** | Moyenne et homme du match sous le terrain (cachés, il fallait défiler) | Barre fine **au-dessus** du terrain : moyenne + ★ homme du match avec visage et note |
+| **Bilan du match** (Stats, fin de match) | Phrases longues | **Tuiles courtes** : chiffre clé + 2-3 mots (ex. « 1.9 · xG gâchés »), couleur positive/négative/alerte ; la phrase complète au toucher |
+| **Après-match** (Notes du match) | Tableau texte avec émojis | Score et écussons en grand (fond vert/rouge selon le résultat), 3 barres possession/tirs/xG aux couleurs des maillots, **homme du match** mis en avant, joueurs en **tuiles** (visage, note colorée, buts/passes en icônes), bouton Continuer |
+| **Tactique › Consignes** | 15 vignettes en grille, gros boutons empilés, 4 sous-sections avec descriptions | Formations en **une bande déroulante** ; **mini-terrain** qui dessine vos réglages (ligne, zone de pressing, couloirs, style) à côté de **5 lignes compactes** (Mentalité, Style, Couloir, Pressing, Ligne) ; sous-sections en tuiles 2×2 sans description ; contour des vignettes supprimé |
+| **Consignes en direct** | Grille de formations + 6 rangées de boutons | Même tableau compact, **tient sur un écran sans défiler** |
+| **Entraînement › La semaine** | 3 panneaux empilés (665 px), barres et paragraphe | 2 cartes côte à côte (330 px) : séances, verdict en pastille, effets et automatismes en **anneaux**, intensité en sélecteur |
+| **Entraînement › Effectif** | Une grande carte par joueur (2 000 px) | **Une ligne par joueur** (moitié moins haut) : visage, poste/âge, attributs à travailler, anneau de progression (jours avant +1), note |
+Vérifié : aucun contour, aucune erreur, tous les choix restent fonctionnels.
+
+# Vérification complète et corrections (08/10/2026)
+
+- **Bouton « Voir les résultats de la journée »** : en fin de match il était caché sous le tableau de score (barre orange sans texte). Il est maintenant en bas au centre, à la place du bandeau de commentaire.
+- **Bandeau du bas** : le score n'est plus collé au texte (« (xG: 0.13)0 - 1 »).
+- **Fil du direct** : l'écusson de l'équipe s'affiche aussi pour les buts, changements et phrases « l'adversaire » (repérage par le nom du joueur).
+- **Bouton de droite** (Direct / Stats / Notes / Zones) : il suit maintenant l'onglet choisi dans le panneau.
+- **Notes** : terrain compact dans le panneau du match, noms jamais cachés (testé sur les 15 formations).
+- **Encadrement** : rangée de filtres qui faisait déborder la page de 4 px.
+Contrôlé : 16 écrans sans erreur ni bordure, 5 tests automatiques OK, match complet (mi-temps, changement sur blessure, fin) sans erreur.
+
+# Coupe d'Afrique (phase finale) et écrans du match rendus visuels (08/10/2026)
+
+| Écran | Avant | Maintenant |
+|---|---|---|
+| **Coupes africaines › phase finale** | Ancien style texte, vide tant que la phase n'était pas jouée | **Tableau à élimination** toujours affiché : 8es → Quarts → Demies → Finale → Champion. Écussons, score cumulé aller-retour (détail des deux matchs, t.a.b.), vainqueur en vert, votre parcours en orange, « À venir » pour les cases pas encore tirées, coupe dorée et écusson du champion à la fin |
+| **Match › Direct** | Phrases de commentaire empilées | **Fil chronologique** : minute, pictogramme (but, carton, changement, blessure, occasion, coup de pied arrêté, sifflet), écusson de l'équipe concernée ; les buts en bandeau orange avec le score |
+| **Match › Stats** | Barres d'une seule couleur | **Barres face à face** partant du centre, aux couleurs des maillots des deux équipes, valeur dominante en blanc ; **anneau de possession** bicolore ; écussons en tête |
+| **Match › Notes** | Liste de noms | **Terrain vu de dessus** : chaque titulaire à son poste, note en pastille colorée, **anneau d'énergie** autour du visage, buts/passes/cartons en badges ; homme du match en orange, moyenne et nombre de joueurs fatigués |
+| **Match › bilan final** | Lignes de texte | Cartes colorées : ▲ positif (vert), ▼ négatif (rouge), ! alerte (ambre) |
+Vérifié : aucun contour ajouté, couleurs de la charte (maillots des clubs pour les stats). Zones (cartes de chaleur) et Consignes (vignettes de formation) étaient déjà visuelles.
+
+# Écrans textuels rendus visuels : CAF, Palmarès, Bilan, fin de saison (08/10/2026)
+
+| Écran | Avant | Maintenant |
+|---|---|---|
+| **Coupes africaines** | 8 grands tableaux de poule empilés, en-tête volumineux | En-tête sur une ligne avec la **frise des phases** (Poules → 8es → Quarts → Demies → Finale, phase en cours en orange) ; **8 poules en cartes compactes** (écusson, abréviation, barre de points, qualifiés repérés), votre poule en premier et en orange ; bandeau doré du champion d'Afrique |
+| **Palmarès** (Héritage › Palmarès) | Liste de saisons avec petites icônes | **Vitrine à trophées** dessinée : coupe du championnat, coupe continentale, Ballon d'Or, Soulier d'Or, Gant d'Or, Espoir — or si gagné (« ×2 », saisons), silhouette sinon |
+| **Palmarès individuel** (Trophées) | Noms en lignes | Tuiles : trophée (doré si chez vous), visage du lauréat, écusson du club |
+| **Bilan de saison** | Petit tableau J/G/N/P | Cartes par compétition : anneau du % de victoires, barre victoires/nuls/défaites, buts marqués/encaissés ; **forme** des 10 derniers matchs en tuiles (écusson adverse, score, couleur du résultat) |
+| **Fin de saison** | Fenêtre verticale qui débordait en paysage | Deux colonnes en paysage (résultat / actions) |
+Vérifié : aucun contour sur ces écrans. Déjà visuels et laissés tels quels : Distinctions, Staff, Profil du manager, Entraînement, Messagerie.
+
 # Ralenti du but, comme à la télé (08/10/2026)
 
 Après chaque but (en 3D), l'action est **rejouée au ralenti** : les 4 dernières secondes avant le but, à 45 % de la vitesse (~9 s), caméra au ras de la pelouse sur le côté qui suit le ballon, bandeau « ● RALENTI » orange rayé et bandes noires de cinéma, fondus au noir à l'entrée et à la sortie. Le tireur refait son geste de frappe.
