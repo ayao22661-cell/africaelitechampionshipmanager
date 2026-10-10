@@ -1,3 +1,17 @@
+# Tirs au but : tout le monde tire vers le même but (10/10/2026)
+
+- Pendant la séance, les deux équipes tirent maintenant vers **le même but**, comme en vrai (avant : chaque équipe tirait vers son propre but d'attaque, à l'opposé l'un de l'autre).
+- Le gardien qui défend se place dans ce but ; l'autre gardien attend à l'entrée de la surface ; les joueurs se regroupent au rond central. Le premier changement de gardien se fait sous un fondu au noir, comme à la télévision.
+- Le tireur regarde et frappe vers ce but ; l'issue (but, arrêt, à côté) est calculée sur ce même but. Le but de la séance est oublié dès la fin de la séance.
+
+# Tirs au but joués en direct (10/10/2026)
+
+- Les séances de tirs au but de vos matchs (coupe nationale, Supercoupe, phases finales de la CAF) ne sont plus tirées d'un coup en arrière-plan : **chaque tir est joué sur le terrain**. Le tireur pose le ballon, s'élance, le gardien plonge ; commentaire et ambiance à chaque tir (applaudissements, « ooh », sifflets).
+- **Tableau de pastilles** sous le score : vert = marqué, rouge = manqué, une pastille de plus en mort subite, vainqueur surligné.
+- **Vraies règles** : 5 tirs chacun en alternance, arrêt dès que l'écart est irrattrapable, puis mort subite. Votre tireur désigné ouvre la séance ; les suivants sont les meilleurs tireurs de penalty (le sang-froid des pros et des leaders compte).
+- Le score du match et les statistiques ne sont pas modifiés ; le vainqueur est transmis à la coupe ou à la CAF comme avant. Le bouton de fin de match n'apparaît qu'une fois la séance terminée ; les cris du banc sont masqués pendant la séance.
+- Les matchs entre clubs IA (que vous ne regardez pas) restent simulés.
+
 # Gameplay : plus de ballon qui se téléporte, gestes calés sur le départ du ballon (09/10/2026)
 
 - **Ballon qui se téléportait** : pendant une passe, le moteur désigne déjà le receveur comme « porteur ». Le collage du ballon au pied (correctif précédent) tirait alors le ballon vers le receveur au décollage, jusqu'à 10 m d'un coup. Le ballon ne se colle plus qu'au joueur qui l'a réellement ; en se décollant il part du pied de celui qui l'avait ; une récupération au contact le fait glisser jusqu'au nouveau porteur. Mesure : 0 saut anormal sur 1 131 images (avant : 10, dont un de 10 m). Les seuls sauts restants se font sous le fondu au noir des coups de pied arrêtés, voulu.

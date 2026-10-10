@@ -6527,7 +6527,10 @@ const MATCHSIM = {
         const cur = { x: this.ball.x, y: this.ball.y };
         this.pendingGoalKick = null; this.pendingRestart = null; this._later = []; this.outcome = null;
         this.ball.fly = null; this.shotFly = null;
-        const T = this.team(key), O = this.team(this.other(key)), dir = T.dir, gx = T.atkX;
+        const T = this.team(key), O = this.team(this.other(key));
+        // Séance de tirs au but : les deux équipes tirent vers le MÊME but (psoGoal)
+        const pso = kind === 'penalty' && this.psoGoal;
+        const dir = pso ? this.psoGoal.dir : T.dir, gx = pso ? this.psoGoal.atkX : T.atkX;
         const cl = (v, a, b) => this.clamp(v, a, b);
         let bx, by;
         if (kind === 'penalty') { bx = gx - dir * 10.5; by = 50; }
@@ -6551,7 +6554,7 @@ const MATCHSIM = {
         this._noOffside = false;
         // 2. rôles précis
         const gk = O.p[0];
-        gk.tx = gx + O.dir * (kind === 'corner' ? 1.8 : 1.0);
+        gk.tx = gx + (pso ? -dir : O.dir) * (kind === 'corner' ? 1.8 : 1.0);
         gk.ty = kind === 'freekick' ? 50 - (by - 50) * 0.10 : 50;
         // Qui doit être en place avant la frappe ? (sert à calculer la durée d'installation)
         const roleList = [];
@@ -6580,7 +6583,16 @@ const MATCHSIM = {
         // maintenant UN défenseur, côté but, qui le suit.
         const markSpots = list => list.map(o => ({ x: o.s.x + (gx - o.s.x) * 0.12, y: o.s.y + (50 - o.s.y) * 0.10 }));
         const okey = this.other(key);
-        if (kind === 'penalty') {
+        if (kind === 'penalty' && pso) {
+            // le gardien qui défend DOIT être dans le but (fondu télé s'il vient de l'autre bout) ;
+            // l'autre gardien attend à l'entrée de la surface, les joueurs au rond central
+            place(okey, gk, gk.tx, gk.ty, true);
+            place(key, taker, bx - dir * 3.5, 50, true);
+            const myGk = T.p[0];
+            if (myGk && !myGk.off && myGk !== taker) place(key, myGk, gx - dir * 17, 66, true);
+            outT.forEach((p, n) => { p.tx = 50 + ((n % 3) - 1) * 3; p.ty = 40 + Math.floor(n / 3) * 3.2; });
+            outO.forEach((p, n) => { p.tx = 50 + ((n % 3) - 1) * 3; p.ty = 54 + Math.floor(n / 3) * 3.2; });
+        } else if (kind === 'penalty') {
             place(key, taker, bx - dir * 3.5, 50, true);
             outT.forEach((p, n) => { p.tx = gx - dir * (21 + (n % 2) * 2.4); p.ty = 16 + n * (68 / Math.max(1, outT.length)); });
             outO.forEach((p, n) => { p.tx = gx - dir * (23.4 + (n % 2) * 2.0); p.ty = 19 + n * (62 / Math.max(1, outO.length)); });
@@ -6792,7 +6804,8 @@ const MATCHSIM = {
         o = o || {};
         const T = this.team(key);
         const from = o.from || { x: shooter.x, y: shooter.y };
-        const toX = T.dir > 0 ? 99.5 : 0.5, toY = 42 + Math.random() * 16;
+        const sdir = this.psoGoal ? this.psoGoal.dir : T.dir;
+        const toX = sdir > 0 ? 99.5 : 0.5, toY = 42 + Math.random() * 16;
         const d = Math.hypot(toX - from.x, toY - from.y);
         const lead = o.lead != null ? o.lead : 0;
         const t0 = this.now() + lead;
@@ -6820,10 +6833,11 @@ const MATCHSIM = {
         const s = this.shotFly, o = this.outcome;
         if (!s || !o) return;
         const T = this.team(s.side), sgn = Math.random() < 0.5 ? -1 : 1;
-        if (o === 'goal') { s.toX = T.dir > 0 ? 100.9 : -0.9;   // FIX #DECOR : 0,9 m AU FOND du filet (était 0,5 m AVANT la ligne)
+        const D = this.psoGoal ? this.psoGoal.dir : T.dir;
+        if (o === 'goal') { s.toX = D > 0 ? 100.9 : -0.9;   // FIX #DECOR : 0,9 m AU FOND du filet (était 0,5 m AVANT la ligne)
             s.toY = 50 + sgn * (1.6 + Math.random() * 3.2); }
-        else if (o === 'save') { s.toX = T.dir > 0 ? 97.6 : 2.4; s.toY = 50 + sgn * (0.5 + Math.random() * 3); s.peak = Math.min(s.peak, 1.0); }
-        else { s.toX = T.dir > 0 ? 101 : -1; s.toY = 50 + sgn * (7 + Math.random() * 7); s.peak += 1.4; }
+        else if (o === 'save') { s.toX = D > 0 ? 97.6 : 2.4; s.toY = 50 + sgn * (0.5 + Math.random() * 3); s.peak = Math.min(s.peak, 1.0); }
+        else { s.toX = D > 0 ? 101 : -1; s.toY = 50 + sgn * (7 + Math.random() * 7); s.peak += 1.4; }
     },
 
     // Journal d'événements pour le rendu 3D (passe, tir, récupération, but,
@@ -6849,7 +6863,7 @@ const MATCHSIM = {
         return { H: pack('H'), A: pack('A'), ball: { x: b.x, y: b.y, z: b.z }, side: this.ball.side, phase: this.phase, ev: this.evq || [], ballIdx: this.ball.idx };
     },
 
-    stop() { this.active = false; this.ball && (this.ball.fly = null); this.shotFly = null; this.sceneUntil = 0; this._later = []; }
+    stop() { this.active = false; this.psoGoal = null; this.ball && (this.ball.fly = null); this.shotFly = null; this.sceneUntil = 0; this._later = []; }
 };
 
 // =====================================================================
@@ -22508,16 +22522,11 @@ simulateAIBypassMatchday(otherMatches) {
             // ici pour pouvoir l'afficher, puis réutilisée telle quelle par
             // processCAFKnockoutStats (pas de double tirage).
             if (this.liveMatchIsStillTied()) {
-                const result = this.simulatePenaltyShootout(this.liveMatch.home, this.liveMatch.away);
-                this.pendingShootout = result;
-                this.updateLiveStatus('T.a.b.');
-                this.logCommentary(
-                    `🥅 ${t('Séance de tirs au but :')} ${this.liveMatch.home.name} ${result.scoreA} — ${result.scoreB} ${this.liveMatch.away.name}.`,
-                    "text-amber-400 font-bold text-center mt-2");
-                this.logCommentary(`${icon('trophy')} ${result.winner.name} ${t('se qualifie !')}`, "text-brand-500 font-bold text-center");
-            } else {
-                this.updateLiveStatus('Terminé'); // FIX #95
+                // La séance se joue tir par tir, à l'écran ; le bouton de fin n'apparaît qu'après.
+                this.startLiveShootout();
+                return;
             }
+            this.updateLiveStatus('Terminé'); // FIX #95
 
             document.getElementById('btn-end-match').classList.remove('hidden');
         }
@@ -24598,6 +24607,130 @@ simulateAIBypassMatchday(otherMatches) {
             </div>`; }).join('')}</div>`;
     }
 
+    // ═══ SÉANCE DE TIRS AU BUT EN DIRECT ════════════════════════════════
+    // Chaque tir est joué sur le terrain : le tireur pose le ballon, s'élance, le gardien
+    // plonge. Mêmes règles qu'en vrai : 5 tirs chacun, arrêt dès que l'écart est
+    // irrattrapable, puis mort subite. Le score du match et les statistiques ne bougent pas.
+    shootoutOrder(isHome) {
+        const lm = this.liveMatch;
+        const team = (isHome ? lm.homeStarters : lm.awayStarters).filter(p => p && p.position !== 'GB');
+        const userSide = isHome ? lm.home.isUser : lm.away.isUser;
+        const sorted = team.slice().sort((a, b) => (this.setPieceScore(b, 'penalty') + this.traitClutch(b, true)) - (this.setPieceScore(a, 'penalty') + this.traitClutch(a, true)));
+        const takerId = userSide && this.setPieces ? this.setPieces.penalty : null;
+        if (takerId) { const i = sorted.findIndex(p => p.id === takerId); if (i > 0) sorted.unshift(sorted.splice(i, 1)[0]); }
+        return sorted;
+    }
+
+    startLiveShootout() {
+        const lm = this.liveMatch;
+        if (!lm) return;
+        lm.pso = { kicks: [], H: 0, A: 0, order: { H: this.shootoutOrder(true), A: this.shootoutOrder(false) }, n: 0, done: false };
+        // un seul but pour toute la séance, comme en vrai
+        try { const TH = MATCHSIM.team('H'); MATCHSIM.psoGoal = { atkX: TH.atkX, dir: TH.dir }; } catch (e) {}
+        this.updateLiveStatus('T.a.b.');
+        document.documentElement.classList.add('in-pso');
+        this.logCommentary(`🥅 ${t('Séance de tirs au but !')} ${lm.home.name} ${t('commence.')}`, "text-amber-400 font-bold text-center mt-2");
+        this.renderShootoutBoard();
+        try { SFX.crowdIntensity(1); } catch (e) {}
+        setTimeout(() => this.shootoutKick(), 1800);
+    }
+
+    shootoutDecided() {
+        const P = this.liveMatch.pso;
+        const kH = P.kicks.filter(k => k.side === 'H').length, kA = P.kicks.filter(k => k.side === 'A').length;
+        if (kH <= 5 && kA <= 5 && (kH < 5 || kA < 5)) {
+            // dans les 5 premiers : arrêt dès que l'un ne peut plus revenir
+            if (P.H > P.A + (5 - kA)) return true;
+            if (P.A > P.H + (5 - kH)) return true;
+            return false;
+        }
+        return kH === kA && P.H !== P.A;            // mort subite : après chaque paire
+    }
+
+    shootoutKick() {
+        const lm = this.liveMatch;
+        if (!lm || !lm.pso || lm.pso.done) return;
+        const P = lm.pso;
+        const side = P.n % 2 === 0 ? 'H' : 'A';
+        const isHome = side === 'H';
+        const order = P.order[side];
+        const shooter = order[Math.floor(P.n / 2) % Math.max(1, order.length)];
+        const keeperTeam = isHome ? lm.awayStarters : lm.homeStarters;
+        const gk = keeperTeam.find(p => p.position === 'GB') || keeperTeam[0];
+        if (!shooter || !gk) { this.finishLiveShootout(); return; }
+        const sc = this.setPieceScore(shooter, 'penalty') + this.traitClutch(shooter, true);
+        const gs = this.calculateEffectiveStat(gk, 'positioning') || gk.ovr || 60;
+        const pGoal = Math.min(0.92, Math.max(0.55, 0.75 + (sc - gs) * 0.004));
+        const goal = Math.random() < pGoal;
+        const outcome = goal ? 'goal' : Math.random() < 0.62 ? 'save' : 'miss';
+        const idx = this.simIdx(isHome, shooter);
+        let ms = 1200;
+        if (MATCHSIM.active) {
+            ms = MATCHSIM.setPiece('penalty', side, idx, idx) || 1200;
+            MATCHSIM.holdScene(ms + 6000);
+        }
+        this.logCommentary(`🥅 ${shooter.name} ${t('s\'avance pour')} ${isHome ? lm.home.name : lm.away.name}…`, "text-slate-300");
+        setTimeout(() => {
+            if (this.liveMatch !== lm) return;
+            if (MATCHSIM.active) {
+                this.animatePitch(isHome ? 'home_shot' : 'away_shot', { shooterIdx: idx, setPiece: 'penalty' });
+                MATCHSIM.setShotOutcome(outcome);
+            }
+            const eta = MATCHSIM.active ? MATCHSIM.shotEta() : 600;
+            setTimeout(() => {
+                if (this.liveMatch !== lm) return;
+                P.kicks.push({ side, goal, name: shooter.name });
+                if (goal) P[side]++;
+                if (!goal && outcome === 'save' && MATCHSIM.active) MATCHSIM.note('save', isHome ? 'A' : 'H', 0);
+                try { goal ? (SFX.applause(1.2), SFX.crowdIntensity(1)) : (outcome === 'save' ? SFX.applause(0.8) : SFX.ooh()); } catch (e) {}
+                const line = goal ? `${icon('ball')} ${shooter.name} ${t('marque son tir au but.')}`
+                    : outcome === 'save' ? `🧤 ${gk.name} ${t('arrête le tir de')} ${shooter.name} !`
+                    : `❌ ${shooter.name} ${t('manque le cadre !')}`;
+                this.logCommentary(`${line} (${P.H}-${P.A})`, goal ? "text-emerald-400 font-bold" : "text-red-400 font-bold");
+                P.n++;
+                this.renderShootoutBoard();
+                if (this.shootoutDecided()) setTimeout(() => this.finishLiveShootout(), 1400);
+                else setTimeout(() => this.shootoutKick(), 1700);
+            }, eta + 250);
+        }, ms + 250);
+    }
+
+    finishLiveShootout() {
+        const lm = this.liveMatch;
+        if (!lm || !lm.pso || lm.pso.done) return;
+        const P = lm.pso; P.done = true;
+        MATCHSIM.psoGoal = null;
+        const winner = P.H > P.A ? lm.home : P.A > P.H ? lm.away : (Math.random() < 0.5 ? lm.home : lm.away);
+        // même format que simulatePenaltyShootout(home, away), relu par les coupes et la CAF
+        this.pendingShootout = { winner, scoreA: P.H, scoreB: P.A };
+        this.logCommentary(`🥅 ${t('Séance de tirs au but :')} ${lm.home.name} ${P.H} — ${P.A} ${lm.away.name}.`, "text-amber-400 font-bold text-center mt-2");
+        this.logCommentary(`${icon('trophy')} ${winner.name} ${t('se qualifie !')}`, "text-brand-500 font-bold text-center");
+        try { if (winner.isUser) { SFX.goal(); } else SFX.ooh(); } catch (e) {}
+        this.renderShootoutBoard();
+        document.getElementById('btn-end-match').classList.remove('hidden');
+    }
+
+    renderShootoutBoard() {
+        const lm = this.liveMatch;
+        const box = document.getElementById('pitch-container') || document.getElementById('view-match');
+        let el = document.getElementById('pso-board');
+        if (!lm || !lm.pso) { if (el) el.remove(); return; }
+        if (!el && box) { el = document.createElement('div'); el.id = 'pso-board'; box.appendChild(el); }
+        if (!el) return;
+        const P = lm.pso;
+        const row = (side, team) => {
+            const ks = P.kicks.filter(k => k.side === side);
+            const total = Math.max(5, ks.length + (P.done ? 0 : 1));
+            const dots = Array.from({ length: total }, (_, i) => {
+                const k = ks[i];
+                return k ? `<i class="${k.goal ? 'is-g' : 'is-m'}" title="${k.name}">${k.goal ? '' : '✕'}</i>` : '<i></i>';
+            }).join('');
+            let crest = ''; try { crest = clubCrestSVG(team.name); } catch (e) {}
+            return `<div class="pso-row${P.done && ((side === 'H' && P.H > P.A) || (side === 'A' && P.A > P.H)) ? ' is-win' : ''}"><span class="pso-c">${crest}</span><b>${P[side]}</b><span class="pso-dots">${dots}</span></div>`;
+        };
+        el.innerHTML = `<small>${t('Tirs au but')}</small>${row('H', lm.home)}${row('A', lm.away)}`;
+    }
+
     // ═══ CRIS DU BANC ═══════════════════════════════════════════════════
     // Un geste, un effet de quelques minutes, puis un temps de recharge :
     // le coach parle à ses joueurs sans ouvrir les consignes.
@@ -24978,6 +25111,7 @@ simulateAIBypassMatchday(otherMatches) {
         try { const L = this.liveMatch; if (L && L.homeScore >= L.awayScore) SFX.applause(L.homeScore > L.awayScore ? 1.4 : 0.7); } catch (e) {}
         SFX.stopCrowd();
         this._matchOver = true; // LOT 15 : plus aucun ordre de scène accepté
+        document.documentElement.classList.remove('in-pso'); document.getElementById('pso-board')?.remove();
         try { this.renderShoutMenu(false); } catch (e) {}
         this.stopPitchLoop(); // LOT 15
         // FIX blessures : purge globale, tous clubs confondus, 1 jour par journée écoulée.

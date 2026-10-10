@@ -2068,7 +2068,8 @@
             }
         } else if (ev.type === 'shot' && P) {
             if (S.rec) S.rec.shots.push({ t: now(), side: ev.side, idx: ev.idx });     // pour le ralenti
-            const gx = ev.side === 'H' ? PITCH_W / 2 : -PITCH_W / 2;
+            const sf = (typeof MATCHSIM !== 'undefined') ? MATCHSIM.shotFly : null;
+            const gx = sf ? wx(sf.toX) : (ev.side === 'H' ? PITCH_W / 2 : -PITCH_W / 2);   // séance de t.a.b. : même but pour tous
             lookAt(P, gx, 0, 600);
             // Sur un centre (corner), la reprise se fait de la tête ; lancé dans sa course, il frappe sans s'arrêter.
             const hitS = 220;                                    // MATCHSIM.shoot : geste annoncé 220 ms avant le départ

@@ -2342,3 +2342,15 @@ html.sm-over #pitch-shout-btn, html:not(.in-match) #pitch-shout-btn { display: n
 .ntx-champ b { font-family: 'Teko', sans-serif; font-size: 15px; color: #facc15; text-align: center; }
 @media (max-width: 560px) { .ntx { grid-template-columns: 1fr; height: auto; } .ntx-groups { grid-template-columns: repeat(2, 1fr); } }
 .ntx-card.is-off { cursor: default; opacity: .75; }
+/* Séance de tirs au but en direct : tableau de pastilles sous le score */
+#pso-board { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); z-index: 45; display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; border-radius: 12px; background: rgba(10, 14, 23, .82); backdrop-filter: blur(4px); }
+#pso-board > small { font-size: 8.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #fb923c; text-align: center; }
+.pso-row { display: grid; grid-template-columns: 20px 18px auto; align-items: center; gap: 6px; padding: 1px 4px; border-radius: 6px; }
+.pso-row.is-win { background: rgba(22, 163, 74, .28); }
+.pso-c { width: 20px; height: 20px; } .pso-c svg { width: 100%; height: 100%; }
+.pso-row > b { font-family: 'Teko', sans-serif; font-size: 18px; line-height: 1; color: #fff; text-align: center; }
+.pso-dots { display: flex; gap: 4px; }
+.pso-dots i { width: 13px; height: 13px; border-radius: 50%; background: #1f2937; display: grid; place-items: center; font-style: normal; font-size: 8px; font-weight: 900; color: #fff; }
+.pso-dots i.is-g { background: #34d399; }
+.pso-dots i.is-m { background: #f87171; }
+html.in-pso #pitch-shout-btn, html.in-pso #shout-menu { display: none !important; }
